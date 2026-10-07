@@ -1,0 +1,12 @@
+# Пример списка программ для первого входа. Скопируйте файл как Apps.txt и оставьте нужное.
+# Одна программа в строке: Id из winget. Найти Id: winget search <название>.
+# После Id можно дописать параметры winget, например --scope machine.
+# Строки, которые начинаются с #, пропускаются.
+
+7zip.7zip
+Mozilla.Firefox
+VideoLAN.VLC
+Notepad++.Notepad++
+# Google.Chrome
+# Valve.Steam
+# Telegram.TelegramDesktop

@@ -54,8 +54,21 @@
     драйверы из папки Drivers рядом с ним.
 
 .PARAMETER DriversToSetup
-    Добавить драйверы ещё и в установщик (boot.wim). Нужно, если установщик не видит диск,
-    например на контроллерах Intel RST/VMD или RAID.
+    Добавить драйверы ещё и в установщик (boot.wim) и среду восстановления (WinRE). Нужно,
+    если установщик не видит диск, например на контроллерах Intel RST/VMD или RAID.
+
+.PARAMETER UpdatesToSetup
+    Встроить обновления Windows ещё и в установщик (boot.wim) и среду восстановления (WinRE).
+    Сборка займёт на 10-20 минут дольше.
+
+.PARAMETER FirstLogonPath
+    Папка первого входа: Apps.txt со списком программ для winget и свои скрипты *.ps1.
+    Они выполнятся один раз при первом входе в установленную Windows. В пошаговом режиме
+    скрипт сам предложит папку FirstLogon рядом с ним.
+
+.PARAMETER ListContents
+    Ничего не собирать, а сохранить в текстовый файл рядом с ISO список приложений Appx,
+    компонентов и функций выбранной редакции. Помогает составить свой профиль.
 
 .PARAMETER SkipVersionCheck
     Не останавливаться, если сборка или архитектура ISO не совпадает с Requirements профиля.
@@ -78,6 +91,10 @@
 
 .EXAMPLE
     .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Index 6 -ProfilePath .\Profiles\my.json -SkipRegistry
+
+.EXAMPLE
+    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -ListContents
+    Сохраняет список приложений и компонентов редакции в D:\Win11_<номер>_contents.txt.
 #>
 [CmdletBinding()]
 param(
@@ -92,6 +109,9 @@ param(
     [string]$UpdatesPath,
     [string]$DriversPath,
     [switch]$DriversToSetup,
+    [switch]$UpdatesToSetup,
+    [string]$FirstLogonPath,
+    [switch]$ListContents,
     [string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
     [switch]$SkipComponents,
@@ -163,6 +183,9 @@ $WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPa
 
 $mounted = $false
 $bootMountDir = Join-Path $WorkDir 'bootmount'
+$reMountDir = Join-Path $WorkDir 'remount'
+$allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
+$listMode = [bool]$ListContents
 $transcript = $false
 $isoDir = Join-Path $WorkDir 'iso'
 $mountDir = Join-Path $WorkDir 'mount'
@@ -176,6 +199,11 @@ try {
         Write-Info 'Скрипт удалит лишние приложения и компоненты из установочного образа'
         Write-Info 'и внесёт настройки реестра. Исходный ISO не изменяется: результат'
         Write-Info 'сохраняется в новый файл. Сборка обычно занимает 15-40 минут.'
+
+        Write-Section 'Что сделать'
+        Write-Host '    [1] ' -ForegroundColor Cyan -NoNewline; Write-Host 'Собрать преднастроенный ISO'
+        Write-Host '    [2] ' -ForegroundColor Cyan -NoNewline; Write-Host 'Посмотреть, что есть в образе: список приложений и компонентов для своего профиля'
+        $listMode = ((Read-Host '    Введите номер (Enter: 1)').Trim() -eq '2')
 
         Write-Section 'Выбор ISO'
         Write-Info 'Выберите оригинальный ISO Windows 11 в открывшемся окне.'
@@ -204,17 +232,18 @@ try {
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
     $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
-    if ($interactive) {
+    if ($interactive -and -not $listMode) {
         Write-Section 'Выбор категорий'
         Select-LunqCategories -LunqProfile $lunqProfile
     }
-    if (-not ($lunqProfile.Categories | Where-Object { $_.Enabled })) {
+    if (-not $listMode -and -not ($lunqProfile.Categories | Where-Object { $_.Enabled })) {
         Write-Warning 'Все категории профиля выключены: образ будет собран без удалений и твиков.'
     }
     $config = Get-LunqEffectiveConfig -LunqProfile $lunqProfile
 
     $updates = @()
-    if ($UpdatesPath) {
+    if ($listMode) { }
+    elseif ($UpdatesPath) {
         if (-not (Test-Path -LiteralPath $UpdatesPath -PathType Container)) { throw "Папка с обновлениями не найдена: $UpdatesPath" }
         $updates = Get-LunqUpdateFiles -Path $UpdatesPath
         if ($updates.Count -eq 0) { throw "В папке $UpdatesPath нет файлов .msu или .cab." }
@@ -240,6 +269,12 @@ try {
                     Write-Info 'Очистка уменьшит образ, но удалить встроенные обновления потом будет нельзя.'
                     $CleanupComponents = [switch](Read-YesNo 'Очистить хранилище компонентов после обновлений?')
                 }
+                if (-not $UpdatesToSetup) {
+                    Write-Info ''
+                    Write-Info 'Обновления можно встроить и в установщик со средой восстановления (WinRE):'
+                    Write-Info 'тогда в них будут те же исправления, что и в системе. Сборка займёт на 10-20 минут дольше.'
+                    $UpdatesToSetup = [switch](Read-YesNo 'Обновить и установщик со средой восстановления?')
+                }
             }
         }
     }
@@ -247,7 +282,8 @@ try {
     foreach ($u in $updates) { $updatesSize += $u.Length }
 
     $drivers = @()
-    if ($DriversPath) {
+    if ($listMode) { }
+    elseif ($DriversPath) {
         if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw "Папка с драйверами не найдена: $DriversPath" }
         $DriversPath = (Resolve-Path -LiteralPath $DriversPath).Path
         $drivers = Get-LunqDriverFiles -Path $DriversPath
@@ -273,9 +309,9 @@ try {
                 $drivers = $found
                 if (-not $DriversToSetup) {
                     Write-Info ''
-                    Write-Info 'Драйверы можно добавить и в сам установщик. Это нужно, если установщик'
-                    Write-Info 'не видит диск (контроллеры Intel RST/VMD, RAID). Иначе это не обязательно.'
-                    $DriversToSetup = [switch](Read-YesNo 'Добавить драйверы и в установщик?')
+                    Write-Info 'Драйверы можно добавить и в установщик со средой восстановления (WinRE). Это нужно,'
+                    Write-Info 'если установщик не видит диск (контроллеры Intel RST/VMD, RAID). Иначе это не обязательно.'
+                    $DriversToSetup = [switch](Read-YesNo 'Добавить драйверы и в установщик со средой восстановления?')
                 }
             }
         }
@@ -284,15 +320,50 @@ try {
     if ($drivers.Count -gt 0) { $driversSize = Get-FolderSize $DriversPath }
     if ($drivers.Count -eq 0) { $DriversToSetup = [switch]$false }
 
+    # Установщик и WinRE получают только обновления самой Windows.
+    $peUpdates = @()
+    if ($UpdatesToSetup) { $peUpdates = Select-LunqPEUpdates $updates }
+    $peDrivers = @()
+    if ($DriversToSetup) { $peDrivers = $drivers }
+    $servicePE = ($peUpdates.Count + $peDrivers.Count) -gt 0
+
+    $firstLogon = $null
+    if ($listMode) { }
+    elseif ($FirstLogonPath) {
+        $firstLogon = Get-LunqFirstLogon -Path $FirstLogonPath
+        if (-not $firstLogon) { throw "В папке $FirstLogonPath нет ни Apps.txt со списком программ, ни скриптов *.ps1 (см. README)." }
+        $FirstLogonPath = $firstLogon.Path
+    }
+    elseif ($interactive) {
+        Write-Section 'Первый вход'
+        $defaultFirstLogon = Join-Path $PSScriptRoot 'FirstLogon'
+        $found = Get-LunqFirstLogon -Path $defaultFirstLogon
+        if (-not $found) {
+            Write-Info 'Ничего не будет выполнено при первом входе: в папке FirstLogon рядом со скриптом'
+            Write-Info 'нет ни Apps.txt, ни скриптов *.ps1. Пример списка программ: FirstLogon\Apps.example.txt.'
+        }
+        else {
+            Write-Info 'При первом входе в Windows можно поставить программы через winget и выполнить свои скрипты:'
+            Write-FirstLogonSummary -FirstLogon $found
+            if (Read-YesNo 'Добавить это в образ?') {
+                $firstLogon = $found
+                $FirstLogonPath = $found.Path
+            }
+        }
+    }
+
     Write-Section 'Проверка системы'
-    $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $UpdatesPath, $DriversPath, $ProfilePath) | Where-Object { $_ } |
+    $extraSize = [long]0
+    if ($servicePE) { $extraSize = [long](3GB) }
+    $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $UpdatesPath, $DriversPath, $ProfilePath, $FirstLogonPath) | Where-Object { $_ } |
         ForEach-Object { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($_) }
     $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath `
-        -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:($WorkDir -eq $defaultWorkDir)
+        -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:($WorkDir -eq $defaultWorkDir) `
+        -ExtraSize $extraSize -SkipOscdimg:$listMode
     if ($check.Errors -gt 0) { throw 'Исправьте ошибки, отмеченные [FAIL], и запустите скрипт снова.' }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo 'Есть предупреждения. Всё равно продолжить?')) { return }
 
-    if (Test-Path -LiteralPath $OutputIso) {
+    if (-not $listMode -and (Test-Path -LiteralPath $OutputIso)) {
         if ($interactive -and -not $Force) {
             Write-Warning "Файл $OutputIso уже существует."
             if (-not (Read-YesNo 'Перезаписать его?')) { return }
@@ -315,7 +386,10 @@ try {
     if ($release) { $buildText = "$buildText ($release)" }
     $buildText = "$buildText, $($imageInfo.Architecture)"
     $req = $lunqProfile.Requirements
-    if (-not ($req.Build -or $req.MinRevision -or $req.Architecture)) {
+    if ($listMode) {
+        Write-Check Ok "Сборка образа: $buildText"
+    }
+    elseif (-not ($req.Build -or $req.MinRevision -or $req.Architecture)) {
         Write-Check Ok "Сборка образа: $buildText (профиль не задаёт требований к версии)"
     }
     else {
@@ -342,6 +416,43 @@ try {
         }
     }
 
+    # ---------- Режим «Что в образе» ----------
+    if ($listMode) {
+        $contentsPath = Join-Path (Split-Path $IsoPath -Parent) ('{0}_{1}_contents.txt' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath), $selected)
+        Initialize-LunqSteps -Total 4
+        Write-Step 'Подготовка рабочей папки' "Очищаю следы прошлого запуска и создаю $WorkDir."
+        Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
+        New-Item -ItemType Directory -Path $mountDir, (Split-Path $wimPath -Parent) -Force | Out-Null
+
+        Write-Step 'Копирование редакции' 'Редакция копируется из ISO в рабочую папку, чтобы её можно было открыть. Исходный ISO не изменяется.'
+        $isoRoot = Mount-IsoImage -IsoPath $IsoPath
+        try {
+            Export-WindowsImage -SourceImagePath (Get-InstallImagePath -IsoRoot $isoRoot) -SourceIndex $selected `
+                -DestinationImagePath $wimPath -CompressionType Fast | Out-Null
+        }
+        finally { Dismount-DiskImage -ImagePath $IsoPath | Out-Null }
+
+        Write-Step 'Открытие образа' 'Образ монтируется только для чтения, в нём ничего не меняется.'
+        Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir -ReadOnly | Out-Null
+        $mounted = $true
+
+        Write-Step 'Чтение приложений и компонентов' 'Списки сравниваются с профилем, чтобы было видно, что уже в нём есть.'
+        $inventory = Write-LunqInventory -MountPath $mountDir -LunqProfile $lunqProfile -Path $contentsPath -Header @(
+            "Содержимое образа: [$selected] $editionName, $buildText",
+            "ISO: $IsoPath",
+            "Создано LunqDebloater $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            '')
+        Dismount-WindowsImage -Path $mountDir -Discard | Out-Null
+        $mounted = $false
+
+        Write-Section 'Итог'
+        Write-Info ("Приложений Appx: {0}, компонентов: {1}, функций включено: {2}, выключено: {3}" -f $inventory.Appx, $inventory.Capabilities, $inventory.Enabled, $inventory.Disabled)
+        if ($inventory.Missing -gt 0) { Write-Info "Записей профиля, которых нет в образе: $($inventory.Missing) (в конце файла)" }
+        Write-Info "Список сохранён: $contentsPath"
+        if ($interactive) { Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$contentsPath`"" -ErrorAction SilentlyContinue }
+        return
+    }
+
     # ---------- План и подтверждение ----------
     Start-Transcript -Path "$OutputIso.log" -Force | Out-Null
     $transcript = $true
@@ -360,10 +471,22 @@ try {
     else { Write-Info 'Обновления:       не встраиваются' }
     if ($drivers.Count -gt 0) {
         $where = 'в систему'
-        if ($DriversToSetup) { $where = 'в систему и в установщик' }
+        if ($DriversToSetup) { $where = 'в систему, установщик и WinRE' }
         Write-Info ("Драйверы:         {0} шт. (.inf), {1}, {2}: {3}" -f $drivers.Count, (Format-Size $driversSize), $where, $DriversPath)
     }
     else { Write-Info 'Драйверы:         не встраиваются' }
+    if ($servicePE) {
+        $what = @()
+        if ($peUpdates.Count -gt 0) { $what += "обновления ($($peUpdates.Count) шт.)" }
+        if ($peDrivers.Count -gt 0) { $what += 'драйверы' }
+        Write-Info ("Установщик/WinRE: {0}" -f ($what -join ' и '))
+        if ($UpdatesToSetup -and $peUpdates.Count -lt $updates.Count) { Write-Info '                  обновления .NET и прочие не для Windows PE пропускаются' }
+    }
+    if ($firstLogon) {
+        Write-Info 'Первый вход:      при первом входе в Windows'
+        Write-FirstLogonSummary -FirstLogon $firstLogon
+    }
+    else { Write-Info 'Первый вход:      ничего не выполняется' }
     $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
     Write-Info ("Категории:        включено {0} из {1}" -f $enabledCount, $lunqProfile.Categories.Count)
     Write-CategoryList -LunqProfile $lunqProfile
@@ -392,7 +515,8 @@ try {
     $steps = 7
     if ($updates.Count -gt 0) { $steps += 1 }
     if ($drivers.Count -gt 0) { $steps += 1 }
-    if ($DriversToSetup) { $steps += 1 }
+    if ($servicePE) { $steps += 2 }
+    if ($firstLogon) { $steps += 1 }
     if (-not $SkipAppx) { $steps += 1 }
     if (-not $SkipComponents) { $steps += 2 }
     if (-not $SkipRegistry) { $steps += 1 }
@@ -403,12 +527,7 @@ try {
     $registry = $null
 
     Write-Step 'Подготовка рабочей папки' "Очищаю следы прошлого запуска и создаю $WorkDir."
-    foreach ($leftover in (Get-LunqMountedPaths -Paths $mountDir, $bootMountDir)) {
-        Write-Info "Найден оставшийся смонтированный образ в $leftover, отключаю без сохранения."
-        Dismount-WindowsImage -Path $leftover -Discard | Out-Null
-    }
-    if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
-    Initialize-LunqWorkDir -WorkDir $WorkDir
+    Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
     New-Item -ItemType Directory -Path $mountDir -Force | Out-Null
 
     Write-Step 'Копирование файлов ISO' 'Файлы установщика копируются во временную папку. Исходный ISO не изменяется.'
@@ -432,6 +551,16 @@ try {
     if ($drivers.Count -gt 0) {
         Write-Step 'Встраивание драйверов' 'Драйверы добавляются в хранилище драйверов образа. Windows сама поставит подходящие во время установки.'
         $results += Add-LunqDrivers -MountPath $mountDir -InfFiles $drivers -Root $DriversPath
+    }
+
+    if ($servicePE) {
+        Write-Step 'Среда восстановления (WinRE)' 'Обновления и драйверы добавляются в Winre.wim внутри системы: это среда, которая открывается при сбое загрузки.'
+        $results += Update-LunqRecovery -MountPath $mountDir -WorkDir $WorkDir -PEMountPath $reMountDir -Updates $peUpdates -Drivers $peDrivers -DriversRoot $DriversPath
+    }
+
+    if ($firstLogon) {
+        Write-Step 'Настройка первого входа' 'В образ кладутся список программ и ваши скрипты. Они выполнятся один раз, когда вы впервые войдёте в Windows.'
+        $results += Install-LunqFirstLogon -MountPath $mountDir -FirstLogon $firstLogon -Architecture $imageInfo.Architecture
     }
 
     if (-not $SkipAppx) {
@@ -462,9 +591,9 @@ try {
     Dismount-WindowsImage -Path $mountDir -Save | Out-Null
     $mounted = $false
 
-    if ($DriversToSetup) {
-        Write-Step 'Драйверы в установщик' 'Драйверы добавляются в boot.wim, чтобы установщик видел диски и сеть на вашем оборудовании.'
-        $results += Add-LunqSetupDrivers -IsoRoot $isoDir -MountPath $bootMountDir -InfFiles $drivers -Root $DriversPath
+    if ($servicePE) {
+        Write-Step 'Установщик (boot.wim)' 'Обновления и драйверы добавляются в установщик, с которого загружается флешка.'
+        $results += Update-LunqSetup -IsoRoot $isoDir -WorkDir $WorkDir -PEMountPath $bootMountDir -Updates $peUpdates -Drivers $peDrivers -DriversRoot $DriversPath
     }
 
     Write-Step 'Пересжатие install.wim' 'Образ пересобирается, чтобы освободить место, которое занимали удалённые файлы.'
@@ -489,7 +618,7 @@ catch {
 }
 finally {
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
-    $stillMounted = $mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $mountDir, $bootMountDir).Count -gt 0)
+    $stillMounted = $mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $allMountDirs).Count -gt 0)
     if ($stillMounted) { Write-Info "Рабочая папка $WorkDir оставлена: в ней смонтирован образ. Его отключит следующий запуск скрипта." }
     elseif (-not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
