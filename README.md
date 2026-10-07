@@ -77,4 +77,6 @@ Get-WindowsCapability     -Path C:\LunqWork\mount | Where State -eq Installed | 
 Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | Select FeatureName
 ```
 
+Профиль по умолчанию отключает загрузку драйверов из Windows Update. Если в системе нет встроенного драйвера сетевой карты или Wi-Fi, после установки его придётся поставить вручную. Чтобы оставить драйверы из Windows Update, удалите из профиля записи с путями `DriverSearching`, `Device Metadata` и `ExcludeWUDriversInQualityUpdate`.
+
 Профиль по умолчанию не трогает Microsoft Store, App Installer (winget), Терминал, Фотографии, Калькулятор, Блокнот, Paint и Безопасность Windows. Список `Packages` пуст намеренно: удаление CBS-пакетов может сломать установку обновлений.
