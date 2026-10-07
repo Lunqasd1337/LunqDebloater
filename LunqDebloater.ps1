@@ -46,6 +46,15 @@
     Они будут встроены в образ до удаления приложений и компонентов.
     В пошаговом режиме скрипт сам предложит обновления из папки Updates рядом с ним.
 
+.PARAMETER DriversPath
+    Папка с драйверами (распакованные .inf, можно в подпапках). Они будут встроены в образ,
+    и Windows поставит их сама при установке. В пошаговом режиме скрипт сам предложит
+    драйверы из папки Drivers рядом с ним.
+
+.PARAMETER DriversToSetup
+    Добавить драйверы ещё и в установщик (boot.wim). Нужно, если установщик не видит диск,
+    например на контроллерах Intel RST/VMD или RAID.
+
 .PARAMETER SkipVersionCheck
     Не останавливаться, если сборка или архитектура ISO не совпадает с Requirements профиля.
     Нужен только тем, кто сознательно собирает образ на другой версии Windows.
@@ -79,6 +88,8 @@ param(
     [string]$WorkDir = (Join-Path $env:SystemDrive 'LunqWork'),
     [string]$OscdimgPath,
     [string]$UpdatesPath,
+    [string]$DriversPath,
+    [switch]$DriversToSetup,
     [string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
     [switch]$SkipComponents,
@@ -135,6 +146,7 @@ if (-not (Test-Administrator)) {
 }
 
 $mounted = $false
+$bootMountDir = Join-Path $WorkDir 'bootmount'
 $transcript = $false
 $isoDir = Join-Path $WorkDir 'iso'
 $mountDir = Join-Path $WorkDir 'mount'
@@ -218,8 +230,46 @@ try {
     $updatesSize = [long]0
     foreach ($u in $updates) { $updatesSize += $u.Length }
 
+    $drivers = @()
+    if ($DriversPath) {
+        if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw "Папка с драйверами не найдена: $DriversPath" }
+        $DriversPath = (Resolve-Path -LiteralPath $DriversPath).Path
+        $drivers = Get-LunqDriverFiles -Path $DriversPath
+        if ($drivers.Count -eq 0) {
+            throw "В папке $DriversPath нет файлов .inf. Драйверы в виде .exe нужно сначала распаковать (см. README)."
+        }
+    }
+    elseif ($interactive) {
+        Write-Section 'Драйверы'
+        $defaultDrivers = Join-Path $PSScriptRoot 'Drivers'
+        $found = Get-LunqDriverFiles -Path $defaultDrivers
+        if ($found.Count -eq 0) {
+            Write-Info 'Драйверы не будут встроены: в папке Drivers рядом со скриптом нет файлов .inf.'
+            Write-Info 'Чтобы Windows сразу ставилась со своими драйверами (сеть, Wi-Fi, чипсет), положите'
+            Write-Info 'распакованные драйверы в папку Drivers. С рабочего ПК их можно выгрузить командой'
+            Write-Info 'Export-WindowsDriver -Online -Destination .\Drivers. Подробнее в README.'
+        }
+        else {
+            $DriversPath = (Resolve-Path -LiteralPath $defaultDrivers).Path
+            Write-Info ("В папке Drivers найдено драйверов (.inf): {0}, {1}." -f $found.Count, (Format-Size (Get-FolderSize $DriversPath)))
+            Write-Info 'Если встроить их в образ, Windows поставит их сама во время установки.'
+            if (Read-YesNo 'Встроить эти драйверы?') {
+                $drivers = $found
+                if (-not $DriversToSetup) {
+                    Write-Info ''
+                    Write-Info 'Драйверы можно добавить и в сам установщик. Это нужно, если установщик'
+                    Write-Info 'не видит диск (контроллеры Intel RST/VMD, RAID). Иначе это не обязательно.'
+                    $DriversToSetup = [switch](Read-YesNo 'Добавить драйверы и в установщик?')
+                }
+            }
+        }
+    }
+    $driversSize = [long]0
+    if ($drivers.Count -gt 0) { $driversSize = Get-FolderSize $DriversPath }
+    if ($drivers.Count -eq 0) { $DriversToSetup = [switch]$false }
+
     Write-Section 'Проверка системы'
-    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath -UpdatesSize $updatesSize
+    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath -UpdatesSize $updatesSize -DriversSize $driversSize
     if ($check.Errors -gt 0) { throw 'Исправьте ошибки, отмеченные [FAIL], и запустите скрипт снова.' }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo 'Есть предупреждения. Всё равно продолжить?')) { return }
 
@@ -289,6 +339,12 @@ try {
         Write-UpdateList -Files $updates
     }
     else { Write-Info 'Обновления:       не встраиваются' }
+    if ($drivers.Count -gt 0) {
+        $where = 'в систему'
+        if ($DriversToSetup) { $where = 'в систему и в установщик' }
+        Write-Info ("Драйверы:         {0} шт. (.inf), {1}, {2}: {3}" -f $drivers.Count, (Format-Size $driversSize), $where, $DriversPath)
+    }
+    else { Write-Info 'Драйверы:         не встраиваются' }
     $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
     Write-Info ("Категории:        включено {0} из {1}" -f $enabledCount, $lunqProfile.Categories.Count)
     Write-CategoryList -LunqProfile $lunqProfile
@@ -316,6 +372,8 @@ try {
     # ---------- Сборка ----------
     $steps = 7
     if ($updates.Count -gt 0) { $steps += 1 }
+    if ($drivers.Count -gt 0) { $steps += 1 }
+    if ($DriversToSetup) { $steps += 1 }
     if (-not $SkipAppx) { $steps += 1 }
     if (-not $SkipComponents) { $steps += 2 }
     if (-not $SkipRegistry) { $steps += 1 }
@@ -351,6 +409,11 @@ try {
         $results += Add-LunqUpdates -MountPath $mountDir -Files $updates -ScratchDir (Join-Path $WorkDir 'scratch')
     }
 
+    if ($drivers.Count -gt 0) {
+        Write-Step 'Встраивание драйверов' 'Драйверы добавляются в хранилище драйверов образа. Windows сама поставит подходящие во время установки.'
+        $results += Add-LunqDrivers -MountPath $mountDir -InfFiles $drivers -Root $DriversPath
+    }
+
     if (-not $SkipAppx) {
         Write-Step 'Удаление приложений Appx' 'Удаляются предустановленные приложения из профиля. У новых пользователей они не появятся.'
         $results += Remove-LunqAppx -MountPath $mountDir -Config $config
@@ -378,6 +441,11 @@ try {
     Write-Step 'Сохранение образа' 'Изменения записываются обратно в install.wim.'
     Dismount-WindowsImage -Path $mountDir -Save | Out-Null
     $mounted = $false
+
+    if ($DriversToSetup) {
+        Write-Step 'Драйверы в установщик' 'Драйверы добавляются в boot.wim, чтобы установщик видел диски и сеть на вашем оборудовании.'
+        $results += Add-LunqSetupDrivers -IsoRoot $isoDir -MountPath $bootMountDir -InfFiles $drivers -Root $DriversPath
+    }
 
     Write-Step 'Пересжатие install.wim' 'Образ пересобирается, чтобы освободить место, которое занимали удалённые файлы.'
     Export-SingleEdition -SourceImage $wimPath -SourceIndex 1 -DestinationImage $wimPath

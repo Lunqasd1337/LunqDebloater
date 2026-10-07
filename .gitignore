@@ -1,2 +1,4 @@
 Updates/*.msu
 Updates/*.cab
+Drivers/*
+!Drivers/README.md
