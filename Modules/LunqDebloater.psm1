@@ -1164,10 +1164,13 @@ function Get-LunqFirstLogon {
     }
 }
 
-function Write-FirstLogonSummary {
+function Format-FirstLogonSummary {
+    # Одна короткая строка для плана и итога: длинный список программ в ней не нужен.
     param([Parameter(Mandatory)]$FirstLogon)
-    if ($FirstLogon.Apps.Count -gt 0) { Write-Info ("Программы (winget): {0}" -f ($FirstLogon.Apps -join ', ')) }
-    if ($FirstLogon.Scripts.Count -gt 0) { Write-Info ("Скрипты: {0}" -f (($FirstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ')) }
+    $parts = @()
+    if ($FirstLogon.Apps.Count -gt 0) { $parts += "программ: $($FirstLogon.Apps.Count) (winget)" }
+    if ($FirstLogon.Scripts.Count -gt 0) { $parts += "скриптов: $($FirstLogon.Scripts.Count)" }
+    return ($parts -join ', ')
 }
 
 function Install-LunqFirstLogon {
@@ -1180,7 +1183,7 @@ function Install-LunqFirstLogon {
         [Parameter(Mandatory)][string]$Architecture
     )
 
-    $result = New-LunqResult 'Первый вход' 'FirstLogon'
+    $result = New-LunqResult 'После установки' 'FirstLogon'
     $unattend = Join-Path $MountPath 'Windows\System32\Sysprep\unattend.xml'
     if (Test-Path -LiteralPath $unattend) {
         throw 'В образе уже есть Windows\System32\Sysprep\unattend.xml, скрипт первого входа добавить нельзя.'
@@ -1223,7 +1226,7 @@ function Install-LunqFirstLogon {
     [IO.File]::WriteAllText($unattend, $xml, (New-Object Text.UTF8Encoding($false)))
 
     foreach ($app in $FirstLogon.Apps) { $result.Done.Add($app) }
-    $result | Add-Member -NotePropertyName Summary -NotePropertyValue ("программ {0}, скриптов {1}" -f $FirstLogon.Apps.Count, $FirstLogon.Scripts.Count)
+    $result | Add-Member -NotePropertyName Summary -NotePropertyValue (Format-FirstLogonSummary -FirstLogon $FirstLogon)
     Write-Info ("Добавлено: {0}. Запустится при первом входе в Windows." -f $result.Summary)
     return $result
 }

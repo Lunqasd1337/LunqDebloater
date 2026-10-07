@@ -321,10 +321,10 @@ try {
                 -Name 'Добавить драйверы и в установщик со средой восстановления (WinRE)' `
                 -Details 'Нужно, если установщик не видит диск (контроллеры Intel RST/VMD, RAID).'),
             (New-LunqOption -Key 'apps' -Enabled $useApps -Available ($foundLogon.Apps.Count -gt 0) `
-                -Name $(if ($foundLogon.Apps.Count -gt 0) { "Программы при первом входе: $($foundLogon.Apps.Count) шт. (winget)" } else { 'Программы при первом входе: список пуст' }) `
+                -Name $(if ($foundLogon.Apps.Count -gt 0) { "Программы после установки: $($foundLogon.Apps.Count) шт. (winget)" } else { 'Программы после установки: список пуст' }) `
                 -Details $(if ($foundLogon.Apps.Count -gt 0) { $foundLogon.Apps -join ', ' } else { 'Впишите Id программ из winget в Config\Apps.txt.' })),
             (New-LunqOption -Key 'scripts' -Enabled $useScripts -Available ($foundLogon.Scripts.Count -gt 0) `
-                -Name $(if ($foundLogon.Scripts.Count -gt 0) { "Скрипты при первом входе: $($foundLogon.Scripts.Count) шт." } else { 'Скрипты при первом входе: не найдены' }) `
+                -Name $(if ($foundLogon.Scripts.Count -gt 0) { "Скрипты после установки: $($foundLogon.Scripts.Count) шт." } else { 'Скрипты после установки: не найдены' }) `
                 -Details $(if ($foundLogon.Scripts.Count -gt 0) { ($foundLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { 'Положите свои *.ps1 в Config\Scripts.' }))
         )
         Select-LunqBuildOptions -Options $options
@@ -500,10 +500,9 @@ try {
         if ($UpdatesToSetup -and $peUpdates.Count -lt $updates.Count) { Write-Info '                  обновления .NET и прочие не для Windows PE пропускаются' }
     }
     if ($firstLogon) {
-        Write-Info 'Первый вход:      при первом входе в Windows'
-        Write-FirstLogonSummary -FirstLogon $firstLogon
+        Write-Info ("После установки:  {0}, при первом входе в Windows" -f (Format-FirstLogonSummary -FirstLogon $firstLogon))
     }
-    else { Write-Info 'Первый вход:      ничего не выполняется' }
+    else { Write-Info 'После установки:  ничего не выполняется' }
     $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
     Write-Info ("Категории:        включено {0} из {1}" -f $enabledCount, $lunqProfile.Categories.Count)
     Write-CategoryList -LunqProfile $lunqProfile
@@ -576,7 +575,7 @@ try {
     }
 
     if ($firstLogon) {
-        Write-Step 'Настройка первого входа' 'В образ кладутся список программ и ваши скрипты. Они выполнятся один раз, когда вы впервые войдёте в Windows.'
+        Write-Step 'Программы и скрипты после установки' 'В образ кладутся список программ и ваши скрипты. Они выполнятся один раз, когда вы впервые войдёте в Windows.'
         $results += Install-LunqFirstLogon -MountPath $mountDir -FirstLogon $firstLogon -Architecture $imageInfo.Architecture
     }
 
