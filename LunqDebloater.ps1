@@ -11,9 +11,14 @@
       - вносит изменения в офлайн-реестр (SOFTWARE, SYSTEM, профиль Default).
     Затем образ пересжимается, и oscdimg собирает загрузочный ISO (BIOS + UEFI).
 
+    Все настройки лежат в папке Config рядом со скриптом: профиль (Profile.json), список
+    программ (Apps.txt), свои скрипты (Scripts), драйверы (Drivers) и обновления (Updates).
+    Всё, что там найдено, попадает в образ.
+
     Если запустить скрипт без -IsoPath, он работает в пошаговом режиме: предложит
-    выбрать ISO, профиль и редакцию, проверит систему, покажет план и спросит
-    подтверждение. Исходный ISO при этом не изменяется.
+    выбрать ISO и редакцию, покажет сводку того, что найдено в Config, и даст выключить
+    лишнее, проверит систему, покажет план и спросит подтверждение. Исходный ISO при этом
+    не изменяется.
 
 .PARAMETER IsoPath
     Путь к исходному ISO Windows 11. Без него скрипт запускается в пошаговом режиме.
@@ -21,8 +26,12 @@
 .PARAMETER OutputIso
     Путь к итоговому ISO. По умолчанию рядом с исходным с суффиксом _Lunq.
 
+.PARAMETER ConfigPath
+    Папка с настройками. По умолчанию Config рядом со скриптом. Удобно, если настроек
+    несколько: например, -ConfigPath .\Config-Office.
+
 .PARAMETER ProfilePath
-    JSON-профиль. По умолчанию Profiles\default.json рядом со скриптом.
+    JSON-профиль. По умолчанию Config\Profile.json.
 
 .PARAMETER SkipCategory
     Id категорий профиля, которые нужно пропустить, через запятую: -SkipCategory drivers,store.
@@ -44,14 +53,10 @@
     Путь к oscdimg.exe, если он не в стандартной папке Windows ADK.
 
 .PARAMETER UpdatesPath
-    Папка с обновлениями (.msu, .cab) из каталога Центра обновления Майкрософт.
-    Они будут встроены в образ до удаления приложений и компонентов.
-    В пошаговом режиме скрипт сам предложит обновления из папки Updates рядом с ним.
+    Папка с обновлениями (.msu, .cab) вместо Config\Updates.
 
 .PARAMETER DriversPath
-    Папка с драйверами (распакованные .inf, можно в подпапках). Они будут встроены в образ,
-    и Windows поставит их сама при установке. В пошаговом режиме скрипт сам предложит
-    драйверы из папки Drivers рядом с ним.
+    Папка с драйверами (распакованные .inf, можно в подпапках) вместо Config\Drivers.
 
 .PARAMETER DriversToSetup
     Добавить драйверы ещё и в установщик (boot.wim) и среду восстановления (WinRE). Нужно,
@@ -61,10 +66,17 @@
     Встроить обновления Windows ещё и в установщик (boot.wim) и среду восстановления (WinRE).
     Сборка займёт на 10-20 минут дольше.
 
-.PARAMETER FirstLogonPath
-    Папка первого входа: Apps.txt со списком программ для winget и свои скрипты *.ps1.
-    Они выполнятся один раз при первом входе в установленную Windows. В пошаговом режиме
-    скрипт сам предложит папку FirstLogon рядом с ним.
+.PARAMETER SkipUpdates
+    Не встраивать обновления, даже если они есть в Config\Updates.
+
+.PARAMETER SkipDrivers
+    Не встраивать драйверы, даже если они есть в Config\Drivers.
+
+.PARAMETER SkipApps
+    Не ставить программы из Config\Apps.txt при первом входе.
+
+.PARAMETER SkipScripts
+    Не выполнять скрипты из Config\Scripts при первом входе.
 
 .PARAMETER ListContents
     Ничего не собирать, а сохранить в текстовый файл рядом с ISO список приложений Appx,
@@ -86,11 +98,11 @@
     .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro"
 
 .EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -UpdatesPath .\Updates -CleanupComponents
-    Встраивает обновления из папки Updates и затем очищает хранилище компонентов.
+    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -CleanupComponents
+    Встраивает обновления из Config\Updates и затем очищает хранилище компонентов.
 
 .EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Index 6 -ProfilePath .\Profiles\my.json -SkipRegistry
+    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Index 6 -SkipDrivers -SkipApps -SkipRegistry
 
 .EXAMPLE
     .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -ListContents
@@ -100,6 +112,7 @@
 param(
     [string]$IsoPath,
     [string]$OutputIso,
+    [string]$ConfigPath,
     [string]$ProfilePath,
     [string[]]$SkipCategory,
     [int]$Index = 0,
@@ -110,7 +123,10 @@ param(
     [string]$DriversPath,
     [switch]$DriversToSetup,
     [switch]$UpdatesToSetup,
-    [string]$FirstLogonPath,
+    [switch]$SkipUpdates,
+    [switch]$SkipDrivers,
+    [switch]$SkipApps,
+    [switch]$SkipScripts,
     [switch]$ListContents,
     [string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
@@ -180,6 +196,8 @@ if (-not (Test-Administrator)) {
 # для этого не годится: он берёт рабочую папку процесса, а она не меняется после cd.
 $defaultWorkDir = Join-Path $env:SystemDrive 'LunqWork'
 $WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorkDir).TrimEnd('\')
+if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'Config' }
+$ConfigPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ConfigPath).TrimEnd('\')
 
 $mounted = $false
 $bootMountDir = Join-Path $WorkDir 'bootmount'
@@ -219,13 +237,14 @@ try {
     }
     $OutputIso = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputIso)
 
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Container)) { throw "Папка с настройками не найдена: $ConfigPath" }
     if (-not $ProfilePath) {
         if ($interactive) {
             Write-Section 'Выбор профиля'
-            $ProfilePath = Select-LunqProfile -ProfileDir (Join-Path $PSScriptRoot 'Profiles')
+            $ProfilePath = Select-LunqProfile -ProfileDir $ConfigPath
         }
         else {
-            $ProfilePath = Join-Path $PSScriptRoot 'Profiles\default.json'
+            $ProfilePath = Join-Path $ConfigPath 'Profile.json'
         }
     }
     $lunqProfile = Read-LunqProfile -Path $ProfilePath
@@ -241,81 +260,90 @@ try {
     }
     $config = Get-LunqEffectiveConfig -LunqProfile $lunqProfile
 
+    # ---------- Что лежит в Config ----------
+    # Обновления, драйверы, программы и скрипты берутся из Config. -UpdatesPath и -DriversPath
+    # заменяют свои подпапки и должны указывать на непустую папку.
+    $updatesDir = Join-Path $ConfigPath 'Updates'
+    $driversDir = Join-Path $ConfigPath 'Drivers'
+    $foundUpdates = @()
+    $foundDrivers = @()
+    $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
+    if (-not $listMode) {
+        if ($UpdatesPath) {
+            if (-not (Test-Path -LiteralPath $UpdatesPath -PathType Container)) { throw "Папка с обновлениями не найдена: $UpdatesPath" }
+            $updatesDir = (Resolve-Path -LiteralPath $UpdatesPath).Path
+        }
+        $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
+        if ($UpdatesPath -and $foundUpdates.Count -eq 0) { throw "В папке $UpdatesPath нет файлов .msu или .cab." }
+
+        if ($DriversPath) {
+            if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw "Папка с драйверами не найдена: $DriversPath" }
+            $driversDir = (Resolve-Path -LiteralPath $DriversPath).Path
+        }
+        $foundDrivers = Get-LunqDriverFiles -Path $driversDir
+        if ($DriversPath -and $foundDrivers.Count -eq 0) {
+            throw "В папке $DriversPath нет файлов .inf. Драйверы в виде .exe нужно сначала распаковать (см. README)."
+        }
+        if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
+    }
+
+    $useUpdates = $foundUpdates.Count -gt 0 -and -not $SkipUpdates
+    $useDrivers = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
+    $useApps = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
+    $useScripts = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
+
+    if ($interactive -and -not $listMode) {
+        Write-Section 'Что войдёт в образ'
+        Write-Info "Вот что найдено в папке настроек $ConfigPath. [x] попадёт в образ, [ ] нет."
+        Write-Info 'Чтобы добавить своё, положите файлы в эту папку и запустите скрипт снова (подробнее в Config\README.txt).'
+        $updatesSizeText = ''
+        if ($foundUpdates.Count -gt 0) {
+            $sum = [long]0
+            foreach ($u in $foundUpdates) { $sum += $u.Length }
+            $updatesSizeText = Format-Size $sum
+        }
+        $options = @(
+            (New-LunqOption -Key 'updates' -Enabled $useUpdates -Available ($foundUpdates.Count -gt 0) `
+                -Name $(if ($foundUpdates.Count -gt 0) { "Обновления: $($foundUpdates.Count) шт., $updatesSizeText" } else { 'Обновления: не найдены' }) `
+                -Details $(if ($foundUpdates.Count -gt 0) { @($foundUpdates | ForEach-Object { $_.Name }) + 'Windows будет обновлённой сразу после установки, но сборка займёт заметно дольше.' }
+                    else { 'Скачайте .msu с catalog.update.microsoft.com и положите в Config\Updates.' })),
+            (New-LunqOption -Key 'cleanup' -Parent 'updates' -Enabled ([bool]$CleanupComponents) -Available ($foundUpdates.Count -gt 0) `
+                -Name 'Очистить хранилище компонентов после обновлений' `
+                -Details 'Образ станет меньше, но удалить встроенные обновления потом будет нельзя.'),
+            (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ([bool]$UpdatesToSetup) -Available ($foundUpdates.Count -gt 0) `
+                -Name 'Обновить и установщик со средой восстановления (WinRE)' `
+                -Details 'В них будут те же исправления, что и в системе. Сборка займёт на 10-20 минут дольше.'),
+            (New-LunqOption -Key 'drivers' -Enabled $useDrivers -Available ($foundDrivers.Count -gt 0) `
+                -Name $(if ($foundDrivers.Count -gt 0) { "Драйверы: $($foundDrivers.Count) шт. (.inf), $(Format-Size (Get-FolderSize $driversDir))" } else { 'Драйверы: не найдены' }) `
+                -Details $(if ($foundDrivers.Count -gt 0) { 'Windows сама поставит их во время установки.' }
+                    else { 'Положите распакованные драйверы в Config\Drivers, например: Export-WindowsDriver -Online -Destination .\Config\Drivers' })),
+            (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled ([bool]$DriversToSetup) -Available ($foundDrivers.Count -gt 0) `
+                -Name 'Добавить драйверы и в установщик со средой восстановления (WinRE)' `
+                -Details 'Нужно, если установщик не видит диск (контроллеры Intel RST/VMD, RAID).'),
+            (New-LunqOption -Key 'apps' -Enabled $useApps -Available ($foundLogon.Apps.Count -gt 0) `
+                -Name $(if ($foundLogon.Apps.Count -gt 0) { "Программы при первом входе: $($foundLogon.Apps.Count) шт. (winget)" } else { 'Программы при первом входе: список пуст' }) `
+                -Details $(if ($foundLogon.Apps.Count -gt 0) { $foundLogon.Apps -join ', ' } else { 'Впишите Id программ из winget в Config\Apps.txt.' })),
+            (New-LunqOption -Key 'scripts' -Enabled $useScripts -Available ($foundLogon.Scripts.Count -gt 0) `
+                -Name $(if ($foundLogon.Scripts.Count -gt 0) { "Скрипты при первом входе: $($foundLogon.Scripts.Count) шт." } else { 'Скрипты при первом входе: не найдены' }) `
+                -Details $(if ($foundLogon.Scripts.Count -gt 0) { ($foundLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { 'Положите свои *.ps1 в Config\Scripts.' }))
+        )
+        Select-LunqBuildOptions -Options $options
+        $useUpdates = Test-LunqOption -Options $options -Key 'updates'
+        $useDrivers = Test-LunqOption -Options $options -Key 'drivers'
+        $useApps = Test-LunqOption -Options $options -Key 'apps'
+        $useScripts = Test-LunqOption -Options $options -Key 'scripts'
+        $UpdatesToSetup = [switch](Test-LunqOption -Options $options -Key 'updatesToSetup')
+        $DriversToSetup = [switch](Test-LunqOption -Options $options -Key 'driversToSetup')
+        if ($foundUpdates.Count -gt 0) { $CleanupComponents = [switch](Test-LunqOption -Options $options -Key 'cleanup') }
+    }
+
     $updates = @()
-    if ($listMode) { }
-    elseif ($UpdatesPath) {
-        if (-not (Test-Path -LiteralPath $UpdatesPath -PathType Container)) { throw "Папка с обновлениями не найдена: $UpdatesPath" }
-        $updates = Get-LunqUpdateFiles -Path $UpdatesPath
-        if ($updates.Count -eq 0) { throw "В папке $UpdatesPath нет файлов .msu или .cab." }
-    }
-    elseif ($interactive) {
-        Write-Section 'Обновления'
-        $defaultUpdates = Join-Path $PSScriptRoot 'Updates'
-        $found = Get-LunqUpdateFiles -Path $defaultUpdates
-        if ($found.Count -eq 0) {
-            Write-Info 'Обновления не будут встроены: папка Updates рядом со скриптом пуста.'
-            Write-Info 'Чтобы встроить их, скачайте .msu с catalog.update.microsoft.com, положите'
-            Write-Info 'в папку Updates и запустите скрипт снова. Подробнее в README.'
-        }
-        else {
-            Write-Info 'В папке Updates найдены обновления. Если встроить их в образ, после установки'
-            Write-Info 'Windows сразу будет обновлённой, но сборка займёт заметно дольше.'
-            Write-UpdateList -Files $found
-            if (Read-YesNo 'Встроить эти обновления?') {
-                $updates = $found
-                if (-not $CleanupComponents) {
-                    Write-Info ''
-                    Write-Info 'После обновлений в образе остаются старые версии системных файлов.'
-                    Write-Info 'Очистка уменьшит образ, но удалить встроенные обновления потом будет нельзя.'
-                    $CleanupComponents = [switch](Read-YesNo 'Очистить хранилище компонентов после обновлений?')
-                }
-                if (-not $UpdatesToSetup) {
-                    Write-Info ''
-                    Write-Info 'Обновления можно встроить и в установщик со средой восстановления (WinRE):'
-                    Write-Info 'тогда в них будут те же исправления, что и в системе. Сборка займёт на 10-20 минут дольше.'
-                    $UpdatesToSetup = [switch](Read-YesNo 'Обновить и установщик со средой восстановления?')
-                }
-            }
-        }
-    }
+    if ($useUpdates) { $updates = $foundUpdates }
     $updatesSize = [long]0
     foreach ($u in $updates) { $updatesSize += $u.Length }
 
     $drivers = @()
-    if ($listMode) { }
-    elseif ($DriversPath) {
-        if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw "Папка с драйверами не найдена: $DriversPath" }
-        $DriversPath = (Resolve-Path -LiteralPath $DriversPath).Path
-        $drivers = Get-LunqDriverFiles -Path $DriversPath
-        if ($drivers.Count -eq 0) {
-            throw "В папке $DriversPath нет файлов .inf. Драйверы в виде .exe нужно сначала распаковать (см. README)."
-        }
-    }
-    elseif ($interactive) {
-        Write-Section 'Драйверы'
-        $defaultDrivers = Join-Path $PSScriptRoot 'Drivers'
-        $found = Get-LunqDriverFiles -Path $defaultDrivers
-        if ($found.Count -eq 0) {
-            Write-Info 'Драйверы не будут встроены: в папке Drivers рядом со скриптом нет файлов .inf.'
-            Write-Info 'Чтобы Windows сразу ставилась со своими драйверами (сеть, Wi-Fi, чипсет), положите'
-            Write-Info 'распакованные драйверы в папку Drivers. С рабочего ПК их можно выгрузить командой'
-            Write-Info 'Export-WindowsDriver -Online -Destination .\Drivers. Подробнее в README.'
-        }
-        else {
-            $DriversPath = (Resolve-Path -LiteralPath $defaultDrivers).Path
-            Write-Info ("В папке Drivers найдено драйверов (.inf): {0}, {1}." -f $found.Count, (Format-Size (Get-FolderSize $DriversPath)))
-            Write-Info 'Если встроить их в образ, Windows поставит их сама во время установки.'
-            if (Read-YesNo 'Встроить эти драйверы?') {
-                $drivers = $found
-                if (-not $DriversToSetup) {
-                    Write-Info ''
-                    Write-Info 'Драйверы можно добавить и в установщик со средой восстановления (WinRE). Это нужно,'
-                    Write-Info 'если установщик не видит диск (контроллеры Intel RST/VMD, RAID). Иначе это не обязательно.'
-                    $DriversToSetup = [switch](Read-YesNo 'Добавить драйверы и в установщик со средой восстановления?')
-                }
-            }
-        }
-    }
+    if ($useDrivers) { $drivers = $foundDrivers }
     $driversSize = [long]0
     if ($drivers.Count -gt 0) { $driversSize = Get-FolderSize $DriversPath }
     if ($drivers.Count -eq 0) { $DriversToSetup = [switch]$false }
@@ -328,34 +356,23 @@ try {
     $servicePE = ($peUpdates.Count + $peDrivers.Count) -gt 0
 
     $firstLogon = $null
-    if ($listMode) { }
-    elseif ($FirstLogonPath) {
-        $firstLogon = Get-LunqFirstLogon -Path $FirstLogonPath
-        if (-not $firstLogon) { throw "В папке $FirstLogonPath нет ни Apps.txt со списком программ, ни скриптов *.ps1 (см. README)." }
-        $FirstLogonPath = $firstLogon.Path
-    }
-    elseif ($interactive) {
-        Write-Section 'Первый вход'
-        $defaultFirstLogon = Join-Path $PSScriptRoot 'FirstLogon'
-        $found = Get-LunqFirstLogon -Path $defaultFirstLogon
-        if (-not $found) {
-            Write-Info 'Ничего не будет выполнено при первом входе: в папке FirstLogon рядом со скриптом'
-            Write-Info 'нет ни Apps.txt, ни скриптов *.ps1. Пример списка программ: FirstLogon\Apps.example.txt.'
-        }
-        else {
-            Write-Info 'При первом входе в Windows можно поставить программы через winget и выполнить свои скрипты:'
-            Write-FirstLogonSummary -FirstLogon $found
-            if (Read-YesNo 'Добавить это в образ?') {
-                $firstLogon = $found
-                $FirstLogonPath = $found.Path
-            }
+    if (-not $listMode -and ($useApps -or $useScripts)) {
+        $logonApps = @()
+        if ($useApps) { $logonApps = $foundLogon.Apps }
+        $logonScripts = @()
+        if ($useScripts) { $logonScripts = $foundLogon.Scripts }
+        $firstLogon = [pscustomobject]@{
+            AppsPath    = $foundLogon.AppsPath
+            Apps        = $logonApps
+            ScriptsPath = $foundLogon.ScriptsPath
+            Scripts     = $logonScripts
         }
     }
 
     Write-Section 'Проверка системы'
     $extraSize = [long]0
     if ($servicePE) { $extraSize = [long](3GB) }
-    $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $UpdatesPath, $DriversPath, $ProfilePath, $FirstLogonPath) | Where-Object { $_ } |
+    $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $ConfigPath, $UpdatesPath, $DriversPath, $ProfilePath) | Where-Object { $_ } |
         ForEach-Object { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($_) }
     $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath `
         -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:($WorkDir -eq $defaultWorkDir) `
@@ -408,7 +425,7 @@ try {
                 Write-Info 'Что сделать:'
                 Write-Info '  1. Скачайте свежий ISO: https://www.microsoft.com/software-download/windows11'
                 if ($req.Build -and $imageInfo.Build -eq $req.Build) {
-                    Write-Info '  2. Или положите последнее накопительное обновление в папку Updates (см. README).'
+                    Write-Info '  2. Или положите последнее накопительное обновление в Config\Updates (см. README).'
                 }
                 Write-Info 'Если вы сознательно собираете образ на другой сборке, запустите скрипт с -SkipVersionCheck.'
                 throw 'Версия Windows в ISO не подходит профилю.'

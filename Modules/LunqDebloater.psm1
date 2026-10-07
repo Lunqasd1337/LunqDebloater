@@ -283,6 +283,75 @@ function Select-LunqCategories {
     }
 }
 
+function New-LunqOption {
+    # Пункт сводки «Что войдёт в образ». Parent: Key пункта, без которого этот не имеет смысла.
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Name,
+        [bool]$Enabled = $true,
+        [bool]$Available = $true,
+        [string[]]$Details = @(),
+        [string]$Parent
+    )
+    return [pscustomobject]@{
+        Key = $Key; Name = $Name; Enabled = $Enabled; Available = $Available
+        Details = @($Details); Parent = $Parent
+    }
+}
+
+function Test-LunqOption {
+    # Включён ли пункт с учётом родителя.
+    param([Parameter(Mandatory)]$Options, [Parameter(Mandatory)][string]$Key)
+    $option = $Options | Where-Object { $_.Key -eq $Key }
+    if (-not $option -or -not $option.Available -or -not $option.Enabled) { return $false }
+    if ($option.Parent) { return (Test-LunqOption -Options $Options -Key $option.Parent) }
+    return $true
+}
+
+function Select-LunqBuildOptions {
+    # Одна сводка вместо отдельных вопросов: всё, что найдено в папке Config, с переключением по номерам.
+    # Пункты, для которых ничего не найдено, показываются с подсказкой и без номера.
+    param([Parameter(Mandatory)]$Options)
+
+    $numbered = @($Options | Where-Object { $_.Available })
+    $numbers = @{}
+    for ($i = 0; $i -lt $numbered.Count; $i++) { $numbers[$numbered[$i].Key] = $i + 1 }
+    while ($true) {
+        Write-Info ''
+        foreach ($option in $Options) {
+            if (-not $option.Available -and $option.Parent) { continue }
+            $indent = if ($option.Parent) { '    ' } else { '' }
+            $on = Test-LunqOption -Options $Options -Key $option.Key
+            if ($option.Available) {
+                Write-Host ('    [{0,2}] ' -f $numbers[$option.Key]) -ForegroundColor Cyan -NoNewline
+            }
+            else { Write-Host '         ' -NoNewline }
+            $mark = if ($on) { '[x]' } else { '[ ]' }
+            $color = if ($on) { 'Green' } else { 'DarkGray' }
+            Write-Host "$indent$mark " -NoNewline -ForegroundColor $color
+            if ($option.Available) { Write-Host $option.Name } else { Write-Host $option.Name -ForegroundColor DarkGray }
+            foreach ($line in $option.Details) { Write-Host "           $indent$line" -ForegroundColor DarkGray }
+        }
+        Write-Info ''
+        if ($numbered.Count -eq 0) { return }
+        $answer = Read-Host '    Номера пунктов, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
+        if (-not $answer -or -not $answer.Trim()) { return }
+        foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
+            $parsed = 0
+            if (-not ([int]::TryParse($token, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $numbered.Count)) {
+                Write-Warning "Номера $token нет в списке."
+                continue
+            }
+            $option = $numbered[$parsed - 1]
+            if ($option.Parent -and -not (Test-LunqOption -Options $Options -Key $option.Parent)) {
+                Write-Warning "Пункт $parsed работает только вместе с пунктом $($numbers[$option.Parent]). Сначала включите его."
+                continue
+            }
+            $option.Enabled = -not $option.Enabled
+        }
+    }
+}
+
 function Get-LunqEffectiveConfig {
     # Собирает включённые категории в общие списки для шагов удаления и реестра.
     # Каждой записи реестра добавляется LunqCategory, чтобы считать итог по категориям.
@@ -557,7 +626,7 @@ function Select-IsoFile {
 }
 
 function Select-LunqProfile {
-    # Показывает профили из папки Profiles и даёт выбрать один.
+    # Показывает профили (*.json) из папки Config и даёт выбрать один, если их несколько.
     param([Parameter(Mandatory)][string]$ProfileDir)
 
     $files = @(Get-ChildItem -LiteralPath $ProfileDir -Filter '*.json' -File | Sort-Object Name)
@@ -1075,22 +1144,23 @@ function Update-LunqSetup {
 }
 
 function Get-LunqFirstLogon {
-    # Что лежит в папке первого входа: программы из Apps.txt и скрипты *.ps1.
-    # Возвращает $null, если папки нет или в ней нечего выполнять.
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $null }
+    # Что выполнится при первом входе: программы из Apps.txt и скрипты *.ps1 из папки Scripts.
+    # Если файла или папки нет, соответствующий список просто пуст.
+    param([Parameter(Mandatory)][string]$AppsPath, [Parameter(Mandatory)][string]$ScriptsPath)
     $apps = @()
-    $appsFile = Join-Path $Path 'Apps.txt'
-    if (Test-Path -LiteralPath $appsFile) {
-        $apps = @(Get-Content -LiteralPath $appsFile -Encoding UTF8 | ForEach-Object { $_.Trim() } |
+    if (Test-Path -LiteralPath $AppsPath -PathType Leaf) {
+        $apps = @(Get-Content -LiteralPath $AppsPath -Encoding UTF8 | ForEach-Object { $_.Trim() } |
                 Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { ($_ -split '\s+')[0] })
     }
-    $scripts = @(Get-ChildItem -LiteralPath $Path -Filter '*.ps1' -File | Where-Object { $_.Extension -eq '.ps1' } | Sort-Object Name)
-    if ($apps.Count -eq 0 -and $scripts.Count -eq 0) { return $null }
+    $scripts = @()
+    if (Test-Path -LiteralPath $ScriptsPath -PathType Container) {
+        $scripts = @(Get-ChildItem -LiteralPath $ScriptsPath -Filter '*.ps1' -File | Where-Object { $_.Extension -eq '.ps1' } | Sort-Object Name)
+    }
     return [pscustomobject]@{
-        Path    = (Resolve-Path -LiteralPath $Path).Path
-        Apps    = $apps
-        Scripts = $scripts
+        AppsPath    = $AppsPath
+        Apps        = $apps
+        ScriptsPath = $ScriptsPath
+        Scripts     = $scripts
     }
 }
 
@@ -1119,9 +1189,15 @@ function Install-LunqFirstLogon {
     $target = Join-Path $MountPath 'Windows\Setup\Scripts\Lunq'
     $userTarget = Join-Path $target 'User'
     New-Item -ItemType Directory -Path $userTarget -Force | Out-Null
-    $skip = @('README.md', 'Apps.example.txt')
-    foreach ($item in @(Get-ChildItem -LiteralPath $FirstLogon.Path -Force | Where-Object { $skip -notcontains $_.Name })) {
-        Copy-Item -LiteralPath $item.FullName -Destination $userTarget -Recurse -Force
+    if ($FirstLogon.Apps.Count -gt 0) {
+        Copy-Item -LiteralPath $FirstLogon.AppsPath -Destination (Join-Path $userTarget 'Apps.txt') -Force
+    }
+    if ($FirstLogon.Scripts.Count -gt 0) {
+        # Вместе со скриптами копируется всё, что лежит рядом с ними: скрипты могут этим пользоваться.
+        $skip = @('.gitkeep', 'README.txt', 'README.md')
+        foreach ($item in @(Get-ChildItem -LiteralPath $FirstLogon.ScriptsPath -Force | Where-Object { $skip -notcontains $_.Name })) {
+            Copy-Item -LiteralPath $item.FullName -Destination $userTarget -Recurse -Force
+        }
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
 
