@@ -204,8 +204,16 @@ function Read-LunqProfile {
     $profileName = Get-ConfigValue $config 'Name'
     if (-not $profileName) { $profileName = [IO.Path]::GetFileNameWithoutExtension($Path) }
 
+    # Requirements: какую сборку Windows ожидает профиль. Все поля необязательны.
+    $requirements = [pscustomobject]@{
+        Build        = [int](Get-ConfigValue $config 'Requirements', 'Build')
+        MinRevision  = [int](Get-ConfigValue $config 'Requirements', 'MinRevision')
+        Architecture = [string](Get-ConfigValue $config 'Requirements', 'Architecture')
+    }
+
     return [pscustomobject]@{
         Name                 = [string]$profileName
+        Requirements         = $requirements
         Description          = [string](Get-ConfigValue $config 'Description')
         Path                 = $Path
         RemoveFeaturePayload = [bool]$removePayload
@@ -327,6 +335,81 @@ function Get-IsoEditions {
     finally {
         Dismount-DiskImage -ImagePath $IsoPath | Out-Null
     }
+}
+
+function Get-IsoImageInfo {
+    # Версия и архитектура выбранной редакции прямо из ISO, без копирования.
+    param(
+        [Parameter(Mandatory)][string]$IsoPath,
+        [Parameter(Mandatory)][int]$Index
+    )
+
+    $root = Mount-IsoImage -IsoPath $IsoPath
+    try {
+        $image = Get-WindowsImage -ImagePath (Get-InstallImagePath -IsoRoot $root) -Index $Index
+    }
+    finally {
+        Dismount-DiskImage -ImagePath $IsoPath | Out-Null
+    }
+
+    $version = [version]$image.Version
+    $architecture = switch ([int]$image.Architecture) {
+        0 { 'x86' }; 5 { 'arm' }; 9 { 'amd64' }; 12 { 'arm64' }; default { "unknown($($image.Architecture))" }
+    }
+    return [pscustomobject]@{
+        Name         = $image.ImageName
+        Version      = $version
+        Build        = $version.Build
+        Revision     = [Math]::Max($version.Revision, 0)
+        Architecture = $architecture
+    }
+}
+
+function Get-WindowsReleaseName {
+    # Привычное название выпуска по номеру сборки. Неизвестная сборка даёт пустую строку.
+    param([int]$Build)
+    $names = @{ 22000 = '21H2'; 22621 = '22H2'; 22631 = '23H2'; 26100 = '24H2'; 26200 = '25H2'; 26300 = '26H2' }
+    if ($names.ContainsKey($Build)) { return "Windows 11 $($names[$Build])" }
+    return ''
+}
+
+function Test-LunqImageRequirements {
+    # Сравнивает сборку и архитектуру образа с Requirements профиля.
+    # Возвращает списки ошибок и предупреждений; решение об остановке принимает вызывающий.
+    param(
+        [Parameter(Mandatory)]$Info,
+        [Parameter(Mandatory)]$Requirements,
+        [switch]$HasCumulativeUpdate
+    )
+
+    $result = [pscustomobject]@{
+        Errors   = New-Object System.Collections.Generic.List[string]
+        Warnings = New-Object System.Collections.Generic.List[string]
+    }
+    $actual = '{0}.{1}' -f $Info.Build, $Info.Revision
+    $release = Get-WindowsReleaseName -Build $Info.Build
+    if ($release) { $actual = "$actual ($release)" }
+
+    if ($Requirements.Architecture -and $Info.Architecture -ne $Requirements.Architecture) {
+        $result.Errors.Add("Архитектура образа $($Info.Architecture), а профиль рассчитан на $($Requirements.Architecture).")
+    }
+
+    if ($Requirements.Build -gt 0 -and $Info.Build -ne $Requirements.Build) {
+        $wanted = [string]$Requirements.Build
+        $wantedRelease = Get-WindowsReleaseName -Build $Requirements.Build
+        if ($wantedRelease) { $wanted = "$wanted ($wantedRelease)" }
+        $result.Errors.Add("Сборка образа $actual, а профиль рассчитан на сборку $wanted. Нужен ISO именно этой версии Windows.")
+    }
+    elseif ($Requirements.MinRevision -gt 0 -and $Info.Revision -lt $Requirements.MinRevision) {
+        $wanted = '{0}.{1}' -f $Info.Build, $Requirements.MinRevision
+        if ($HasCumulativeUpdate) {
+            $result.Warnings.Add("Сборка образа $actual старше $wanted, но накопительное обновление из папки обновлений её поднимет.")
+        }
+        else {
+            $result.Errors.Add("Сборка образа $actual старше, чем нужно профилю: $wanted или новее.")
+        }
+    }
+    return $result
 }
 
 function Copy-IsoContent {
@@ -684,6 +767,12 @@ function Get-LunqUpdateFiles {
         }
     }, Name
     return , @($sorted)
+}
+
+function Test-CumulativeUpdate {
+    # Похоже ли хотя бы одно обновление на накопительное для самой Windows (а не, например, для .NET).
+    param($Files)
+    return [bool](@($Files) | Where-Object { $_.Name -match '(?i)^windows1[01]\.0-kb' })
 }
 
 function Write-UpdateList {

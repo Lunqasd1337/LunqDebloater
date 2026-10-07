@@ -46,6 +46,10 @@
     Они будут встроены в образ до удаления приложений и компонентов.
     В пошаговом режиме скрипт сам предложит обновления из папки Updates рядом с ним.
 
+.PARAMETER SkipVersionCheck
+    Не останавливаться, если сборка или архитектура ISO не совпадает с Requirements профиля.
+    Нужен только тем, кто сознательно собирает образ на другой версии Windows.
+
 .PARAMETER CleanupComponents
     Выполнить очистку хранилища компонентов (StartComponentCleanup /ResetBase).
     Образ станет меньше, но установленные в него обновления нельзя будет удалить.
@@ -80,6 +84,7 @@ param(
     [switch]$SkipComponents,
     [switch]$SkipRegistry,
     [switch]$CleanupComponents,
+    [switch]$SkipVersionCheck,
     [switch]$KeepWorkDir,
     [switch]$Force
 )
@@ -234,6 +239,40 @@ try {
     $selected = Select-LunqEdition -Images $images -Index $Index -Edition $Edition
     $editionName = ($images | Where-Object ImageIndex -eq $selected).ImageName
 
+    Write-Section 'Проверка версии Windows'
+    $imageInfo = Get-IsoImageInfo -IsoPath $IsoPath -Index $selected
+    $buildText = '{0}.{1}' -f $imageInfo.Build, $imageInfo.Revision
+    $release = Get-WindowsReleaseName -Build $imageInfo.Build
+    if ($release) { $buildText = "$buildText ($release)" }
+    $buildText = "$buildText, $($imageInfo.Architecture)"
+    $req = $lunqProfile.Requirements
+    if (-not ($req.Build -or $req.MinRevision -or $req.Architecture)) {
+        Write-Check Ok "Сборка образа: $buildText (профиль не задаёт требований к версии)"
+    }
+    else {
+        $versionCheck = Test-LunqImageRequirements -Info $imageInfo -Requirements $req -HasCumulativeUpdate:(Test-CumulativeUpdate $updates)
+        foreach ($w in $versionCheck.Warnings) { Write-Check Warn $w }
+        if ($versionCheck.Errors.Count -eq 0) {
+            if ($versionCheck.Warnings.Count -eq 0) { Write-Check Ok "Сборка образа: $buildText, подходит профилю" }
+        }
+        else {
+            foreach ($e in $versionCheck.Errors) { Write-Check Fail $e }
+            if ($SkipVersionCheck) {
+                Write-Warning 'Указан -SkipVersionCheck: продолжаю, но часть твиков и имён приложений может не совпасть с этой сборкой.'
+            }
+            else {
+                Write-Info ''
+                Write-Info 'Что сделать:'
+                Write-Info '  1. Скачайте свежий ISO: https://www.microsoft.com/software-download/windows11'
+                if ($req.Build -and $imageInfo.Build -eq $req.Build) {
+                    Write-Info '  2. Или положите последнее накопительное обновление в папку Updates (см. README).'
+                }
+                Write-Info 'Если вы сознательно собираете образ на другой сборке, запустите скрипт с -SkipVersionCheck.'
+                throw 'Версия Windows в ISO не подходит профилю.'
+            }
+        }
+    }
+
     # ---------- План и подтверждение ----------
     Start-Transcript -Path "$OutputIso.log" -Force | Out-Null
     $transcript = $true
@@ -243,6 +282,7 @@ try {
     Write-Section 'План сборки'
     Write-Info "Исходный ISO:     $IsoPath"
     Write-Info "Редакция:         [$selected] $editionName"
+    Write-Info "Сборка:           $buildText"
     Write-Info "Профиль:          $($lunqProfile.Name) ($ProfilePath)"
     if ($updates.Count -gt 0) {
         Write-Info ("Обновления:       {0} шт., {1}" -f $updates.Count, (Format-Size $updatesSize))

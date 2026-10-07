@@ -2,6 +2,12 @@
   "Name": "Default",
   "Description": "Очистка образа: убирает рекламные и редко нужные приложения, телеметрию и ИИ-функции, отключает драйверы и автообновление приложений Store через Windows Update. Не трогает Store, winget, Терминал, Фотографии, Калькулятор и Блокнот.",
 
+  "Requirements": {
+    "Build": 26300,
+    "MinRevision": 9457,
+    "Architecture": "amd64"
+  },
+
   "Options": {
     "RemoveFeaturePayload": false
   },
