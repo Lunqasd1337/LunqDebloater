@@ -76,6 +76,7 @@ function Read-YesNo {
 
 function Format-Size {
     param([double]$Bytes)
+    if ($Bytes -lt 1GB) { return ('{0:N0} МБ' -f ($Bytes / 1MB)) }
     return ('{0:N1} ГБ' -f ($Bytes / 1GB))
 }
 
@@ -374,7 +375,8 @@ function Test-LunqPrerequisites {
         [Parameter(Mandatory)][string]$IsoPath,
         [Parameter(Mandatory)][string]$WorkDir,
         [Parameter(Mandatory)][string]$OutputIso,
-        [string]$OscdimgPath
+        [string]$OscdimgPath,
+        [long]$UpdatesSize = 0
     )
 
     $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
@@ -397,6 +399,8 @@ function Test-LunqPrerequisites {
     # Рабочей папке нужно место под копию ISO, экспорт install.wim и распакованный образ.
     $isoSize = (Get-Item -LiteralPath $IsoPath).Length
     $needWork = [long](25GB)
+    # DISM распаковывает обновления во временную папку, а образ после них растёт.
+    if ($UpdatesSize -gt 0) { $needWork += [long]($UpdatesSize * 3) }
     $needOut = [long]($isoSize + 1GB)
     $workDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($WorkDir)))
     $outDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($OutputIso))
@@ -507,6 +511,54 @@ function Export-SingleEdition {
     Remove-Item -LiteralPath $SourceImage -Force
     if (Test-Path -LiteralPath $DestinationImage) { Remove-Item -LiteralPath $DestinationImage -Force }
     Move-Item -LiteralPath $temp -Destination $DestinationImage
+}
+
+function Get-LunqUpdateFiles {
+    # Находит .msu и .cab в папке и упорядочивает их по номеру KB: более старые
+    # (например, контрольные накопительные обновления) устанавливаются раньше.
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
+    $files = @(Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in '.msu', '.cab' })
+    $sorted = $files | Sort-Object @{ Expression = {
+            if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]::MaxValue }
+        }
+    }, Name
+    return , @($sorted)
+}
+
+function Write-UpdateList {
+    param([Parameter(Mandatory)]$Files)
+    foreach ($file in $Files) {
+        Write-Info ("  {0} ({1})" -f $file.Name, (Format-Size $file.Length))
+    }
+}
+
+function Add-LunqUpdates {
+    # Встраивает обновления в смонтированный образ. Временные файлы DISM кладёт
+    # в рабочую папку, а не в %TEMP%, чтобы не забить системный диск.
+    param(
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)]$Files,
+        [Parameter(Mandatory)][string]$ScratchDir
+    )
+
+    $result = New-LunqResult 'Обновления'
+    New-Item -ItemType Directory -Path $ScratchDir -Force | Out-Null
+    $i = 0
+    foreach ($file in $Files) {
+        $i++
+        Write-Info ("[{0}/{1}] Устанавливаю {2} ({3})..." -f $i, $Files.Count, $file.Name, (Format-Size $file.Length))
+        try {
+            Add-WindowsPackage -Path $MountPath -PackagePath $file.FullName -ScratchDirectory $ScratchDir -NoRestart -ErrorAction Stop | Out-Null
+            $result.Done.Add($file.Name)
+        }
+        catch {
+            Write-Warning "Не удалось установить $($file.Name): $($_.Exception.Message)"
+            $result.Failed.Add($file.Name)
+        }
+    }
+    return $result
 }
 
 function Remove-LunqAppx {

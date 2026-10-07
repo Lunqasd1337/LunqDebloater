@@ -37,6 +37,11 @@
 .PARAMETER OscdimgPath
     Путь к oscdimg.exe, если он не в стандартной папке Windows ADK.
 
+.PARAMETER UpdatesPath
+    Папка с обновлениями (.msu, .cab) из каталога Центра обновления Майкрософт.
+    Они будут встроены в образ до удаления приложений и компонентов.
+    В пошаговом режиме скрипт сам предложит обновления из папки Updates рядом с ним.
+
 .PARAMETER CleanupComponents
     Выполнить очистку хранилища компонентов (StartComponentCleanup /ResetBase).
     Образ станет меньше, но установленные в него обновления нельзя будет удалить.
@@ -47,6 +52,10 @@
 
 .EXAMPLE
     .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro"
+
+.EXAMPLE
+    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -UpdatesPath .\Updates -CleanupComponents
+    Встраивает обновления из папки Updates и затем очищает хранилище компонентов.
 
 .EXAMPLE
     .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Index 6 -ProfilePath .\Profiles\my.json -SkipRegistry
@@ -60,6 +69,7 @@ param(
     [string]$Edition,
     [string]$WorkDir = (Join-Path $env:SystemDrive 'LunqWork'),
     [string]$OscdimgPath,
+    [string]$UpdatesPath,
     [string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
     [switch]$SkipComponents,
@@ -150,8 +160,41 @@ try {
     }
     $config = Read-LunqProfile -Path $ProfilePath
 
+    $updates = @()
+    if ($UpdatesPath) {
+        if (-not (Test-Path -LiteralPath $UpdatesPath -PathType Container)) { throw "Папка с обновлениями не найдена: $UpdatesPath" }
+        $updates = Get-LunqUpdateFiles -Path $UpdatesPath
+        if ($updates.Count -eq 0) { throw "В папке $UpdatesPath нет файлов .msu или .cab." }
+    }
+    elseif ($interactive) {
+        Write-Section 'Обновления'
+        $defaultUpdates = Join-Path $PSScriptRoot 'Updates'
+        $found = Get-LunqUpdateFiles -Path $defaultUpdates
+        if ($found.Count -eq 0) {
+            Write-Info 'Обновления не будут встроены: папка Updates рядом со скриптом пуста.'
+            Write-Info 'Чтобы встроить их, скачайте .msu с catalog.update.microsoft.com, положите'
+            Write-Info 'в папку Updates и запустите скрипт снова. Подробнее в README.'
+        }
+        else {
+            Write-Info 'В папке Updates найдены обновления. Если встроить их в образ, после установки'
+            Write-Info 'Windows сразу будет обновлённой, но сборка займёт заметно дольше.'
+            Write-UpdateList -Files $found
+            if (Read-YesNo 'Встроить эти обновления?') {
+                $updates = $found
+                if (-not $CleanupComponents) {
+                    Write-Info ''
+                    Write-Info 'После обновлений в образе остаются старые версии системных файлов.'
+                    Write-Info 'Очистка уменьшит образ, но удалить встроенные обновления потом будет нельзя.'
+                    $CleanupComponents = [switch](Read-YesNo 'Очистить хранилище компонентов после обновлений?')
+                }
+            }
+        }
+    }
+    $updatesSize = [long]0
+    foreach ($u in $updates) { $updatesSize += $u.Length }
+
     Write-Section 'Проверка системы'
-    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath
+    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath -UpdatesSize $updatesSize
     if ($check.Errors -gt 0) { throw 'Исправьте ошибки, отмеченные [FAIL], и запустите скрипт снова.' }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo 'Есть предупреждения. Всё равно продолжить?')) { return }
 
@@ -184,6 +227,11 @@ try {
     Write-Info "Исходный ISO:     $IsoPath"
     Write-Info "Редакция:         [$selected] $editionName"
     Write-Info "Профиль:          $profileName ($ProfilePath)"
+    if ($updates.Count -gt 0) {
+        Write-Info ("Обновления:       {0} шт., {1}" -f $updates.Count, (Format-Size $updatesSize))
+        Write-UpdateList -Files $updates
+    }
+    else { Write-Info 'Обновления:       не встраиваются' }
     if ($SkipAppx) { Write-Info "Приложения Appx:  $skipped" }
     else { Write-Info "Приложения Appx:  шаблонов на удаление: $($stats.Appx)" }
     if ($SkipComponents) { Write-Info "Компоненты:       $skipped" }
@@ -212,6 +260,7 @@ try {
 
     # ---------- Сборка ----------
     $steps = 7
+    if ($updates.Count -gt 0) { $steps += 1 }
     if (-not $SkipAppx) { $steps += 1 }
     if (-not $SkipComponents) { $steps += 2 }
     if (-not $SkipRegistry) { $steps += 1 }
@@ -241,6 +290,11 @@ try {
     Write-Step 'Монтирование образа' 'Система распаковывается в папку mount, чтобы в ней можно было что-то менять. Это займёт несколько минут.'
     Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir | Out-Null
     $mounted = $true
+
+    if ($updates.Count -gt 0) {
+        Write-Step 'Встраивание обновлений' 'Обновления устанавливаются в образ по порядку номеров KB. Накопительное обновление может ставиться 10-30 минут.'
+        $results += Add-LunqUpdates -MountPath $mountDir -Files $updates -ScratchDir (Join-Path $WorkDir 'scratch')
+    }
 
     if (-not $SkipAppx) {
         Write-Step 'Удаление приложений Appx' 'Удаляются предустановленные приложения из профиля. У новых пользователей они не появятся.'
