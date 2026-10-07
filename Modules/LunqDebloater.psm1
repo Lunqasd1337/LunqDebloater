@@ -599,7 +599,8 @@ function Test-LunqPrerequisites {
         [Parameter(Mandatory)][string]$WorkDir,
         [Parameter(Mandatory)][string]$OutputIso,
         [string]$OscdimgPath,
-        [long]$UpdatesSize = 0
+        [long]$UpdatesSize = 0,
+        [long]$DriversSize = 0
     )
 
     $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
@@ -624,6 +625,7 @@ function Test-LunqPrerequisites {
     $needWork = [long](25GB)
     # DISM распаковывает обновления во временную папку, а образ после них растёт.
     if ($UpdatesSize -gt 0) { $needWork += [long]($UpdatesSize * 3) }
+    if ($DriversSize -gt 0) { $needWork += [long]($DriversSize * 2) }
     $needOut = [long]($isoSize + 1GB)
     $workDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($WorkDir)))
     $outDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($OutputIso))
@@ -691,8 +693,9 @@ function Write-LunqReport {
     Write-Section 'Итог'
     $results = @($Results | Where-Object { $null -ne $_ })
 
-    foreach ($r in @($results | Where-Object { $_.Kind -eq 'Updates' })) {
-        Write-Info ("Обновления: установлено {0}, ошибок {1}" -f $r.Done.Count, $r.Failed.Count)
+    foreach ($r in @($results | Where-Object { $_.Kind -in 'Updates', 'Drivers', 'SetupDrivers' })) {
+        $verb = if ($r.Kind -eq 'Updates') { 'установлено' } else { 'добавлено' }
+        Write-Info ("{0}: {1} {2}, ошибок {3}" -f $r.Title, $verb, $r.Done.Count, $r.Failed.Count)
         if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
     }
 
@@ -702,7 +705,7 @@ function Write-LunqReport {
             $failed = @()
             $missing = @()
             foreach ($r in $results) {
-                if ($r.Kind -eq 'Updates' -or -not $r.Kind) { continue }
+                if ($r.Kind -notin 'Appx', 'Capabilities', 'Features', 'Packages') { continue }
                 $patterns = @($category.($r.Kind))
                 if ($patterns.Count -eq 0) { continue }
                 $done += @($r.Done | Where-Object { Test-NamePattern -Name $_ -Patterns $patterns }).Count
@@ -807,6 +810,75 @@ function Add-LunqUpdates {
         }
     }
     return $result
+}
+
+function Get-LunqDriverFiles {
+    # Все .inf в папке и подпапках: так драйверы обычно лежат после распаковки.
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
+    return , @(Get-ChildItem -LiteralPath $Path -Recurse -File -Filter '*.inf' | Sort-Object FullName)
+}
+
+function Get-FolderSize {
+    param([Parameter(Mandatory)][string]$Path)
+    $sum = [long]0
+    foreach ($f in @(Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue)) { $sum += $f.Length }
+    return $sum
+}
+
+function Add-LunqDrivers {
+    # Добавляет драйверы по одному .inf, чтобы один неподходящий драйвер не срывал остальные.
+    param(
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)]$InfFiles,
+        [Parameter(Mandatory)][string]$Root,
+        [string]$Title = 'Драйверы',
+        [string]$Kind = 'Drivers'
+    )
+
+    $result = New-LunqResult $Title $Kind
+    $rootFull = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\', '/')
+    $i = 0
+    foreach ($inf in $InfFiles) {
+        $i++
+        $relative = $inf.FullName
+        if ($relative.StartsWith($rootFull)) { $relative = $relative.Substring($rootFull.Length).TrimStart('\', '/') }
+        Write-Info ("[{0}/{1}] {2}" -f $i, $InfFiles.Count, $relative)
+        try {
+            Add-WindowsDriver -Path $MountPath -Driver $inf.FullName -ErrorAction Stop | Out-Null
+            $result.Done.Add($relative)
+        }
+        catch {
+            Write-Warning "Не удалось добавить $($relative): $($_.Exception.Message)"
+            $result.Failed.Add($relative)
+        }
+    }
+    return $result
+}
+
+function Add-LunqSetupDrivers {
+    # Добавляет драйверы в boot.wim (образ 2, «Установка Windows»), чтобы установщик
+    # видел диски на контроллерах без встроенного драйвера (Intel RST/VMD, RAID).
+    param(
+        [Parameter(Mandatory)][string]$IsoRoot,
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)]$InfFiles,
+        [Parameter(Mandatory)][string]$Root
+    )
+
+    $bootWim = Join-Path $IsoRoot 'sources\boot.wim'
+    if (-not (Test-Path -LiteralPath $bootWim)) { throw 'В ISO нет sources\boot.wim, драйверы в установщик добавить нельзя.' }
+    New-Item -ItemType Directory -Path $MountPath -Force | Out-Null
+    Mount-WindowsImage -ImagePath $bootWim -Index 2 -Path $MountPath | Out-Null
+    try {
+        $result = Add-LunqDrivers -MountPath $MountPath -InfFiles $InfFiles -Root $Root -Title 'Драйверы в установщике' -Kind 'SetupDrivers'
+        Dismount-WindowsImage -Path $MountPath -Save | Out-Null
+        return $result
+    }
+    catch {
+        Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction SilentlyContinue | Out-Null
+        throw
+    }
 }
 
 function Remove-LunqAppx {
