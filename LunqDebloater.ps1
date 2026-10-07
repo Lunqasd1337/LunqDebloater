@@ -73,6 +73,29 @@ $ErrorActionPreference = 'Stop'
 $interactive = -not $IsoPath
 
 if ($env:OS -ne 'Windows_NT') { throw 'Скрипт работает только в Windows.' }
+
+# В PowerShell 7 часть командлетов модуля DISM (например, Get-AppxProvisionedPackage)
+# падает с ошибкой «Класс не зарегистрирован». Поэтому скрипт всегда работает
+# в Windows PowerShell 5.1 и при запуске из PowerShell 7 перезапускает себя в нём.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    $winPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $winPowerShell)) {
+        throw 'Не найден Windows PowerShell 5.1, а в PowerShell 7 модуль DISM работает с ошибками.'
+    }
+    Write-Host 'Модуль DISM надёжно работает только в Windows PowerShell 5.1, перезапускаю скрипт в нём...' -ForegroundColor Yellow
+    $forward = @()
+    foreach ($param in $PSBoundParameters.GetEnumerator()) {
+        if ($param.Value -is [switch]) {
+            if ($param.Value) { $forward += "-$($param.Key)" }
+        }
+        else {
+            $forward += "-$($param.Key)"
+            $forward += [string]$param.Value
+        }
+    }
+    & $winPowerShell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath @forward
+    exit $LASTEXITCODE
+}
 Import-Module Dism
 Import-Module (Join-Path $PSScriptRoot 'Modules\LunqDebloater.psm1') -Force -DisableNameChecking
 

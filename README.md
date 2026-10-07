@@ -10,7 +10,7 @@ PowerShell-скрипт для преднастройки ISO-образа Windo
 
 ## Требования
 
-- Windows 10/11, PowerShell 5.1 (встроен в Windows) или 7.
+- Windows 10/11 и Windows PowerShell 5.1 (встроен в Windows). Если запустить скрипт из PowerShell 7, он сам перезапустится в 5.1: в PowerShell 7 командлеты DISM для Appx падают с ошибкой «Класс не зарегистрирован».
 - [Windows ADK](https://learn.microsoft.com/windows-hardware/get-started/adk-install), компонент **Deployment Tools** (нужен только `oscdimg.exe`).
 - Около 25 ГБ свободного места на NTFS-диске для рабочей папки (по умолчанию `C:\LunqWork`).
 - Оригинальный ISO Windows 11.
