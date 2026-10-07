@@ -36,7 +36,9 @@
     скрипт покажет список с пояснениями и спросит.
 
 .PARAMETER WorkDir
-    Рабочая папка (нужно около 25 ГБ свободного места на NTFS-диске).
+    Рабочая папка (нужно около 25 ГБ свободного места на NTFS-диске). Скрипт полностью
+    очищает её, поэтому принимает только новую или пустую папку либо папку, которую
+    сам создал раньше. Корень диска и папка с исходным ISO не подойдут.
 
 .PARAMETER OscdimgPath
     Путь к oscdimg.exe, если он не в стандартной папке Windows ADK.
@@ -138,12 +140,26 @@ if (-not (Test-Administrator)) {
     if (-not $interactive) { throw 'Запустите PowerShell от имени администратора: DISM работает только с правами администратора.' }
     Write-Host ''
     Write-Host 'Для работы с образом через DISM нужны права администратора.' -ForegroundColor Yellow
+    $elevated = $false
     if (Read-YesNo 'Перезапустить скрипт от имени администратора?') {
         $shell = (Get-Process -Id $PID).Path
-        Start-Process -FilePath $shell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+        try {
+            Start-Process -FilePath $shell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+            $elevated = $true
+        }
+        catch { Write-Warning 'Права администратора не выданы (в окне UAC нажата «Нет»?).' }
+    }
+    if (-not $elevated) {
+        Write-Info 'Без прав администратора собрать образ нельзя. Запустите скрипт снова и разрешите запуск.'
+        Read-Host 'Нажмите Enter, чтобы закрыть окно' | Out-Null
     }
     return
 }
+
+# Относительные пути считаются от текущей папки PowerShell. [IO.Path]::GetFullPath
+# для этого не годится: он берёт рабочую папку процесса, а она не меняется после cd.
+$defaultWorkDir = Join-Path $env:SystemDrive 'LunqWork'
+$WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorkDir).TrimEnd('\')
 
 $mounted = $false
 $bootMountDir = Join-Path $WorkDir 'bootmount'
@@ -173,7 +189,7 @@ try {
     if (-not $OutputIso) {
         $OutputIso = Join-Path (Split-Path $IsoPath -Parent) ('{0}_Lunq.iso' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath))
     }
-    $OutputIso = [IO.Path]::GetFullPath($OutputIso)
+    $OutputIso = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputIso)
 
     if (-not $ProfilePath) {
         if ($interactive) {
@@ -269,7 +285,10 @@ try {
     if ($drivers.Count -eq 0) { $DriversToSetup = [switch]$false }
 
     Write-Section 'Проверка системы'
-    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath -UpdatesSize $updatesSize -DriversSize $driversSize
+    $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $UpdatesPath, $DriversPath, $ProfilePath) | Where-Object { $_ } |
+        ForEach-Object { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($_) }
+    $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath `
+        -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:($WorkDir -eq $defaultWorkDir)
     if ($check.Errors -gt 0) { throw 'Исправьте ошибки, отмеченные [FAIL], и запустите скрипт снова.' }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo 'Есть предупреждения. Всё равно продолжить?')) { return }
 
@@ -384,11 +403,12 @@ try {
     $registry = $null
 
     Write-Step 'Подготовка рабочей папки' "Очищаю следы прошлого запуска и создаю $WorkDir."
-    if (Get-WindowsImage -Mounted | Where-Object { $_.Path -eq $mountDir }) {
-        Write-Info 'Найден оставшийся смонтированный образ, отключаю без сохранения.'
-        Dismount-WindowsImage -Path $mountDir -Discard | Out-Null
+    foreach ($leftover in (Get-LunqMountedPaths -Paths $mountDir, $bootMountDir)) {
+        Write-Info "Найден оставшийся смонтированный образ в $leftover, отключаю без сохранения."
+        Dismount-WindowsImage -Path $leftover -Discard | Out-Null
     }
     if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
+    Initialize-LunqWorkDir -WorkDir $WorkDir
     New-Item -ItemType Directory -Path $mountDir -Force | Out-Null
 
     Write-Step 'Копирование файлов ISO' 'Файлы установщика копируются во временную папку. Исходный ISO не изменяется.'
@@ -462,13 +482,16 @@ catch {
     if ($mounted) {
         Write-Info 'Отключаю образ без сохранения изменений...'
         Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
-        $mounted = [bool](Get-WindowsImage -Mounted | Where-Object { $_.Path -eq $mountDir })
+        $mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
     }
     if ($transcript) { Write-Info "Подробности в логе: $OutputIso.log" }
     if (-not $interactive) { throw }
 }
 finally {
-    if (-not $mounted -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
+    # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
+    $stillMounted = $mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $mountDir, $bootMountDir).Count -gt 0)
+    if ($stillMounted) { Write-Info "Рабочая папка $WorkDir оставлена: в ней смонтирован образ. Его отключит следующий запуск скрипта." }
+    elseif (-not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($transcript) { Stop-Transcript | Out-Null }

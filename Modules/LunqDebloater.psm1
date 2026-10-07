@@ -591,6 +591,58 @@ function Select-LunqProfile {
     }
 }
 
+function Test-PathInside {
+    # $true, если путь совпадает с папкой или лежит внутри неё.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Folder)
+    $sep = [IO.Path]::DirectorySeparatorChar
+    $p = $Path.TrimEnd('\', '/') + $sep
+    $f = $Folder.TrimEnd('\', '/') + $sep
+    return $p.StartsWith($f, [StringComparison]::OrdinalIgnoreCase)
+}
+
+$script:WorkDirMarker = '.lunqdebloater'
+
+function Test-LunqWorkDir {
+    # Рабочая папка удаляется целиком, поэтому годится только новая, пустая или уже
+    # созданная скриптом (с файлом-меткой) папка. Возвращает текст проблемы или $null.
+    param(
+        [Parameter(Mandatory)][string]$WorkDir,
+        [string[]]$ProtectedPaths = @(),
+        [switch]$IsDefault
+    )
+
+    if ($WorkDir.TrimEnd('\', '/') -eq ([IO.Path]::GetPathRoot($WorkDir)).TrimEnd('\', '/')) {
+        return 'это корень диска'
+    }
+    foreach ($path in $ProtectedPaths) {
+        if ($path -and (Test-PathInside -Path $path -Folder $WorkDir)) {
+            return "внутри неё лежит $path, он был бы удалён"
+        }
+    }
+    if ((Test-Path -LiteralPath $WorkDir -PathType Leaf)) { return 'это файл, а не папка' }
+    if ((Test-Path -LiteralPath $WorkDir) -and -not $IsDefault -and -not (Test-Path -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker))) {
+        if (@(Get-ChildItem -LiteralPath $WorkDir -Force).Count -gt 0) {
+            return 'папка не пустая и создана не этим скриптом'
+        }
+    }
+    return $null
+}
+
+function Initialize-LunqWorkDir {
+    # Создаёт рабочую папку с файлом-меткой, по которой скрипт узнаёт свою папку.
+    param([Parameter(Mandatory)][string]$WorkDir)
+    New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value 'Рабочая папка LunqDebloater. Удаляется после сборки.' -Encoding UTF8
+}
+
+function Get-LunqMountedPaths {
+    # Какие из указанных папок сейчас заняты смонтированным образом DISM.
+    param([string[]]$Paths)
+    try { $mountedImages = @(Get-WindowsImage -Mounted -ErrorAction Stop) }
+    catch { return , @() }
+    return , @($mountedImages | Where-Object { $Paths -contains $_.Path } | ForEach-Object { $_.Path })
+}
+
 function Test-LunqPrerequisites {
     # Проверяет всё, что нужно для сборки, до начала долгой работы.
     # Возвращает путь к oscdimg, ошибки и предупреждения.
@@ -600,10 +652,18 @@ function Test-LunqPrerequisites {
         [Parameter(Mandatory)][string]$OutputIso,
         [string]$OscdimgPath,
         [long]$UpdatesSize = 0,
-        [long]$DriversSize = 0
+        [long]$DriversSize = 0,
+        [string[]]$ProtectedPaths = @(),
+        [switch]$DefaultWorkDir
     )
 
     $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
+
+    $workDirProblem = Test-LunqWorkDir -WorkDir $WorkDir -ProtectedPaths $ProtectedPaths -IsDefault:$DefaultWorkDir
+    if ($workDirProblem) {
+        Write-Check Fail "Рабочая папка $($WorkDir): $workDirProblem" 'Скрипт полностью очищает рабочую папку. Укажите через -WorkDir новую или пустую папку, например D:\LunqWork.'
+        $result.Errors++
+    }
 
     if (Test-Administrator) { Write-Check Ok 'Права администратора' }
     else {
@@ -627,15 +687,26 @@ function Test-LunqPrerequisites {
     if ($UpdatesSize -gt 0) { $needWork += [long]($UpdatesSize * 3) }
     if ($DriversSize -gt 0) { $needWork += [long]($DriversSize * 2) }
     $needOut = [long]($isoSize + 1GB)
-    $workDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($WorkDir)))
-    $outDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($OutputIso))
+    if ($WorkDir.StartsWith('\\')) {
+        Write-Check Fail "Рабочая папка $WorkDir на сетевом диске" 'DISM монтирует образ только на локальном NTFS-диске. Укажите другую папку через -WorkDir.'
+        $result.Errors++
+        return $result
+    }
+    $workDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($WorkDir))
+    $outDrive = $null
+    if ($OutputIso.StartsWith('\\')) {
+        Write-Info "Итоговый ISO будет сохранён в сетевую папку, свободное место там не проверяется."
+    }
+    else {
+        $outDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($OutputIso))
+    }
 
     if ($workDrive.DriveFormat -ne 'NTFS') {
         Write-Check Fail "Диск $($workDrive.Name) для рабочей папки не NTFS ($($workDrive.DriveFormat))" 'DISM монтирует образ только на NTFS. Укажите другую папку через -WorkDir.'
         $result.Errors++
     }
 
-    if ($workDrive.Name -eq $outDrive.Name) { $needWork += $needOut }
+    if ($outDrive -and $workDrive.Name -eq $outDrive.Name) { $needWork += $needOut }
     if ($workDrive.AvailableFreeSpace -ge $needWork) {
         Write-Check Ok ("Место на {0} для рабочей папки: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork))
     }
@@ -643,7 +714,7 @@ function Test-LunqPrerequisites {
         Write-Check Warn ("Мало места на {0}: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork)) 'Освободите место или укажите папку на другом диске через -WorkDir.'
         $result.Warnings++
     }
-    if ($workDrive.Name -ne $outDrive.Name) {
+    if ($outDrive -and $workDrive.Name -ne $outDrive.Name) {
         if ($outDrive.AvailableFreeSpace -ge $needOut) {
             Write-Check Ok ("Место на {0} для итогового ISO: свободно {1}" -f $outDrive.Name, (Format-Size $outDrive.AvailableFreeSpace))
         }
@@ -816,7 +887,11 @@ function Get-LunqDriverFiles {
     # Все .inf в папке и подпапках: так драйверы обычно лежат после распаковки.
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
-    return , @(Get-ChildItem -LiteralPath $Path -Recurse -File -Filter '*.inf' | Sort-Object FullName)
+    # -Filter в Windows находит и *.inf_loc (из-за коротких имён 8.3), поэтому расширение проверяется явно.
+    # autorun.inf к драйверам не относится, хотя часто лежит рядом с ними.
+    return , @(Get-ChildItem -LiteralPath $Path -Recurse -File -Filter '*.inf' |
+            Where-Object { $_.Extension -eq '.inf' -and $_.Name -ne 'autorun.inf' } |
+            Sort-Object FullName)
 }
 
 function Get-FolderSize {
@@ -1044,7 +1119,10 @@ function Invoke-RegistryEntry {
 
     $validTypes = 'REG_SZ', 'REG_EXPAND_SZ', 'REG_MULTI_SZ', 'REG_DWORD', 'REG_QWORD', 'REG_BINARY'
     $key = '{0}\{1}' -f $script:HiveMap[[string]$Entry.Hive].Key, $Entry.Path
-    $name = Get-ConfigValue $Entry 'Name'
+    $name = [string](Get-ConfigValue $Entry 'Name')
+    # Без Name запись относится к значению «по умолчанию» (ключ /ve у reg.exe).
+    $valueArgs = if ($name) { @('/v', $name) } else { @('/ve') }
+    if (-not $name) { $name = '(по умолчанию)' }
     $action = Get-ConfigValue $Entry 'Action'
     if (-not $action) { $action = 'Set' }
 
@@ -1055,15 +1133,15 @@ function Invoke-RegistryEntry {
                 Write-Warning "Пропуск ${key}\${name}: неизвестный тип '$type'"
                 return 'Failed'
             }
-            $arguments = @('add', $key, '/v', $name, '/t', $type, '/f')
+            $arguments = @('add', $key) + $valueArgs + @('/t', $type, '/f')
             $data = ConvertTo-RegData -Type $type -Value (Get-ConfigValue $Entry 'Value')
             # Пустую строку reg.exe получает, если /d не передан вовсе.
             if ($data -ne '') { $arguments += @('/d', $data) }
             $code = Invoke-Native reg.exe $arguments
         }
         'DeleteValue' {
-            if ((Invoke-Native reg.exe @('query', $key, '/v', $name)) -ne 0) { return 'Skipped' }
-            $code = Invoke-Native reg.exe @('delete', $key, '/v', $name, '/f')
+            if ((Invoke-Native reg.exe (@('query', $key) + $valueArgs)) -ne 0) { return 'Skipped' }
+            $code = Invoke-Native reg.exe (@('delete', $key) + $valueArgs + @('/f'))
         }
         'DeleteKey' {
             if ((Invoke-Native reg.exe @('query', $key)) -ne 0) { return 'Skipped' }

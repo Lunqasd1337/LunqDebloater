@@ -47,7 +47,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-ProfilePath` | Свой JSON-профиль вместо `Profiles\default.json` |
 | `-SkipCategory` | Id категорий профиля, которые нужно пропустить, через запятую |
 | `-Index` / `-Edition` | Редакция по номеру или имени |
-| `-WorkDir` | Рабочая папка |
+| `-WorkDir` | Рабочая папка. Скрипт очищает её целиком, поэтому подойдёт только новая или пустая папка (или созданная им раньше), но не корень диска и не папка с ISO |
 | `-OscdimgPath` | Путь к `oscdimg.exe`, если ADK стоит не в стандартной папке |
 | `-UpdatesPath` | Папка с обновлениями `.msu`/`.cab` для встраивания в образ |
 | `-DriversPath` | Папка с драйверами (`.inf`, можно в подпапках) для встраивания в образ |
@@ -149,6 +149,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 Записи реестра:
 
 - `Hive`: `SOFTWARE` (HKLM\SOFTWARE), `SYSTEM` (HKLM\SYSTEM, используйте `ControlSet001` вместо `CurrentControlSet`) или `DefaultUser` (HKCU для всех новых пользователей).
+- `Name`: имя значения. Если не указать, запись относится к значению «по умолчанию» у ключа.
 - `Action`: `Set` (по умолчанию), `DeleteValue` или `DeleteKey`.
 - `Type`: `REG_DWORD`, `REG_QWORD`, `REG_SZ`, `REG_EXPAND_SZ`, `REG_MULTI_SZ` (массив строк), `REG_BINARY` (hex-строка).
 - `Description` необязателен и нужен для будущего GUI.
