@@ -22,7 +22,7 @@ PowerShell-скрипт для преднастройки ISO-образа Windo
 
 1. Скачайте репозиторий (Code → Download ZIP) и распакуйте его.
 2. Дважды щёлкните `Start.cmd`. Скрипт попросит права администратора.
-3. Дальше он всё спросит сам: выберите ISO в окне, затем профиль и редакцию (у каждой редакции есть короткое пояснение).
+3. Дальше он всё спросит сам: выберите ISO в окне, затем профиль, категории твиков и редакцию (у каждой редакции есть короткое пояснение).
 4. Проверьте план сборки и подтвердите. Сборка обычно занимает 15-40 минут, в окне видно «Шаг N из M» с пояснением, что происходит.
 5. В конце скрипт покажет итог: что удалено, чего не нашлось в образе, где лежит готовый ISO.
 
@@ -44,6 +44,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-IsoPath` | Исходный ISO. Без него включается пошаговый режим |
 | `-OutputIso` | Путь к итоговому ISO |
 | `-ProfilePath` | Свой JSON-профиль вместо `Profiles\default.json` |
+| `-SkipCategory` | Id категорий профиля, которые нужно пропустить, через запятую |
 | `-Index` / `-Edition` | Редакция по номеру или имени |
 | `-WorkDir` | Рабочая папка |
 | `-OscdimgPath` | Путь к `oscdimg.exe`, если ADK стоит не в стандартной папке |
@@ -72,21 +73,52 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 
 ## Профиль
 
-Всё, что удаляется и меняется, описано в `Profiles\default.json`. Скопируйте его и правьте под себя.
+Всё, что удаляется и меняется, описано в `Profiles\default.json`. Скопируйте его и правьте под себя. Профиль состоит из категорий: в каждой собрано всё, что относится к одной теме (приложения, компоненты, функции и реестр), и её можно целиком включить или выключить.
 
 ```jsonc
 {
-  "Appx":         { "Remove":  ["Microsoft.BingNews", "Microsoft.Xbox*"] },  // DisplayName, можно с *
-  "Capabilities": { "Remove":  ["Browser.InternetExplorer*"] },               // Get-WindowsCapability
-  "Features":     { "Disable": ["Recall"], "RemovePayload": false },          // Get-WindowsOptionalFeature
-  "Packages":     { "Remove":  [] },                                          // CBS-пакеты, осторожно
-  "Registry": [
-    { "Hive": "SOFTWARE",    "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "AllowTelemetry", "Type": "REG_DWORD", "Value": 0 },
-    { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
-    { "Hive": "SOFTWARE",    "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey" }
+  "Name": "Default",
+  "Description": "Что делает профиль",
+  "Options": { "RemoveFeaturePayload": false },   // удалять ли файлы отключённых функций
+  "Categories": [
+    {
+      "Id": "ai",                                 // короткое имя для -SkipCategory
+      "Name": "Copilot и ИИ",
+      "Enabled": true,                            // false: категория пропускается
+      "Description": "Что делает категория",
+      "Appx":         ["Microsoft.Copilot"],      // DisplayName, можно с *
+      "Capabilities": [],                         // Get-WindowsCapability, можно с *
+      "Features":     ["Recall"],                 // Get-WindowsOptionalFeature
+      "Packages":     [],                         // CBS-пакеты, осторожно
+      "Registry": [
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1 },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey" }
+      ]
+    }
   ]
 }
 ```
+
+Пустые списки в категории можно не писать. Профиль старого формата (с `Appx`, `Registry` и т.д. на верхнем уровне, без `Categories`) тоже работает: он считается одной категорией.
+
+Категории в `default.json`:
+
+| Id | Категория |
+|---|---|
+| `apps` | Встроенные приложения |
+| `legacy` | Устаревшие компоненты |
+| `telemetry` | Телеметрия и диагностика |
+| `ai` | Copilot и ИИ |
+| `ads` | Реклама и предложения |
+| `search` | Поиск и Bing |
+| `store` | Microsoft Store |
+| `drivers` | Драйверы из Windows Update |
+| `onedrive` | OneDrive |
+
+Пропустить категории без правки профиля: `-SkipCategory drivers,store`. В пошаговом режиме скрипт показывает список категорий, и их можно включать и выключать по номерам.
+
+Записи реестра:
 
 - `Hive`: `SOFTWARE` (HKLM\SOFTWARE), `SYSTEM` (HKLM\SYSTEM, используйте `ControlSet001` вместо `CurrentControlSet`) или `DefaultUser` (HKCU для всех новых пользователей).
 - `Action`: `Set` (по умолчанию), `DeleteValue` или `DeleteKey`.
@@ -101,6 +133,6 @@ Get-WindowsCapability     -Path C:\LunqWork\mount | Where State -eq Installed | 
 Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | Select FeatureName
 ```
 
-Профиль по умолчанию отключает загрузку драйверов из Windows Update. Если в системе нет встроенного драйвера сетевой карты или Wi-Fi, после установки его придётся поставить вручную. Чтобы оставить драйверы из Windows Update, удалите из профиля записи с путями `DriverSearching`, `Device Metadata` и `ExcludeWUDriversInQualityUpdate`.
+Категория `drivers` отключает загрузку драйверов из Windows Update. Если в системе нет встроенного драйвера сетевой карты или Wi-Fi, после установки его придётся поставить вручную. Чтобы оставить драйверы из Windows Update, пропустите её: `-SkipCategory drivers`.
 
-Профиль по умолчанию не трогает Microsoft Store, App Installer (winget), Терминал, Фотографии, Калькулятор, Блокнот, Paint и Безопасность Windows. Список `Packages` пуст намеренно: удаление CBS-пакетов может сломать установку обновлений.
+Профиль по умолчанию не трогает Microsoft Store, App Installer (winget), Терминал, Фотографии, Калькулятор, Блокнот, Paint и Безопасность Windows. Списки `Packages` пусты намеренно: удаление CBS-пакетов может сломать установку обновлений.

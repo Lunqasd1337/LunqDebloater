@@ -24,6 +24,10 @@
 .PARAMETER ProfilePath
     JSON-профиль. По умолчанию Profiles\default.json рядом со скриптом.
 
+.PARAMETER SkipCategory
+    Id категорий профиля, которые нужно пропустить, через запятую: -SkipCategory drivers,store.
+    Список Id показывается в плане сборки и в пошаговом режиме.
+
 .PARAMETER Index
     Индекс редакции в install.wim / install.esd.
 
@@ -65,6 +69,7 @@ param(
     [string]$IsoPath,
     [string]$OutputIso,
     [string]$ProfilePath,
+    [string[]]$SkipCategory,
     [int]$Index = 0,
     [string]$Edition,
     [string]$WorkDir = (Join-Path $env:SystemDrive 'LunqWork'),
@@ -97,6 +102,10 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
     foreach ($param in $PSBoundParameters.GetEnumerator()) {
         if ($param.Value -is [switch]) {
             if ($param.Value) { $forward += "-$($param.Key)" }
+        }
+        elseif ($param.Value -is [array]) {
+            $forward += "-$($param.Key)"
+            $forward += ($param.Value -join ',')
         }
         else {
             $forward += "-$($param.Key)"
@@ -158,7 +167,18 @@ try {
             $ProfilePath = Join-Path $PSScriptRoot 'Profiles\default.json'
         }
     }
-    $config = Read-LunqProfile -Path $ProfilePath
+    $lunqProfile = Read-LunqProfile -Path $ProfilePath
+    # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
+    $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
+    if ($interactive) {
+        Write-Section 'Выбор категорий'
+        Select-LunqCategories -LunqProfile $lunqProfile
+    }
+    if (-not ($lunqProfile.Categories | Where-Object { $_.Enabled })) {
+        Write-Warning 'Все категории профиля выключены: образ будет собран без удалений и твиков.'
+    }
+    $config = Get-LunqEffectiveConfig -LunqProfile $lunqProfile
 
     $updates = @()
     if ($UpdatesPath) {
@@ -218,29 +238,24 @@ try {
     Start-Transcript -Path "$OutputIso.log" -Force | Out-Null
     $transcript = $true
 
-    $stats = Get-ProfileStats -Config $config
-    $profileName = Get-ConfigValue $config 'Name'
-    if (-not $profileName) { $profileName = [IO.Path]::GetFileNameWithoutExtension($ProfilePath) }
     $skipped = 'пропущено (указан ключ -Skip)'
 
     Write-Section 'План сборки'
     Write-Info "Исходный ISO:     $IsoPath"
     Write-Info "Редакция:         [$selected] $editionName"
-    Write-Info "Профиль:          $profileName ($ProfilePath)"
+    Write-Info "Профиль:          $($lunqProfile.Name) ($ProfilePath)"
     if ($updates.Count -gt 0) {
         Write-Info ("Обновления:       {0} шт., {1}" -f $updates.Count, (Format-Size $updatesSize))
         Write-UpdateList -Files $updates
     }
     else { Write-Info 'Обновления:       не встраиваются' }
+    $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
+    Write-Info ("Категории:        включено {0} из {1}" -f $enabledCount, $lunqProfile.Categories.Count)
+    Write-CategoryList -LunqProfile $lunqProfile
     if ($SkipAppx) { Write-Info "Приложения Appx:  $skipped" }
-    else { Write-Info "Приложения Appx:  шаблонов на удаление: $($stats.Appx)" }
     if ($SkipComponents) { Write-Info "Компоненты:       $skipped" }
-    else {
-        Write-Info "Компоненты:       удалить: $($stats.Capabilities), отключить функций: $($stats.Features)"
-        if ($stats.Packages -gt 0) { Write-Info "Системные пакеты: шаблонов на удаление: $($stats.Packages) (может помешать обновлениям)" }
-    }
+    elseif ($config.Packages.Remove.Count -gt 0) { Write-Warning 'Профиль удаляет системные пакеты: это может помешать установке обновлений.' }
     if ($SkipRegistry) { Write-Info "Реестр:           $skipped" }
-    else { Write-Info "Реестр:           изменений: $($stats.Registry)" }
     if ($CleanupComponents) { Write-Info 'Очистка WinSxS:   да (/ResetBase)' }
     Write-Info "Итоговый ISO:     $OutputIso"
     Write-Info "Рабочая папка:    $WorkDir (удаляется после сборки)"
@@ -330,7 +345,7 @@ try {
     Write-Step 'Сборка ISO' 'oscdimg собирает загрузочный ISO для BIOS и UEFI.'
     New-BootableIso -IsoRoot $isoDir -OutputPath $OutputIso -Oscdimg $check.Oscdimg -Label $Label
 
-    Write-LunqReport -Results $results -Registry $registry -OutputIso $OutputIso -Elapsed ((Get-Date) - $started)
+    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started)
 }
 catch {
     Write-Host ''

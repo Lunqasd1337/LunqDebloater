@@ -137,6 +137,8 @@ function Get-ConfigList {
 }
 
 function Read-LunqProfile {
+    # Читает профиль и приводит его к списку категорий. Профиль старого формата
+    # (без Categories) превращается в одну категорию «Профиль».
     param([Parameter(Mandatory)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -145,16 +147,156 @@ function Read-LunqProfile {
     $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     $config = $json | ConvertFrom-Json
 
-    foreach ($entry in (Get-ConfigList $config 'Registry')) {
-        $hive = [string](Get-ConfigValue $entry 'Hive')
-        if (-not $script:HiveMap.Contains($hive)) {
-            throw "Неизвестный куст '$hive' в профиле. Допустимо: $($script:HiveMap.Keys -join ', ')"
-        }
-        if (-not (Get-ConfigValue $entry 'Path')) {
-            throw "У записи реестра для куста $hive не указан Path."
+    $categories = New-Object System.Collections.Generic.List[object]
+    $rawCategories = Get-ConfigValue $config 'Categories'
+    if ($null -ne $rawCategories) {
+        foreach ($raw in @($rawCategories)) {
+            $id = [string](Get-ConfigValue $raw 'Id')
+            if (-not $id) { throw "В профиле $Path у одной из категорий не указан Id." }
+            if ($categories | Where-Object { $_.Id -eq $id }) { throw "В профиле $Path Id категории '$id' повторяется." }
+            $name = Get-ConfigValue $raw 'Name'
+            if (-not $name) { $name = $id }
+            $enabled = Get-ConfigValue $raw 'Enabled'
+            if ($null -eq $enabled) { $enabled = $true }
+            $categories.Add([pscustomobject]@{
+                    Id           = $id
+                    Name         = [string]$name
+                    Description  = [string](Get-ConfigValue $raw 'Description')
+                    Enabled      = [bool]$enabled
+                    Appx         = Get-ConfigList $raw 'Appx'
+                    Capabilities = Get-ConfigList $raw 'Capabilities'
+                    Features     = Get-ConfigList $raw 'Features'
+                    Packages     = Get-ConfigList $raw 'Packages'
+                    Registry     = Get-ConfigList $raw 'Registry'
+                })
         }
     }
-    return $config
+    else {
+        $categories.Add([pscustomobject]@{
+                Id           = 'profile'
+                Name         = 'Профиль'
+                Description  = ''
+                Enabled      = $true
+                Appx         = Get-ConfigList $config 'Appx', 'Remove'
+                Capabilities = Get-ConfigList $config 'Capabilities', 'Remove'
+                Features     = Get-ConfigList $config 'Features', 'Disable'
+                Packages     = Get-ConfigList $config 'Packages', 'Remove'
+                Registry     = Get-ConfigList $config 'Registry'
+            })
+    }
+
+    foreach ($category in $categories) {
+        foreach ($entry in $category.Registry) {
+            $hive = [string](Get-ConfigValue $entry 'Hive')
+            if (-not $script:HiveMap.Contains($hive)) {
+                throw "Неизвестный куст '$hive' в категории '$($category.Name)'. Допустимо: $($script:HiveMap.Keys -join ', ')"
+            }
+            if (-not (Get-ConfigValue $entry 'Path')) {
+                throw "У записи реестра для куста $hive в категории '$($category.Name)' не указан Path."
+            }
+        }
+    }
+
+    # RemoveFeaturePayload в Options; в старом формате он лежал в Features.RemovePayload.
+    $removePayload = Get-ConfigValue $config 'Options', 'RemoveFeaturePayload'
+    if ($null -eq $removePayload) { $removePayload = Get-ConfigValue $config 'Features', 'RemovePayload' }
+
+    $profileName = Get-ConfigValue $config 'Name'
+    if (-not $profileName) { $profileName = [IO.Path]::GetFileNameWithoutExtension($Path) }
+
+    return [pscustomobject]@{
+        Name                 = [string]$profileName
+        Description          = [string](Get-ConfigValue $config 'Description')
+        Path                 = $Path
+        RemoveFeaturePayload = [bool]$removePayload
+        Categories           = $categories.ToArray()
+    }
+}
+
+function Get-CategoryCounts {
+    param([Parameter(Mandatory)]$Category)
+    $parts = @()
+    if ($Category.Appx.Count) { $parts += "приложений: $($Category.Appx.Count)" }
+    if ($Category.Capabilities.Count) { $parts += "компонентов: $($Category.Capabilities.Count)" }
+    if ($Category.Features.Count) { $parts += "функций: $($Category.Features.Count)" }
+    if ($Category.Packages.Count) { $parts += "пакетов: $($Category.Packages.Count)" }
+    if ($Category.Registry.Count) { $parts += "реестр: $($Category.Registry.Count)" }
+    return ($parts -join ', ')
+}
+
+function Write-CategoryList {
+    param([Parameter(Mandatory)]$LunqProfile, [switch]$Numbered)
+    $i = 0
+    foreach ($category in $LunqProfile.Categories) {
+        $i++
+        $mark = if ($category.Enabled) { '[x]' } else { '[ ]' }
+        $color = if ($category.Enabled) { 'Green' } else { 'DarkGray' }
+        $prefix = if ($Numbered) { '    [{0,2}] ' -f $i } else { '    ' }
+        Write-Host $prefix -NoNewline -ForegroundColor Cyan
+        Write-Host "$mark " -NoNewline -ForegroundColor $color
+        Write-Host $category.Name -NoNewline
+        Write-Host ("  ({0}; id: {1})" -f (Get-CategoryCounts $category), $category.Id) -ForegroundColor DarkGray
+        if ($Numbered -and $category.Description) { Write-Host "           $($category.Description)" -ForegroundColor DarkGray }
+    }
+}
+
+function Disable-LunqCategories {
+    # Выключает категории по Id (для параметра -SkipCategory).
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
+    foreach ($id in $Ids) {
+        $category = $LunqProfile.Categories | Where-Object { $_.Id -eq $id }
+        if (-not $category) {
+            $known = ($LunqProfile.Categories | ForEach-Object { $_.Id }) -join ', '
+            throw "Категории '$id' нет в профиле. Доступные Id: $known"
+        }
+        $category.Enabled = $false
+    }
+}
+
+function Select-LunqCategories {
+    # Даёт включить или выключить категории по номерам, пока пользователь не нажмёт Enter.
+    param([Parameter(Mandatory)]$LunqProfile)
+
+    Write-Info 'Категории профиля. [x] будет применена, [ ] пропущена.'
+    while ($true) {
+        Write-Info ''
+        Write-CategoryList -LunqProfile $LunqProfile -Numbered
+        Write-Info ''
+        $answer = Read-Host '    Номера категорий, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
+        if (-not $answer -or -not $answer.Trim()) { return }
+        foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
+            $parsed = 0
+            if ([int]::TryParse($token, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $LunqProfile.Categories.Count) {
+                $category = $LunqProfile.Categories[$parsed - 1]
+                $category.Enabled = -not $category.Enabled
+            }
+            else { Write-Warning "Номера $token нет в списке." }
+        }
+    }
+}
+
+function Get-LunqEffectiveConfig {
+    # Собирает включённые категории в общие списки для шагов удаления и реестра.
+    # Каждой записи реестра добавляется LunqCategory, чтобы считать итог по категориям.
+    param([Parameter(Mandatory)]$LunqProfile)
+
+    $enabled = @($LunqProfile.Categories | Where-Object { $_.Enabled })
+    $registry = foreach ($category in $enabled) {
+        foreach ($entry in $category.Registry) {
+            $copy = $entry.PSObject.Copy()
+            $copy | Add-Member -NotePropertyName LunqCategory -NotePropertyValue $category.Id -Force
+            $copy
+        }
+    }
+    $collect = { param($kind) , @($enabled | ForEach-Object { $_.$kind } | Select-Object -Unique) }
+
+    return [pscustomobject]@{
+        Appx         = [pscustomobject]@{ Remove = & $collect 'Appx' }
+        Capabilities = [pscustomobject]@{ Remove = & $collect 'Capabilities' }
+        Features     = [pscustomobject]@{ Disable = & $collect 'Features'; RemovePayload = $LunqProfile.RemoveFeaturePayload }
+        Packages     = [pscustomobject]@{ Remove = & $collect 'Packages' }
+        Registry     = @($registry)
+    }
 }
 
 function Mount-IsoImage {
@@ -339,10 +481,8 @@ function Select-LunqProfile {
     if ($files.Count -eq 0) { throw "В папке $ProfileDir нет профилей (*.json)." }
 
     $items = foreach ($file in $files) {
-        $config = Read-LunqProfile -Path $file.FullName
-        $name = Get-ConfigValue $config 'Name'
-        if (-not $name) { $name = $file.BaseName }
-        [pscustomobject]@{ Path = $file.FullName; Name = $name; Description = Get-ConfigValue $config 'Description' }
+        $loaded = Read-LunqProfile -Path $file.FullName
+        [pscustomobject]@{ Path = $file.FullName; Name = $loaded.Name; Description = $loaded.Description }
     }
     $items = @($items)
 
@@ -436,22 +576,12 @@ function Test-LunqPrerequisites {
     return $result
 }
 
-function Get-ProfileStats {
-    param([Parameter(Mandatory)]$Config)
-    return [pscustomobject]@{
-        Appx         = (Get-ConfigList $Config 'Appx', 'Remove').Count
-        Capabilities = (Get-ConfigList $Config 'Capabilities', 'Remove').Count
-        Features     = (Get-ConfigList $Config 'Features', 'Disable').Count
-        Packages     = (Get-ConfigList $Config 'Packages', 'Remove').Count
-        Registry     = (Get-ConfigList $Config 'Registry').Count
-    }
-}
-
 function New-LunqResult {
     # Результат шага удаления: что сделано, что не удалось, какие шаблоны профиля ничего не нашли.
-    param([string]$Title)
+    param([string]$Title, [string]$Kind)
     return [pscustomobject]@{
         Title      = $Title
+        Kind       = $Kind
         Done       = New-Object System.Collections.Generic.List[string]
         Failed     = New-Object System.Collections.Generic.List[string]
         NotMatched = New-Object System.Collections.Generic.List[string]
@@ -466,26 +596,55 @@ function Add-NotMatched {
 }
 
 function Write-LunqReport {
-    # Итог сборки: что сделано по каждому разделу профиля.
+    # Итог сборки: обновления и результат по каждой включённой категории профиля.
     param(
         [object[]]$Results = @(),
         $Registry,
+        $LunqProfile,
         [string]$OutputIso,
         [TimeSpan]$Elapsed
     )
 
     Write-Section 'Итог'
-    foreach ($r in $Results) {
-        if ($null -eq $r) { continue }
-        Write-Info ("{0}: выполнено {1}, ошибок {2}" -f $r.Title, $r.Done.Count, $r.Failed.Count)
+    $results = @($Results | Where-Object { $null -ne $_ })
+
+    foreach ($r in @($results | Where-Object { $_.Kind -eq 'Updates' })) {
+        Write-Info ("Обновления: установлено {0}, ошибок {1}" -f $r.Done.Count, $r.Failed.Count)
         if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
-        if ($r.NotMatched.Count -gt 0) {
-            Write-Host "        Нет в образе или уже убрано: $($r.NotMatched -join ', ')" -ForegroundColor DarkGray
+    }
+
+    if ($LunqProfile) {
+        foreach ($category in @($LunqProfile.Categories | Where-Object { $_.Enabled })) {
+            $done = 0
+            $failed = @()
+            $missing = @()
+            foreach ($r in $results) {
+                if ($r.Kind -eq 'Updates' -or -not $r.Kind) { continue }
+                $patterns = @($category.($r.Kind))
+                if ($patterns.Count -eq 0) { continue }
+                $done += @($r.Done | Where-Object { Test-NamePattern -Name $_ -Patterns $patterns }).Count
+                $failed += @($r.Failed | Where-Object { Test-NamePattern -Name $_ -Patterns $patterns })
+                $missing += @($r.NotMatched | Where-Object { $patterns -contains $_ })
+            }
+            $parts = @()
+            if (($category.Appx.Count + $category.Capabilities.Count + $category.Features.Count + $category.Packages.Count) -gt 0) {
+                $parts += "удалено или отключено: $done"
+            }
+            if ($Registry -and $Registry.ContainsKey('ByCategory') -and $Registry.ByCategory.ContainsKey($category.Id)) {
+                $r = $Registry.ByCategory[$category.Id]
+                $parts += ("реестр: {0} из {1}" -f ($r.Applied + $r.Skipped), $category.Registry.Count)
+                if ($r.Failed -gt 0) { $failed += "записей реестра: $($r.Failed)" }
+            }
+            if ($parts.Count -eq 0) { continue }
+            $color = if ($failed.Count -gt 0) { 'Yellow' } else { 'Gray' }
+            Write-Host ("    {0}: {1}" -f $category.Name, ($parts -join ', ')) -ForegroundColor $color
+            if ($failed.Count -gt 0) { Write-Host "        Не удалось: $($failed -join ', ')" -ForegroundColor Yellow }
+            if ($missing.Count -gt 0) { Write-Host "        Нет в образе или уже убрано: $($missing -join ', ')" -ForegroundColor DarkGray }
         }
+        $off = @($LunqProfile.Categories | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Name })
+        if ($off.Count -gt 0) { Write-Info "Пропущены категории: $($off -join ', ')" }
     }
-    if ($Registry) {
-        Write-Info ("Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}" -f $Registry.Applied, $Registry.Skipped, $Registry.Failed)
-    }
+
     if ($OutputIso -and (Test-Path -LiteralPath $OutputIso)) {
         Write-Info ("Итоговый ISO: {0} ({1})" -f $OutputIso, (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
     }
@@ -543,7 +702,7 @@ function Add-LunqUpdates {
         [Parameter(Mandatory)][string]$ScratchDir
     )
 
-    $result = New-LunqResult 'Обновления'
+    $result = New-LunqResult 'Обновления' Updates
     New-Item -ItemType Directory -Path $ScratchDir -Force | Out-Null
     $i = 0
     foreach ($file in $Files) {
@@ -567,7 +726,7 @@ function Remove-LunqAppx {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Приложения Appx'
+    $result = New-LunqResult 'Приложения Appx' Appx
     $patterns = Get-ConfigList $Config 'Appx', 'Remove'
     if ($patterns.Count -eq 0) { Write-Info 'Список Appx в профиле пуст.'; return $result }
 
@@ -596,7 +755,7 @@ function Remove-LunqCapabilities {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Компоненты (Capabilities)'
+    $result = New-LunqResult 'Компоненты (Capabilities)' Capabilities
     $patterns = Get-ConfigList $Config 'Capabilities', 'Remove'
     if ($patterns.Count -eq 0) { Write-Info 'Список Capabilities в профиле пуст.'; return $result }
 
@@ -624,7 +783,7 @@ function Disable-LunqFeatures {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Функции Windows (Optional Features)'
+    $result = New-LunqResult 'Функции Windows (Optional Features)' Features
     $patterns = Get-ConfigList $Config 'Features', 'Disable'
     if ($patterns.Count -eq 0) { Write-Info 'Список Features в профиле пуст.'; return $result }
 
@@ -657,7 +816,7 @@ function Remove-LunqPackages {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Системные пакеты'
+    $result = New-LunqResult 'Системные пакеты' Packages
     $patterns = Get-ConfigList $Config 'Packages', 'Remove'
     if ($patterns.Count -eq 0) { return $null }
 
@@ -772,8 +931,15 @@ function Set-LunqRegistry {
 
     Mount-OfflineHives -MountPath $MountPath
     try {
+        $stats.ByCategory = @{}
         foreach ($entry in $entries) {
-            $stats[(Invoke-RegistryEntry -Entry $entry)]++
+            $status = Invoke-RegistryEntry -Entry $entry
+            $stats[$status]++
+            $category = Get-ConfigValue $entry 'LunqCategory'
+            if ($category) {
+                if (-not $stats.ByCategory.ContainsKey($category)) { $stats.ByCategory[$category] = @{ Applied = 0; Skipped = 0; Failed = 0 } }
+                $stats.ByCategory[$category][$status]++
+            }
         }
         Write-Info ("Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}." -f $stats.Applied, $stats.Skipped, $stats.Failed)
         return $stats
