@@ -239,7 +239,7 @@ function Write-CategoryList {
         $i++
         $mark = if ($category.Enabled) { '[x]' } else { '[ ]' }
         $color = if ($category.Enabled) { 'Green' } else { 'DarkGray' }
-        $prefix = if ($Numbered) { '    [{0,2}] ' -f $i } else { '    ' }
+        $prefix = if ($Numbered) { '    {0,-4} ' -f "[$i]" } else { '    ' }
         Write-Host $prefix -NoNewline -ForegroundColor Cyan
         Write-Host "$mark " -NoNewline -ForegroundColor $color
         Write-Host $category.Name -NoNewline
@@ -323,7 +323,7 @@ function Select-LunqBuildOptions {
             $indent = if ($option.Parent) { '    ' } else { '' }
             $on = Test-LunqOption -Options $Options -Key $option.Key
             if ($option.Available) {
-                Write-Host ('    [{0,2}] ' -f $numbers[$option.Key]) -ForegroundColor Cyan -NoNewline
+                Write-Host ('    {0,-4} ' -f "[$($numbers[$option.Key])]") -ForegroundColor Cyan -NoNewline
             }
             else { Write-Host '         ' -NoNewline }
             $mark = if ($on) { '[x]' } else { '[ ]' }
@@ -537,7 +537,7 @@ function Write-EditionList {
     param([Parameter(Mandatory)]$Images)
 
     foreach ($img in $Images) {
-        Write-Host ("    [{0,2}] " -f $img.ImageIndex) -ForegroundColor Cyan -NoNewline
+        Write-Host ("    {0,-4} " -f "[$($img.ImageIndex)]") -ForegroundColor Cyan -NoNewline
         Write-Host $img.ImageName -NoNewline
         $hint = Get-EditionHint -Name $img.ImageName
         if ($hint) { Write-Host "  ($hint)" -ForegroundColor DarkGray } else { Write-Host '' }
