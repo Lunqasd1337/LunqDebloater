@@ -15,15 +15,68 @@ $script:HiveMap = [ordered]@{
     DefaultUser = @{ Key = 'HKLM\LUNQ_NTUSER';   File = 'Users\Default\NTUSER.DAT' }
 }
 
+# Счётчик шагов для вывода «Шаг N из M».
+$script:StepCurrent = 0
+$script:StepTotal = 0
+
+function Initialize-LunqSteps {
+    param([Parameter(Mandatory)][int]$Total)
+    $script:StepCurrent = 0
+    $script:StepTotal = $Total
+}
+
 function Write-Step {
-    param([Parameter(Mandatory)][string]$Message)
+    # Заголовок шага. -Hint выводит под ним короткое пояснение для нового пользователя.
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [string]$Hint
+    )
     Write-Host ''
-    Write-Host "==> $Message" -ForegroundColor Cyan
+    if ($script:StepTotal -gt 0) {
+        $script:StepCurrent++
+        Write-Host ("==> Шаг {0} из {1}. {2}" -f $script:StepCurrent, $script:StepTotal, $Message) -ForegroundColor Cyan
+    }
+    else {
+        Write-Host "==> $Message" -ForegroundColor Cyan
+    }
+    if ($Hint) { Write-Host "    $Hint" -ForegroundColor DarkGray }
+}
+
+function Write-Section {
+    param([Parameter(Mandatory)][string]$Title)
+    Write-Host ''
+    Write-Host "=== $Title ===" -ForegroundColor Yellow
 }
 
 function Write-Info {
-    param([Parameter(Mandatory)][string]$Message)
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Message)
     Write-Host "    $Message"
+}
+
+function Write-Check {
+    # Строка проверки: [ OK ], [ !! ] (предупреждение) или [FAIL].
+    param(
+        [Parameter(Mandatory)][ValidateSet('Ok', 'Warn', 'Fail')][string]$Status,
+        [Parameter(Mandatory)][string]$Message,
+        [string]$Hint
+    )
+    $label = @{ Ok = '[ OK ]'; Warn = '[ !! ]'; Fail = '[FAIL]' }[$Status]
+    $color = @{ Ok = 'Green'; Warn = 'Yellow'; Fail = 'Red' }[$Status]
+    Write-Host "    $label " -ForegroundColor $color -NoNewline
+    Write-Host $Message
+    if ($Hint) { Write-Host "           $Hint" -ForegroundColor DarkGray }
+}
+
+function Read-YesNo {
+    # Спрашивает да/нет. Принимает y/yes/д/да в любом регистре, всё остальное означает «нет».
+    param([Parameter(Mandatory)][string]$Prompt)
+    $answer = Read-Host "    $Prompt [Y/N]"
+    return ($answer.Trim().ToLower() -in @('y', 'yes', 'д', 'да'))
+}
+
+function Format-Size {
+    param([double]$Bytes)
+    return ('{0:N1} ГБ' -f ($Bytes / 1GB))
 }
 
 function Test-Administrator {
@@ -103,6 +156,36 @@ function Read-LunqProfile {
     return $config
 }
 
+function Mount-IsoImage {
+    # Монтирует ISO и возвращает корень его диска, например "E:\".
+    param([Parameter(Mandatory)][string]$IsoPath)
+
+    $image = Mount-DiskImage -ImagePath $IsoPath -PassThru
+    # Буква диска иногда назначается с задержкой.
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        $volume = $image | Get-Volume -ErrorAction SilentlyContinue
+        if ($volume -and $volume.DriveLetter) { return "$($volume.DriveLetter):\" }
+        Start-Sleep -Seconds 1
+    }
+    Dismount-DiskImage -ImagePath $IsoPath | Out-Null
+    throw 'Не удалось получить букву диска смонтированного ISO.'
+}
+
+function Get-IsoEditions {
+    # Читает список редакций прямо из ISO, ещё до копирования файлов.
+    param([Parameter(Mandatory)][string]$IsoPath)
+
+    $root = Mount-IsoImage -IsoPath $IsoPath
+    try {
+        try { $imagePath = Get-InstallImagePath -IsoRoot $root }
+        catch { throw 'В ISO нет sources\install.wim или install.esd. Похоже, это не установочный образ Windows.' }
+        return , @(Get-WindowsImage -ImagePath $imagePath | Sort-Object ImageIndex)
+    }
+    finally {
+        Dismount-DiskImage -ImagePath $IsoPath | Out-Null
+    }
+}
+
 function Copy-IsoContent {
     # Монтирует ISO, копирует его содержимое в рабочую папку и снимает атрибут «только чтение».
     param(
@@ -110,17 +193,8 @@ function Copy-IsoContent {
         [Parameter(Mandatory)][string]$Destination
     )
 
-    $image = Mount-DiskImage -ImagePath $IsoPath -PassThru
+    $source = Mount-IsoImage -IsoPath $IsoPath
     try {
-        # Буква диска иногда назначается с задержкой.
-        $volume = $null
-        for ($attempt = 1; $attempt -le 10; $attempt++) {
-            $volume = $image | Get-Volume -ErrorAction SilentlyContinue
-            if ($volume -and $volume.DriveLetter) { break }
-            Start-Sleep -Seconds 1
-        }
-        if (-not ($volume -and $volume.DriveLetter)) { throw 'Не удалось получить букву диска смонтированного ISO.' }
-        $source = "$($volume.DriveLetter):\"
         Write-Info "ISO смонтирован как $source, копирую файлы..."
 
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
@@ -145,42 +219,274 @@ function Get-InstallImagePath {
     throw 'В папке sources не найден install.wim или install.esd.'
 }
 
-function Resolve-EditionIndex {
+function Get-EditionHint {
+    # Короткое пояснение к редакции для тех, кто выбирает впервые.
+    param([Parameter(Mandatory)][string]$Name)
+
+    $hint = switch -Regex ($Name) {
+        'for Workstations'     { 'Pro для мощных рабочих станций: ReFS, больше процессоров и памяти'; break }
+        'Pro.*Education'       { 'Pro для учебных заведений'; break }
+        'Education'            { 'для учебных заведений, по возможностям близка к Enterprise'; break }
+        'Enterprise'           { 'корпоративная, нужна лицензия организации'; break }
+        'Single Language'      { 'Home с одним языком интерфейса, сменить язык нельзя'; break }
+        'Pro'                  { 'BitLocker, групповые политики, Hyper-V, удалённый рабочий стол; подходит большинству'; break }
+        'Home'                 { 'для домашнего ПК, без BitLocker, групповых политик и Hyper-V'; break }
+        default                { '' }
+    }
+    if ($Name -match '(^|\s)N(\s|$)') { $hint = "$hint. Версия N: без мультимедийных компонентов".TrimStart('. ') }
+    return $hint
+}
+
+function Write-EditionList {
+    param([Parameter(Mandatory)]$Images)
+
+    foreach ($img in $Images) {
+        Write-Host ("    [{0,2}] " -f $img.ImageIndex) -ForegroundColor Cyan -NoNewline
+        Write-Host $img.ImageName -NoNewline
+        $hint = Get-EditionHint -Name $img.ImageName
+        if ($hint) { Write-Host "  ($hint)" -ForegroundColor DarkGray } else { Write-Host '' }
+    }
+}
+
+function Select-LunqEdition {
     # Определяет индекс редакции по номеру, имени или интерактивному выбору.
     param(
-        [Parameter(Mandatory)][string]$ImagePath,
+        [Parameter(Mandatory)]$Images,
         [int]$Index,
         [string]$Edition
     )
 
-    $images = @(Get-WindowsImage -ImagePath $ImagePath)
-
     if ($Index -gt 0) {
-        if (-not ($images | Where-Object ImageIndex -eq $Index)) {
-            throw "В образе нет редакции с индексом $Index."
+        if (-not ($Images | Where-Object ImageIndex -eq $Index)) {
+            Write-Info 'Доступные редакции:'
+            Write-EditionList -Images $Images
+            throw "В образе нет редакции с номером $Index. Выберите номер из списка выше."
         }
         return $Index
     }
 
     if ($Edition) {
-        $match = @($images | Where-Object { $_.ImageName -eq $Edition })
+        $match = @($Images | Where-Object { $_.ImageName -eq $Edition })
         if ($match.Count -eq 0) {
-            $names = ($images | ForEach-Object { $_.ImageName }) -join '; '
-            throw "Редакция '$Edition' не найдена. Доступны: $names"
+            Write-Info 'Доступные редакции:'
+            Write-EditionList -Images $Images
+            throw "Редакция '$Edition' не найдена. Укажите имя из списка выше в кавычках или номер через -Index."
         }
         return $match[0].ImageIndex
     }
 
-    Write-Info 'Редакции в образе:'
-    foreach ($img in $images) { Write-Info ("  [{0}] {1}" -f $img.ImageIndex, $img.ImageName) }
+    if ($Images.Count -eq 1) {
+        Write-Info "В образе одна редакция: $($Images[0].ImageName)"
+        return $Images[0].ImageIndex
+    }
+
+    Write-Info 'Какую редакцию Windows подготовить? В итоговом ISO останется только она.'
+    Write-Info 'Если сомневаетесь, выбирайте ту, на которую у вас есть ключ (обычно Home или Pro).'
+    Write-Info ''
+    Write-EditionList -Images $Images
+    Write-Info ''
     while ($true) {
         $answer = Read-Host '    Введите номер редакции'
         $parsed = 0
-        if ([int]::TryParse($answer, [ref]$parsed) -and ($images | Where-Object ImageIndex -eq $parsed)) {
+        if ([int]::TryParse($answer, [ref]$parsed) -and ($Images | Where-Object ImageIndex -eq $parsed)) {
             return $parsed
         }
-        Write-Warning 'Неверный номер, попробуйте ещё раз.'
+        Write-Warning 'Такого номера нет в списке, попробуйте ещё раз.'
     }
+}
+
+function Select-IsoFile {
+    # Открывает окно выбора ISO. Если окно недоступно, просит ввести путь вручную.
+    $useDialog = [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
+    while ($true) {
+        $path = $null
+        if ($useDialog) {
+            $dialogResult = $null
+            try {
+                Add-Type -AssemblyName System.Windows.Forms
+                $dialog = New-Object System.Windows.Forms.OpenFileDialog
+                $dialog.Title = 'Выберите ISO-образ Windows 11'
+                $dialog.Filter = 'Образ диска (*.iso)|*.iso'
+                # Невидимое окно-владелец поверх остальных, чтобы диалог не открылся за консолью.
+                $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
+                $dialogResult = $dialog.ShowDialog($owner)
+                $owner.Dispose()
+            }
+            catch { $useDialog = $false }
+
+            if ($null -ne $dialogResult) {
+                if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) { throw 'Выбор ISO отменён.' }
+                $path = $dialog.FileName
+            }
+        }
+        if (-not $path) {
+            $path = (Read-Host '    Путь к ISO (можно перетащить файл в это окно)').Trim().Trim('"')
+        }
+        if ($path -and (Test-Path -LiteralPath $path -PathType Leaf) -and $path -like '*.iso') {
+            return (Resolve-Path -LiteralPath $path).Path
+        }
+        Write-Warning "Файл не найден или это не ISO: $path"
+    }
+}
+
+function Select-LunqProfile {
+    # Показывает профили из папки Profiles и даёт выбрать один.
+    param([Parameter(Mandatory)][string]$ProfileDir)
+
+    $files = @(Get-ChildItem -LiteralPath $ProfileDir -Filter '*.json' -File | Sort-Object Name)
+    if ($files.Count -eq 0) { throw "В папке $ProfileDir нет профилей (*.json)." }
+
+    $items = foreach ($file in $files) {
+        $config = Read-LunqProfile -Path $file.FullName
+        $name = Get-ConfigValue $config 'Name'
+        if (-not $name) { $name = $file.BaseName }
+        [pscustomobject]@{ Path = $file.FullName; Name = $name; Description = Get-ConfigValue $config 'Description' }
+    }
+    $items = @($items)
+
+    if ($items.Count -eq 1) {
+        Write-Info "Профиль: $($items[0].Name)"
+        if ($items[0].Description) { Write-Host "    $($items[0].Description)" -ForegroundColor DarkGray }
+        return $items[0].Path
+    }
+
+    Write-Info 'Профиль определяет, что будет удалено и изменено в образе:'
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        Write-Host ("    [{0}] " -f ($i + 1)) -ForegroundColor Cyan -NoNewline
+        Write-Host $items[$i].Name
+        if ($items[$i].Description) { Write-Host "        $($items[$i].Description)" -ForegroundColor DarkGray }
+    }
+    while ($true) {
+        $answer = Read-Host '    Введите номер профиля'
+        $parsed = 0
+        if ([int]::TryParse($answer, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $items.Count) {
+            return $items[$parsed - 1].Path
+        }
+        Write-Warning 'Такого номера нет в списке, попробуйте ещё раз.'
+    }
+}
+
+function Test-LunqPrerequisites {
+    # Проверяет всё, что нужно для сборки, до начала долгой работы.
+    # Возвращает путь к oscdimg, ошибки и предупреждения.
+    param(
+        [Parameter(Mandatory)][string]$IsoPath,
+        [Parameter(Mandatory)][string]$WorkDir,
+        [Parameter(Mandatory)][string]$OutputIso,
+        [string]$OscdimgPath
+    )
+
+    $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
+
+    if (Test-Administrator) { Write-Check Ok 'Права администратора' }
+    else {
+        Write-Check Fail 'Нет прав администратора' 'Запустите PowerShell через «Запуск от имени администратора».'
+        $result.Errors++
+    }
+
+    try {
+        $result.Oscdimg = Find-Oscdimg -Path $OscdimgPath
+        Write-Check Ok "Windows ADK: $($result.Oscdimg)"
+    }
+    catch {
+        Write-Check Fail 'Не найден oscdimg.exe из Windows ADK' 'Установите ADK (достаточно компонента Deployment Tools): https://learn.microsoft.com/windows-hardware/get-started/adk-install'
+        $result.Errors++
+    }
+
+    # Рабочей папке нужно место под копию ISO, экспорт install.wim и распакованный образ.
+    $isoSize = (Get-Item -LiteralPath $IsoPath).Length
+    $needWork = [long](25GB)
+    $needOut = [long]($isoSize + 1GB)
+    $workDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($WorkDir)))
+    $outDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($OutputIso))
+
+    if ($workDrive.DriveFormat -ne 'NTFS') {
+        Write-Check Fail "Диск $($workDrive.Name) для рабочей папки не NTFS ($($workDrive.DriveFormat))" 'DISM монтирует образ только на NTFS. Укажите другую папку через -WorkDir.'
+        $result.Errors++
+    }
+
+    if ($workDrive.Name -eq $outDrive.Name) { $needWork += $needOut }
+    if ($workDrive.AvailableFreeSpace -ge $needWork) {
+        Write-Check Ok ("Место на {0} для рабочей папки: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork))
+    }
+    else {
+        Write-Check Warn ("Мало места на {0}: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork)) 'Освободите место или укажите папку на другом диске через -WorkDir.'
+        $result.Warnings++
+    }
+    if ($workDrive.Name -ne $outDrive.Name) {
+        if ($outDrive.AvailableFreeSpace -ge $needOut) {
+            Write-Check Ok ("Место на {0} для итогового ISO: свободно {1}" -f $outDrive.Name, (Format-Size $outDrive.AvailableFreeSpace))
+        }
+        else {
+            Write-Check Warn ("Мало места на {0} для итогового ISO: свободно {1}, нужно около {2}" -f $outDrive.Name, (Format-Size $outDrive.AvailableFreeSpace), (Format-Size $needOut))
+            $result.Warnings++
+        }
+    }
+
+    if (@(Get-WindowsImage -Mounted -ErrorAction SilentlyContinue).Count -gt 0) {
+        Write-Check Warn 'В системе уже есть смонтированные образы DISM' 'Если это остатки прошлого запуска в другой папке, выполните: dism /Cleanup-Wim'
+        $result.Warnings++
+    }
+
+    return $result
+}
+
+function Get-ProfileStats {
+    param([Parameter(Mandatory)]$Config)
+    return [pscustomobject]@{
+        Appx         = (Get-ConfigList $Config 'Appx', 'Remove').Count
+        Capabilities = (Get-ConfigList $Config 'Capabilities', 'Remove').Count
+        Features     = (Get-ConfigList $Config 'Features', 'Disable').Count
+        Packages     = (Get-ConfigList $Config 'Packages', 'Remove').Count
+        Registry     = (Get-ConfigList $Config 'Registry').Count
+    }
+}
+
+function New-LunqResult {
+    # Результат шага удаления: что сделано, что не удалось, какие шаблоны профиля ничего не нашли.
+    param([string]$Title)
+    return [pscustomobject]@{
+        Title      = $Title
+        Done       = New-Object System.Collections.Generic.List[string]
+        Failed     = New-Object System.Collections.Generic.List[string]
+        NotMatched = New-Object System.Collections.Generic.List[string]
+    }
+}
+
+function Add-NotMatched {
+    param($Result, [string[]]$Patterns, [string[]]$Names)
+    foreach ($pattern in $Patterns) {
+        if (-not ($Names | Where-Object { $_ -like $pattern })) { $Result.NotMatched.Add($pattern) }
+    }
+}
+
+function Write-LunqReport {
+    # Итог сборки: что сделано по каждому разделу профиля.
+    param(
+        [object[]]$Results = @(),
+        $Registry,
+        [string]$OutputIso,
+        [TimeSpan]$Elapsed
+    )
+
+    Write-Section 'Итог'
+    foreach ($r in $Results) {
+        if ($null -eq $r) { continue }
+        Write-Info ("{0}: выполнено {1}, ошибок {2}" -f $r.Title, $r.Done.Count, $r.Failed.Count)
+        if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
+        if ($r.NotMatched.Count -gt 0) {
+            Write-Host "        Нет в образе или уже убрано: $($r.NotMatched -join ', ')" -ForegroundColor DarkGray
+        }
+    }
+    if ($Registry) {
+        Write-Info ("Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}" -f $Registry.Applied, $Registry.Skipped, $Registry.Failed)
+    }
+    if ($OutputIso -and (Test-Path -LiteralPath $OutputIso)) {
+        Write-Info ("Итоговый ISO: {0} ({1})" -f $OutputIso, (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
+    }
+    if ($Elapsed) { Write-Info ('Время сборки: {0:hh\:mm\:ss}' -f $Elapsed) }
+    Write-Info ''
+    Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
 }
 
 function Export-SingleEdition {
@@ -208,22 +514,27 @@ function Remove-LunqAppx {
         [Parameter(Mandatory)]$Config
     )
 
+    $result = New-LunqResult 'Приложения Appx'
     $patterns = Get-ConfigList $Config 'Appx', 'Remove'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Appx в профиле пуст.'; return }
+    if ($patterns.Count -eq 0) { Write-Info 'Список Appx в профиле пуст.'; return $result }
 
     $packages = @(Get-AppxProvisionedPackage -Path $MountPath)
-    $removed = 0
     foreach ($pkg in $packages) {
         if (Test-NamePattern -Name $pkg.DisplayName -Patterns $patterns) {
             Write-Info "Удаляю $($pkg.DisplayName)"
             try {
                 Remove-AppxProvisionedPackage -Path $MountPath -PackageName $pkg.PackageName -ErrorAction Stop | Out-Null
-                $removed++
+                $result.Done.Add($pkg.DisplayName)
             }
-            catch { Write-Warning "Не удалось удалить $($pkg.DisplayName): $($_.Exception.Message)" }
+            catch {
+                Write-Warning "Не удалось удалить $($pkg.DisplayName): $($_.Exception.Message)"
+                $result.Failed.Add($pkg.DisplayName)
+            }
         }
     }
-    Write-Info "Удалено Appx-пакетов: $removed из $($packages.Count)."
+    Add-NotMatched $result $patterns @($packages | ForEach-Object { $_.DisplayName })
+    Write-Info "Удалено Appx-пакетов: $($result.Done.Count) из $($packages.Count) в образе."
+    return $result
 }
 
 function Remove-LunqCapabilities {
@@ -232,17 +543,26 @@ function Remove-LunqCapabilities {
         [Parameter(Mandatory)]$Config
     )
 
+    $result = New-LunqResult 'Компоненты (Capabilities)'
     $patterns = Get-ConfigList $Config 'Capabilities', 'Remove'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Capabilities в профиле пуст.'; return }
+    if ($patterns.Count -eq 0) { Write-Info 'Список Capabilities в профиле пуст.'; return $result }
 
     $installed = @(Get-WindowsCapability -Path $MountPath | Where-Object State -eq 'Installed')
     foreach ($cap in $installed) {
         if (Test-NamePattern -Name $cap.Name -Patterns $patterns) {
             Write-Info "Удаляю компонент $($cap.Name)"
-            try { Remove-WindowsCapability -Path $MountPath -Name $cap.Name -ErrorAction Stop | Out-Null }
-            catch { Write-Warning "Не удалось удалить $($cap.Name): $($_.Exception.Message)" }
+            try {
+                Remove-WindowsCapability -Path $MountPath -Name $cap.Name -ErrorAction Stop | Out-Null
+                $result.Done.Add($cap.Name)
+            }
+            catch {
+                Write-Warning "Не удалось удалить $($cap.Name): $($_.Exception.Message)"
+                $result.Failed.Add($cap.Name)
+            }
         }
     }
+    Add-NotMatched $result $patterns @($installed | ForEach-Object { $_.Name })
+    return $result
 }
 
 function Disable-LunqFeatures {
@@ -251,8 +571,9 @@ function Disable-LunqFeatures {
         [Parameter(Mandatory)]$Config
     )
 
+    $result = New-LunqResult 'Функции Windows (Optional Features)'
     $patterns = Get-ConfigList $Config 'Features', 'Disable'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Features в профиле пуст.'; return }
+    if ($patterns.Count -eq 0) { Write-Info 'Список Features в профиле пуст.'; return $result }
 
     $removePayload = [bool](Get-ConfigValue $Config 'Features', 'RemovePayload')
 
@@ -264,10 +585,16 @@ function Disable-LunqFeatures {
                 $params = @{ Path = $MountPath; FeatureName = $feature.FeatureName; NoRestart = $true; ErrorAction = 'Stop' }
                 if ($removePayload) { $params.Remove = $true }
                 Disable-WindowsOptionalFeature @params | Out-Null
+                $result.Done.Add($feature.FeatureName)
             }
-            catch { Write-Warning "Не удалось отключить $($feature.FeatureName): $($_.Exception.Message)" }
+            catch {
+                Write-Warning "Не удалось отключить $($feature.FeatureName): $($_.Exception.Message)"
+                $result.Failed.Add($feature.FeatureName)
+            }
         }
     }
+    Add-NotMatched $result $patterns @($enabled | ForEach-Object { $_.FeatureName })
+    return $result
 }
 
 function Remove-LunqPackages {
@@ -277,18 +604,27 @@ function Remove-LunqPackages {
         [Parameter(Mandatory)]$Config
     )
 
+    $result = New-LunqResult 'Системные пакеты'
     $patterns = Get-ConfigList $Config 'Packages', 'Remove'
-    if ($patterns.Count -eq 0) { return }
+    if ($patterns.Count -eq 0) { return $null }
 
     Write-Warning 'Удаление системных пакетов может помешать установке обновлений.'
     $packages = @(Get-WindowsPackage -Path $MountPath | Where-Object PackageState -eq 'Installed')
     foreach ($pkg in $packages) {
         if (Test-NamePattern -Name $pkg.PackageName -Patterns $patterns) {
             Write-Info "Удаляю пакет $($pkg.PackageName)"
-            try { Remove-WindowsPackage -Path $MountPath -PackageName $pkg.PackageName -NoRestart -ErrorAction Stop | Out-Null }
-            catch { Write-Warning "Не удалось удалить $($pkg.PackageName): $($_.Exception.Message)" }
+            try {
+                Remove-WindowsPackage -Path $MountPath -PackageName $pkg.PackageName -NoRestart -ErrorAction Stop | Out-Null
+                $result.Done.Add($pkg.PackageName)
+            }
+            catch {
+                Write-Warning "Не удалось удалить $($pkg.PackageName): $($_.Exception.Message)"
+                $result.Failed.Add($pkg.PackageName)
+            }
         }
     }
+    Add-NotMatched $result $patterns @($packages | ForEach-Object { $_.PackageName })
+    return $result
 }
 
 function Mount-OfflineHives {
@@ -377,16 +713,17 @@ function Set-LunqRegistry {
         [Parameter(Mandatory)]$Config
     )
 
+    $stats = @{ Applied = 0; Skipped = 0; Failed = 0 }
     $entries = Get-ConfigList $Config 'Registry'
-    if ($entries.Count -eq 0) { Write-Info 'Список твиков реестра в профиле пуст.'; return }
+    if ($entries.Count -eq 0) { Write-Info 'Список твиков реестра в профиле пуст.'; return $stats }
 
     Mount-OfflineHives -MountPath $MountPath
     try {
-        $stats = @{ Applied = 0; Skipped = 0; Failed = 0 }
         foreach ($entry in $entries) {
             $stats[(Invoke-RegistryEntry -Entry $entry)]++
         }
         Write-Info ("Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}." -f $stats.Applied, $stats.Skipped, $stats.Failed)
+        return $stats
     }
     finally {
         Dismount-OfflineHives
