@@ -1,0 +1,22 @@
+# Программы, которые ставятся через winget при первом входе в Windows.
+# Одна программа в строке: Id из winget. Найти Id: winget search <название>.
+# После Id можно дописать параметры winget, например --scope machine.
+# Строки, которые начинаются с #, пропускаются. Ненужное закомментируйте или удалите.
+
+# Программы
+7zip.7zip
+
+# Библиотеки, которые нужны играм и многим программам
+Microsoft.DirectX
+Microsoft.VCRedist.2005.x64
+Microsoft.VCRedist.2005.x86
+Microsoft.VCRedist.2008.x64
+Microsoft.VCRedist.2008.x86
+Microsoft.VCRedist.2010.x64
+Microsoft.VCRedist.2010.x86
+Microsoft.VCRedist.2012.x64
+Microsoft.VCRedist.2012.x86
+Microsoft.VCRedist.2013.x64
+Microsoft.VCRedist.2013.x86
+Microsoft.VCRedist.2015+.x64
+Microsoft.VCRedist.2015+.x86
