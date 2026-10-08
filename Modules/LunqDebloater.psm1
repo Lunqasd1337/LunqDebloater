@@ -16,7 +16,7 @@ $script:HiveMap = [ordered]@{
 }
 
 # Версия LunqDebloater: видна в заголовке окна, в логе, в итоге и в реестре собранного образа.
-$script:LunqVersion = '1.0.0'
+$script:LunqVersion = '1.0.1'
 
 # Счётчик шагов для вывода «Шаг N из M».
 $script:StepCurrent = 0
