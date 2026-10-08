@@ -36,7 +36,7 @@ function Read-LunqProfile {
     param([Parameter(Mandatory)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Профиль не найден: $Path"
+        throw (Get-LunqText 'Profile.NotFound' $Path)
     }
     $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     $config = $json | ConvertFrom-Json
@@ -46,16 +46,16 @@ function Read-LunqProfile {
     if ($null -ne $rawCategories) {
         foreach ($raw in @($rawCategories)) {
             $id = [string](Get-ConfigValue $raw 'Id')
-            if (-not $id) { throw "В профиле $Path у одной из категорий не указан Id." }
-            if ($categories | Where-Object { $_.Id -eq $id }) { throw "В профиле $Path Id категории '$id' повторяется." }
-            $name = Get-ConfigValue $raw 'Name'
+            if (-not $id) { throw (Get-LunqText 'Profile.CategoryNoId' $Path) }
+            if ($categories | Where-Object { $_.Id -eq $id }) { throw (Get-LunqText 'Profile.CategoryIdRepeated' $Path $id) }
+            $name = Get-LunqLocalized (Get-ConfigValue $raw 'Name')
             if (-not $name) { $name = $id }
             $enabled = Get-ConfigValue $raw 'Enabled'
             if ($null -eq $enabled) { $enabled = $true }
             $categories.Add([pscustomobject]@{
                     Id           = $id
                     Name         = [string]$name
-                    Description  = [string](Get-ConfigValue $raw 'Description')
+                    Description  = Get-LunqLocalized (Get-ConfigValue $raw 'Description')
                     Enabled      = [bool]$enabled
                     Appx         = Get-ConfigList $raw 'Appx'
                     Capabilities = Get-ConfigList $raw 'Capabilities'
@@ -68,7 +68,7 @@ function Read-LunqProfile {
     else {
         $categories.Add([pscustomobject]@{
                 Id           = 'profile'
-                Name         = 'Профиль'
+                Name         = Get-LunqText 'Profile.DefaultCategoryName'
                 Description  = ''
                 Enabled      = $true
                 Appx         = Get-ConfigList $config 'Appx', 'Remove'
@@ -83,15 +83,15 @@ function Read-LunqProfile {
         foreach ($entry in $category.Registry) {
             $hive = [string](Get-ConfigValue $entry 'Hive')
             if (-not $script:HiveMap.Contains($hive)) {
-                throw "Неизвестный куст '$hive' в категории '$($category.Name)'. Допустимо: $($script:HiveMap.Keys -join ', ')"
+                throw (Get-LunqText 'Profile.UnknownHive' $hive $category.Name ($script:HiveMap.Keys -join ', '))
             }
             $path = Get-ConfigValue $entry 'Path'
             if (-not $path) {
-                throw "У записи реестра для куста $hive в категории '$($category.Name)' не указан Path."
+                throw (Get-LunqText 'Profile.RegistryNoPath' $hive $category.Name)
             }
             $problem = Test-LunqRegistryEntry -Entry $entry
             if ($problem) {
-                throw "Запись реестра $hive\$path в категории '$($category.Name)': $problem"
+                throw (Get-LunqText 'Profile.RegistryEntryProblem' $hive $path $category.Name $problem)
             }
         }
     }
@@ -100,7 +100,7 @@ function Read-LunqProfile {
     $removePayload = Get-ConfigValue $config 'Options', 'RemoveFeaturePayload'
     if ($null -eq $removePayload) { $removePayload = Get-ConfigValue $config 'Features', 'RemovePayload' }
 
-    $profileName = Get-ConfigValue $config 'Name'
+    $profileName = Get-LunqLocalized (Get-ConfigValue $config 'Name')
     if (-not $profileName) { $profileName = [IO.Path]::GetFileNameWithoutExtension($Path) }
 
     # Requirements: какую сборку Windows ожидает профиль. Все поля необязательны.
@@ -113,7 +113,7 @@ function Read-LunqProfile {
     return [pscustomobject]@{
         Name                 = [string]$profileName
         Requirements         = $requirements
-        Description          = [string](Get-ConfigValue $config 'Description')
+        Description          = Get-LunqLocalized (Get-ConfigValue $config 'Description')
         Path                 = $Path
         RemoveFeaturePayload = [bool]$removePayload
         Categories           = $categories.ToArray()
@@ -123,11 +123,11 @@ function Read-LunqProfile {
 function Get-CategoryCounts {
     param([Parameter(Mandatory)]$Category)
     $parts = @()
-    if ($Category.Appx.Count) { $parts += "приложений: $($Category.Appx.Count)" }
-    if ($Category.Capabilities.Count) { $parts += "компонентов: $($Category.Capabilities.Count)" }
-    if ($Category.Features.Count) { $parts += "функций: $($Category.Features.Count)" }
-    if ($Category.Packages.Count) { $parts += "пакетов: $($Category.Packages.Count)" }
-    if ($Category.Registry.Count) { $parts += "реестр: $($Category.Registry.Count)" }
+    if ($Category.Appx.Count) { $parts += Get-LunqText 'Profile.CountAppx' $Category.Appx.Count }
+    if ($Category.Capabilities.Count) { $parts += Get-LunqText 'Profile.CountCapabilities' $Category.Capabilities.Count }
+    if ($Category.Features.Count) { $parts += Get-LunqText 'Profile.CountFeatures' $Category.Features.Count }
+    if ($Category.Packages.Count) { $parts += Get-LunqText 'Profile.CountPackages' $Category.Packages.Count }
+    if ($Category.Registry.Count) { $parts += Get-LunqText 'Profile.CountRegistry' $Category.Registry.Count }
     return ($parts -join ', ')
 }
 
@@ -154,7 +154,7 @@ function Disable-LunqCategories {
         $category = $LunqProfile.Categories | Where-Object { $_.Id -eq $id }
         if (-not $category) {
             $known = ($LunqProfile.Categories | ForEach-Object { $_.Id }) -join ', '
-            throw "Категории '$id' нет в профиле. Доступные Id: $known"
+            throw (Get-LunqText 'Profile.CategoryNotFound' $id $known)
         }
         $category.Enabled = $false
     }
@@ -164,12 +164,12 @@ function Select-LunqCategories {
     # Даёт включить или выключить категории по номерам, пока пользователь не нажмёт Enter.
     param([Parameter(Mandatory)]$LunqProfile)
 
-    Write-Info 'Категории профиля. [x] будет применена, [ ] пропущена.'
+    Write-Info (Get-LunqText 'Profile.CategoriesIntro')
     while ($true) {
         Write-Info ''
         Write-CategoryList -LunqProfile $LunqProfile -Numbered
         Write-Info ''
-        $answer = Read-Host '    Номера категорий, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
+        $answer = Read-Host ('    ' + (Get-LunqText 'Profile.CategoriesPrompt'))
         if (-not $answer -or -not $answer.Trim()) { return }
         foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
             $parsed = 0
@@ -177,7 +177,7 @@ function Select-LunqCategories {
                 $category = $LunqProfile.Categories[$parsed - 1]
                 $category.Enabled = -not $category.Enabled
             }
-            else { Write-Warning "Номера $token нет в списке." }
+            else { Write-Warning (Get-LunqText 'Profile.NoSuchCategoryNumber' $token) }
         }
     }
 }
@@ -211,7 +211,7 @@ function Select-LunqProfile {
     param([Parameter(Mandatory)][string]$ProfileDir)
 
     $files = @(Get-ChildItem -LiteralPath $ProfileDir -Filter '*.json' -File | Sort-Object Name)
-    if ($files.Count -eq 0) { throw "В папке $ProfileDir нет профилей (*.json)." }
+    if ($files.Count -eq 0) { throw (Get-LunqText 'Profile.NoProfiles' $ProfileDir) }
 
     $items = foreach ($file in $files) {
         $loaded = Read-LunqProfile -Path $file.FullName
@@ -220,23 +220,23 @@ function Select-LunqProfile {
     $items = @($items)
 
     if ($items.Count -eq 1) {
-        Write-Info "Профиль: $($items[0].Name)"
+        Write-Info (Get-LunqText 'Profile.Single' $items[0].Name)
         if ($items[0].Description) { Write-Host "    $($items[0].Description)" -ForegroundColor DarkGray }
         return $items[0].Path
     }
 
-    Write-Info 'Профиль определяет, что будет удалено и изменено в образе:'
+    Write-Info (Get-LunqText 'Profile.ChooseIntro')
     for ($i = 0; $i -lt $items.Count; $i++) {
         Write-Host ("    [{0}] " -f ($i + 1)) -ForegroundColor Cyan -NoNewline
         Write-Host $items[$i].Name
         if ($items[$i].Description) { Write-Host "        $($items[$i].Description)" -ForegroundColor DarkGray }
     }
     while ($true) {
-        $answer = Read-Host '    Введите номер профиля'
+        $answer = Read-Host ('    ' + (Get-LunqText 'Profile.Prompt'))
         $parsed = 0
         if ([int]::TryParse($answer, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $items.Count) {
             return $items[$parsed - 1].Path
         }
-        Write-Warning 'Такого номера нет в списке, попробуйте ещё раз.'
+        Write-Warning (Get-LunqText 'Profile.NoSuchNumber')
     }
 }

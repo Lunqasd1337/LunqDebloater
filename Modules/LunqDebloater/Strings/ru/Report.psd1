@@ -1,0 +1,23 @@
+﻿# Строки Private\Report.ps1.
+@{
+    'Report.Section'           = 'Итог'
+    'Report.StepInstalled'     = '{0}: установлено {1}, ошибок {2}'
+    'Report.StepAdded'         = '{0}: добавлено {1}, ошибок {2}'
+    'Report.Failed'            = 'Не удалось: {0}'
+    'Report.RemovedOrDisabled' = 'удалено или отключено: {0}'
+    'Report.RegistryPart'      = 'реестр: {0} из {1}'
+    'Report.RegistryFailed'    = 'записей реестра: {0}'
+    'Report.Missing'           = 'Нет в образе или уже убрано: {0}'
+    'Report.SkippedCategories' = 'Пропущены категории: {0}'
+    'Report.OutputIso'         = 'Итоговый ISO: {0} ({1})'
+    'Report.Elapsed'           = 'Время сборки: {0:hh\:mm\:ss}, LunqDebloater {1}'
+    'Report.Log'               = 'Лог: {0}'
+    'Report.Next'              = 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
+    'Report.UnattendRufus1'    = 'В ISO уже есть файл ответов LunqDebloater. Если записываете флешку через Rufus, не отмечайте'
+    'Report.UnattendRufus2'    = 'в его окне настройки Windows: Rufus добавит свой файл ответов, и выбранные настройки установки,'
+    'Report.UnattendRufus3'    = 'программы и скрипты после установки не сработают.'
+    'Report.FirstLogonRufus1'  = 'Rufus при записи предлагает настройки Windows: обход требований TPM, Secure Boot и памяти,'
+    'Report.FirstLogonRufus2'  = 'локальную учётную запись и другие. Не отмечайте ни одну: иначе программы и скрипты после'
+    'Report.FirstLogonRufus3'  = 'установки не запустятся сами. Нужные настройки можно включить в файле ответов LunqDebloater'
+    'Report.FirstLogonRufus4'  = '(сводка «Что войдёт в образ»), а программы и скрипты запустить вручную: команда в README.'
+}

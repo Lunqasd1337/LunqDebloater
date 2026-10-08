@@ -36,7 +36,7 @@ function Write-LunqReport {
         [switch]$HasUnattend
     )
 
-    Write-Section 'Итог'
+    Write-Section (Get-LunqText 'Report.Section')
     $results = @($Results | Where-Object { $null -ne $_ })
 
     # Удаления и реестр показываются ниже по категориям профиля, остальные шаги здесь.
@@ -44,10 +44,10 @@ function Write-LunqReport {
     foreach ($r in @($results | Where-Object { $byCategoryKinds -notcontains $_.Kind })) {
         if ($r.Summary) { Write-Info ("{0}: {1}" -f $r.Title, $r.Summary) }
         else {
-            $verb = if ($r.Kind -like 'Updates*') { 'установлено' } else { 'добавлено' }
-            Write-Info ("{0}: {1} {2}, ошибок {3}" -f $r.Title, $verb, $r.Done.Count, $r.Failed.Count)
+            $key = if ($r.Kind -like 'Updates*') { 'Report.StepInstalled' } else { 'Report.StepAdded' }
+            Write-Info (Get-LunqText $key $r.Title $r.Done.Count $r.Failed.Count)
         }
-        if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
+        if ($r.Failed.Count -gt 0) { Write-Host ('        ' + (Get-LunqText 'Report.Failed' ($r.Failed -join ', '))) -ForegroundColor Yellow }
     }
     $registry = @($results | Where-Object { $_.Kind -eq 'Registry' }) | Select-Object -First 1
 
@@ -66,41 +66,36 @@ function Write-LunqReport {
             }
             $parts = @()
             if (($category.Appx.Count + $category.Capabilities.Count + $category.Features.Count + $category.Packages.Count) -gt 0) {
-                $parts += "удалено или отключено: $done"
+                $parts += Get-LunqText 'Report.RemovedOrDisabled' $done
             }
             if ($registry -and $registry.ByCategory.ContainsKey($category.Id)) {
                 $r = $registry.ByCategory[$category.Id]
-                $parts += ("реестр: {0} из {1}" -f ($r.Applied + $r.Skipped), $category.Registry.Count)
-                if ($r.Failed -gt 0) { $failed += "записей реестра: $($r.Failed)" }
+                $parts += Get-LunqText 'Report.RegistryPart' ($r.Applied + $r.Skipped) $category.Registry.Count
+                if ($r.Failed -gt 0) { $failed += Get-LunqText 'Report.RegistryFailed' $r.Failed }
             }
             if ($parts.Count -eq 0) { continue }
             $color = if ($failed.Count -gt 0) { 'Yellow' } else { 'Gray' }
             Write-Host ("    {0}: {1}" -f $category.Name, ($parts -join ', ')) -ForegroundColor $color
-            if ($failed.Count -gt 0) { Write-Host "        Не удалось: $($failed -join ', ')" -ForegroundColor Yellow }
-            if ($missing.Count -gt 0) { Write-Host "        Нет в образе или уже убрано: $($missing -join ', ')" -ForegroundColor DarkGray }
+            if ($failed.Count -gt 0) { Write-Host ('        ' + (Get-LunqText 'Report.Failed' ($failed -join ', '))) -ForegroundColor Yellow }
+            if ($missing.Count -gt 0) { Write-Host ('        ' + (Get-LunqText 'Report.Missing' ($missing -join ', '))) -ForegroundColor DarkGray }
         }
         $off = @($LunqProfile.Categories | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Name })
-        if ($off.Count -gt 0) { Write-Info "Пропущены категории: $($off -join ', ')" }
+        if ($off.Count -gt 0) { Write-Info (Get-LunqText 'Report.SkippedCategories' ($off -join ', ')) }
     }
 
     if ($OutputIso -and (Test-Path -LiteralPath $OutputIso)) {
-        Write-Info ("Итоговый ISO: {0} ({1})" -f $OutputIso, (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
+        Write-Info (Get-LunqText 'Report.OutputIso' $OutputIso (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
     }
-    if ($Elapsed) { Write-Info ('Время сборки: {0:hh\:mm\:ss}, LunqDebloater {1}' -f $Elapsed, (Get-LunqVersion)) }
-    if ($LogPath) { Write-Info "Лог: $LogPath" }
+    if ($Elapsed) { Write-Info (Get-LunqText 'Report.Elapsed' $Elapsed (Get-LunqVersion)) }
+    if ($LogPath) { Write-Info (Get-LunqText 'Report.Log' $LogPath) }
     Write-Info ''
-    Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
+    Write-Info (Get-LunqText 'Report.Next')
     if ($HasUnattend) {
         # Файл ответов Rufus заменил бы autounattend.xml из ISO.
-        Write-Host '    В ISO уже есть файл ответов LunqDebloater. Если записываете флешку через Rufus, не отмечайте' -ForegroundColor Yellow
-        Write-Host '    в его окне настройки Windows: Rufus добавит свой файл ответов, и выбранные настройки установки,' -ForegroundColor Yellow
-        Write-Host '    программы и скрипты после установки не сработают.' -ForegroundColor Yellow
+        foreach ($i in 1..3) { Write-Host ('    ' + (Get-LunqText "Report.UnattendRufus$i")) -ForegroundColor Yellow }
     }
     elseif ($HasFirstLogon) {
         # Свой файл ответов Rufus важнее Sysprep\unattend.xml, и тогда FirstLogonCommands из образа не выполнятся.
-        Write-Host '    Rufus при записи предлагает настройки Windows: обход требований TPM, Secure Boot и памяти,' -ForegroundColor Yellow
-        Write-Host '    локальную учётную запись и другие. Не отмечайте ни одну: иначе программы и скрипты после' -ForegroundColor Yellow
-        Write-Host '    установки не запустятся сами. Нужные настройки можно включить в файле ответов LunqDebloater' -ForegroundColor Yellow
-        Write-Host '    (сводка «Что войдёт в образ»), а программы и скрипты запустить вручную: команда в README.' -ForegroundColor Yellow
+        foreach ($i in 1..4) { Write-Host ('    ' + (Get-LunqText "Report.FirstLogonRufus$i")) -ForegroundColor Yellow }
     }
 }

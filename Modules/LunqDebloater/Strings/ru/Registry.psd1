@@ -1,0 +1,22 @@
+﻿# Строки Private\Registry.ps1.
+@{
+    'Registry.HiveLoadFailed'       = 'Не удалось загрузить куст {0}'
+    'Registry.HiveUnloadFailed'     = 'Не удалось выгрузить {0}. Выгрузите вручную: reg unload {0}'
+    'Registry.NeedNumber'           = 'нужно число'
+    'Registry.NotNumber'            = '''{0}'' не число'
+    'Registry.DwordOverflow'        = '{0} не помещается в REG_DWORD'
+    'Registry.NotHex'               = '''{0}'' не hex-строка (пары цифр 0-9, A-F)'
+    'Registry.UnknownType'          = 'неизвестный тип ''{0}''. Допустимо: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY'
+    'Registry.UnknownRoot'          = 'Неизвестный корень реестра: {0}'
+    'Registry.UnknownActionAllowed' = 'неизвестное действие ''{0}''. Допустимо: {1}'
+    'Registry.UnknownAction'        = 'неизвестное действие ''{0}'''
+    'Registry.DefaultValueName'     = '(по умолчанию)'
+    'Registry.ApplyFailed'          = 'Не удалось применить {0}\{1} ({2}): {3}'
+    'Registry.StampNone'            = 'нет'
+    'Registry.StampPartial'         = 'Отметка о сборке записана не полностью: {0}'
+    'Registry.StampWritten'         = 'Отметка о сборке записана в реестр образа: HKLM\SOFTWARE\LunqDebloater.'
+    'Registry.StampFailed'          = 'Не удалось записать отметку о сборке: {0}'
+    'Registry.Title'                = 'Реестр'
+    'Registry.ListEmpty'            = 'Список твиков реестра в профиле пуст.'
+    'Registry.Summary'              = 'Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}.'
+}

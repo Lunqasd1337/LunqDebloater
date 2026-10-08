@@ -43,7 +43,7 @@ function Export-WindowsImage {
 
 function Get-AppxProvisionedPackage {
     param($Path, $LogPath)
-    if ($env:LUNQ_TEST_FAIL_APPX) { throw 'Сбой DISM для проверки отката' }
+    if ($env:LUNQ_TEST_FAIL_APPX) { throw 'DISM failure to test the rollback' }
     @(
         [pscustomobject]@{ DisplayName = 'Microsoft.BingNews'; PackageName = 'Microsoft.BingNews_1.0_x64' },
         [pscustomobject]@{ DisplayName = 'Microsoft.WindowsCalculator'; PackageName = 'Microsoft.WindowsCalculator_1.0_x64' }
@@ -75,16 +75,16 @@ function Remove-WindowsPackage { param($Path, $PackageName, [switch]$NoRestart, 
 function Add-WindowsPackage {
     param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath, $ErrorAction)
     Write-Host "    [mock] add package $(Split-Path $PackagePath -Leaf)"
-    if ($PackagePath -match 'broken') { throw 'Пакет не применим к образу' }
+    if ($PackagePath -match 'broken') { throw 'The package does not apply to this image' }
 }
 
 function Add-WindowsDriver {
     param($Path, $Driver, $LogPath, $ErrorAction)
     Write-Host "    [mock] add driver $(Split-Path $Driver -Leaf)"
-    if ($Driver -match 'bad') { throw 'Драйвер не подходит к образу' }
+    if ($Driver -match 'bad') { throw 'The driver does not fit this image' }
 }
 
-function Repair-WindowsImage { param($Path, [switch]$StartComponentCleanup, [switch]$ResetBase, $LogPath) throw 'Repair-WindowsImage не должен вызываться: очистка идёт через dism.exe' }
+function Repair-WindowsImage { param($Path, [switch]$StartComponentCleanup, [switch]$ResetBase, $LogPath) throw 'Repair-WindowsImage must not be called: cleanup goes through dism.exe' }
 
 function Get-DiskImage { param($ImagePath, $ErrorAction) [pscustomobject]@{ ImagePath = $ImagePath; Attached = [bool]$env:LUNQ_TEST_ISO_ATTACHED } }
 function Mount-DiskImage { param($ImagePath, [switch]$PassThru) [pscustomobject]@{ ImagePath = $ImagePath; Attached = $true } }

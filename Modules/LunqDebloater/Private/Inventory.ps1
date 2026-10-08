@@ -10,7 +10,7 @@
 
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($h in $Header) { $lines.Add($h) }
-    $lines.Add("Профиль для сравнения: $($LunqProfile.Name). [id] справа: элемент уже есть в категории профиля с этим Id.")
+    $lines.Add((Get-LunqText 'Inventory.Profile' (Get-LunqLocalized $LunqProfile.Name)))
     $lines.Add('')
 
     $categories = @($LunqProfile.Categories)
@@ -24,21 +24,21 @@
         param([string]$Title, [string[]]$Names, [string]$Kind)
         $lines.Add("== $Title ==")
         foreach ($n in $Names) { $lines.Add(('  {0,-60} {1}' -f $n, (& $mark $n $Kind)).TrimEnd()) }
-        if ($Names.Count -eq 0) { $lines.Add('  (нет)') }
+        if ($Names.Count -eq 0) { $lines.Add('  ' + (Get-LunqText 'Inventory.None')) }
         $lines.Add('')
     }
 
     $appx = @(Get-AppxProvisionedPackage -Path $MountPath | ForEach-Object { $_.DisplayName } | Sort-Object -Unique)
-    & $addSection "Приложения Appx: $($appx.Count). Для раздела Appx" $appx 'Appx'
+    & $addSection (Get-LunqText 'Inventory.Appx' $appx.Count) $appx 'Appx'
 
     $caps = @(Get-WindowsCapability -Path $MountPath | Where-Object State -eq 'Installed' | ForEach-Object { $_.Name } | Sort-Object)
-    & $addSection "Компоненты (Capabilities), установлены: $($caps.Count). Для раздела Capabilities, версию после ~~~~ можно заменить на *" $caps 'Capabilities'
+    & $addSection (Get-LunqText 'Inventory.Capabilities' $caps.Count) $caps 'Capabilities'
 
     $features = @(Get-WindowsOptionalFeature -Path $MountPath | Sort-Object FeatureName)
     $enabled = @($features | Where-Object { [string]$_.State -eq 'Enabled' } | ForEach-Object { $_.FeatureName })
     $disabled = @($features | Where-Object { [string]$_.State -ne 'Enabled' } | ForEach-Object { $_.FeatureName })
-    & $addSection "Функции Windows (Optional Features), включены: $($enabled.Count). Для раздела Features" $enabled 'Features'
-    & $addSection "Функции Windows, выключены: $($disabled.Count). Их отключать не нужно" $disabled 'Features'
+    & $addSection (Get-LunqText 'Inventory.FeaturesEnabled' $enabled.Count) $enabled 'Features'
+    & $addSection (Get-LunqText 'Inventory.FeaturesDisabled' $disabled.Count) $disabled 'Features'
 
     $missing = @()
     foreach ($category in $categories) {
@@ -48,9 +48,9 @@
             }
         }
     }
-    $lines.Add("== Есть в профиле, но нет в образе (или уже выключено): $($missing.Count) ==")
+    $lines.Add("== $(Get-LunqText 'Inventory.Missing' $missing.Count) ==")
     foreach ($m in $missing) { $lines.Add($m) }
-    if ($missing.Count -eq 0) { $lines.Add('  (нет)') }
+    if ($missing.Count -eq 0) { $lines.Add('  ' + (Get-LunqText 'Inventory.None')) }
 
     $lines | Set-Content -LiteralPath $Path -Encoding UTF8
     return [pscustomobject]@{ Appx = $appx.Count; Capabilities = $caps.Count; Enabled = $enabled.Count; Disabled = $disabled.Count; Missing = $missing.Count }

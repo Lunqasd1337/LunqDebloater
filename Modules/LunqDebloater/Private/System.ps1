@@ -65,8 +65,8 @@ function Write-LunqRunInfo {
     param($BoundParameters, [string]$DismLog)
 
     $lines = @()
-    $lines += ("LunqDebloater {0}, запуск {1}" -f (Get-LunqVersion), (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
-    $system = 'неизвестно'
+    $lines += (Get-LunqText 'System.RunStart' (Get-LunqVersion) (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
+    $system = Get-LunqText 'System.Unknown'
     try {
         $nt = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
         $product = [string]$nt.ProductName
@@ -76,12 +76,12 @@ function Write-LunqRunInfo {
         $system = '{0}{1} ({2}.{3})' -f $product, $display, $nt.CurrentBuild, $nt.UBR
     }
     catch { }   # версия системы нужна только для лога
-    $lines += ("Система: {0}, PowerShell {1}" -f $system, $PSVersionTable.PSVersion)
+    $lines += (Get-LunqText 'System.RunSystem' $system $PSVersionTable.PSVersion)
     $params = @()
     if ($BoundParameters) { $params = ConvertTo-LunqArgumentList -BoundParameters $BoundParameters }
-    if ($params.Count -eq 0) { $params = @('нет (пошаговый режим)') }
-    $lines += ("Параметры: {0}" -f ($params -join ' '))
-    if ($DismLog) { $lines += "Подробный лог DISM: $DismLog" }
+    if ($params.Count -eq 0) { $params = @(Get-LunqText 'System.NoParameters') }
+    $lines += (Get-LunqText 'System.RunParameters' ($params -join ' '))
+    if ($DismLog) { $lines += (Get-LunqText 'System.DismLog' $DismLog) }
     # Приглушённым цветом: это нужно для разбора лога, а не для работы со скриптом.
     foreach ($line in $lines) { Write-Host "    $line" -ForegroundColor DarkGray }
 }

@@ -98,6 +98,8 @@ function Invoke-LunqTestRun {
         }
     }
     function global:Start-Process { Write-Host "    [mock] Start-Process $args" }
+    # Проверки сверяют русский текст, если тест сам не выбрал язык.
+    if (-not $Parameters.ContainsKey('Language')) { $Parameters = $Parameters.Clone(); $Parameters['Language'] = 'ru' }
 
     $errorRecord = $null
     $lines = New-Object System.Collections.Generic.List[string]
@@ -107,7 +109,11 @@ function Invoke-LunqTestRun {
 }
 
 function Get-LunqStepNumbers {
-    # Все «Шаг N из M» из вывода: проверка, что шаги идут подряд и счётчик верный.
+    # Все «Шаг N из M» (или «Step N of M») из вывода: проверка, что шаги идут подряд и счётчик верный.
     param([Parameter(Mandatory)][string]$Output)
-    return @([regex]::Matches($Output, 'Шаг (\d+) из (\d+)') | ForEach-Object { [pscustomobject]@{ N = [int]$_.Groups[1].Value; M = [int]$_.Groups[2].Value } })
+    return @([regex]::Matches($Output, '(?:Шаг (\d+) из (\d+))|(?:Step (\d+) of (\d+))') | ForEach-Object {
+            $n = if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[3].Value }
+            $m = if ($_.Groups[2].Success) { $_.Groups[2].Value } else { $_.Groups[4].Value }
+            [pscustomobject]@{ N = [int]$n; M = [int]$m }
+        })
 }

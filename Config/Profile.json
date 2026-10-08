@@ -1,6 +1,10 @@
 {
+  "$schema": "../Schemas/Profile.schema.json",
   "Name": "Default",
-  "Description": "Очистка образа: убирает рекламные и редко нужные приложения, телеметрию и ИИ-функции, отключает автообновление приложений Store. Не трогает Store, winget, Терминал, Фотографии, Калькулятор и Блокнот. Запрет драйверов из Windows Update (категория drivers) выключен по умолчанию.",
+  "Description": {
+    "ru": "Очистка образа: убирает рекламные и редко нужные приложения, телеметрию и ИИ-функции, отключает автообновление приложений Store. Не трогает Store, winget, Терминал, Фотографии, Калькулятор и Блокнот. Запрет драйверов из Windows Update (категория drivers) выключен по умолчанию.",
+    "en": "Image cleanup: removes ads and rarely needed apps, telemetry and AI features, and turns off automatic Store app updates. Leaves the Store, winget, Terminal, Photos, Calculator and Notepad alone. Blocking drivers from Windows Update (the drivers category) is off by default."
+  },
 
   "Requirements": {
     "Build": 26300,
@@ -15,9 +19,12 @@
   "Categories": [
     {
       "Id": "apps",
-      "Name": "Встроенные приложения",
+      "Name": { "ru": "Встроенные приложения", "en": "Built-in apps" },
       "Enabled": true,
-      "Description": "Удаляет предустановленные приложения и не даёт Windows доустановить Outlook и Dev Home после установки.",
+      "Description": {
+        "ru": "Удаляет предустановленные приложения и не даёт Windows доустановить Outlook и Dev Home после установки.",
+        "en": "Removes preinstalled apps and stops Windows from installing Outlook and Dev Home after setup."
+      },
       "Appx": [
         "Clipchamp.Clipchamp",
         "Microsoft.BingNews",
@@ -43,15 +50,18 @@
         "MSTeams"
       ],
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\DevHomeUpdate", "Action": "DeleteKey", "Description": "Не доустанавливать Dev Home после установки" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": "Не доустанавливать новый Outlook после установки" }
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\DevHomeUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать Dev Home после установки", "en": "Do not install Dev Home after setup" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } }
       ]
     },
     {
       "Id": "legacy",
-      "Name": "Устаревшие компоненты",
+      "Name": { "ru": "Устаревшие компоненты", "en": "Legacy components" },
       "Enabled": true,
-      "Description": "Удаляет старые компоненты (IE, PowerShell ISE, Steps Recorder) и отключает редко нужные функции Windows.",
+      "Description": {
+        "ru": "Удаляет старые компоненты (IE, PowerShell ISE, Steps Recorder) и отключает редко нужные функции Windows.",
+        "en": "Removes old components (IE, PowerShell ISE, Steps Recorder) and turns off rarely needed Windows features."
+      },
       "Capabilities": [
         "App.StepsRecorder*",
         "App.Support.QuickAssist*",
@@ -69,30 +79,36 @@
     },
     {
       "Id": "telemetry",
-      "Name": "Телеметрия и диагностика",
+      "Name": { "ru": "Телеметрия и диагностика", "en": "Telemetry and diagnostics" },
       "Enabled": true,
-      "Description": "Сводит к минимуму сбор и отправку диагностических данных, отчётов об ошибках и данных о совместимости.",
+      "Description": {
+        "ru": "Сводит к минимуму сбор и отправку диагностических данных, отчётов об ошибках и данных о совместимости.",
+        "en": "Keeps the collection and sending of diagnostic data, error reports and compatibility data to a minimum."
+      },
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "AllowTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": "Минимальный уровень телеметрии" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection", "Name": "AllowTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": "Минимальный уровень телеметрии (системная ветка)" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection", "Name": "MaxTelemetryAllowed", "Type": "REG_DWORD", "Value": 0, "Description": "Ограничить максимальный уровень телеметрии" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "AllowDeviceNameInTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": "Не отправлять имя устройства в телеметрии" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "DisableOneSettingsDownloads", "Type": "REG_DWORD", "Value": 1, "Description": "Не загружать конфигурацию OneSettings" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "LimitDiagnosticLogCollection", "Type": "REG_DWORD", "Value": 1, "Description": "Ограничить сбор диагностических журналов" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "LimitDumpCollection", "Type": "REG_DWORD", "Value": 1, "Description": "Ограничить сбор дампов памяти" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "DisableInventory", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить сборщик инвентаризации приложений" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "DisableUAR", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить средство записи действий (UAR)" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "AITEnable", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить телеметрию совместимости приложений" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Windows Error Reporting", "Name": "Disabled", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить отправку отчётов об ошибках" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\SQMClient\\Windows", "Name": "CEIPEnable", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить программу улучшения качества ПО" },
-        { "Hive": "SYSTEM", "Path": "ControlSet001\\Services\\DiagTrack", "Name": "Start", "Type": "REG_DWORD", "Value": 4, "Description": "Отключить службу телеметрии DiagTrack" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "AllowTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Минимальный уровень телеметрии", "en": "Minimum telemetry level" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection", "Name": "AllowTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Минимальный уровень телеметрии (системная ветка)", "en": "Minimum telemetry level (system key)" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection", "Name": "MaxTelemetryAllowed", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Ограничить максимальный уровень телеметрии", "en": "Limit the maximum telemetry level" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "AllowDeviceNameInTelemetry", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не отправлять имя устройства в телеметрии", "en": "Do not send the device name with telemetry" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "DisableOneSettingsDownloads", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не загружать конфигурацию OneSettings", "en": "Do not download OneSettings configuration" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "LimitDiagnosticLogCollection", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Ограничить сбор диагностических журналов", "en": "Limit the collection of diagnostic logs" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DataCollection", "Name": "LimitDumpCollection", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Ограничить сбор дампов памяти", "en": "Limit the collection of memory dumps" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "DisableInventory", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить сборщик инвентаризации приложений", "en": "Turn off the app inventory collector" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "DisableUAR", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить средство записи действий (UAR)", "en": "Turn off Steps Recorder (UAR)" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppCompat", "Name": "AITEnable", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить телеметрию совместимости приложений", "en": "Turn off app compatibility telemetry" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Windows Error Reporting", "Name": "Disabled", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить отправку отчётов об ошибках", "en": "Turn off error reporting" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\SQMClient\\Windows", "Name": "CEIPEnable", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить программу улучшения качества ПО", "en": "Turn off the Customer Experience Improvement Program" } },
+        { "Hive": "SYSTEM", "Path": "ControlSet001\\Services\\DiagTrack", "Name": "Start", "Type": "REG_DWORD", "Value": 4, "Description": { "ru": "Отключить службу телеметрии DiagTrack", "en": "Turn off the DiagTrack telemetry service" } }
       ]
     },
     {
       "Id": "ai",
-      "Name": "Copilot и ИИ",
+      "Name": { "ru": "Copilot и ИИ", "en": "Copilot and AI" },
       "Enabled": true,
-      "Description": "Удаляет Copilot, отключает Recall, Click to Do и ИИ-функции в Paint, Блокноте и Edge.",
+      "Description": {
+        "ru": "Удаляет Copilot, отключает Recall, Click to Do и ИИ-функции в Paint, Блокноте и Edge.",
+        "en": "Removes Copilot and turns off Recall, Click to Do and AI features in Paint, Notepad and Edge."
+      },
       "Appx": [
         "Microsoft.Copilot"
       ],
@@ -100,86 +116,101 @@
         "Recall"
       ],
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Copilot (для компьютера)" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableAIDataAnalysis", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить снимки Recall" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "AllowRecallEnablement", "Type": "REG_DWORD", "Value": 0, "Description": "Сделать Recall недоступным" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableClickToDo", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Click to Do (для компьютера)" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableSettingsAgent", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить ИИ-агента в Параметрах" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableCocreator", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Cocreator в Paint" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableGenerativeFill", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить генеративную заливку в Paint" },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableImageCreator", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Image Creator в Paint" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\WindowsNotepad", "Name": "DisableAIFeatures", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить ИИ-функции Блокнота" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppPrivacy", "Name": "LetAppsAccessGenerativeAI", "Type": "REG_DWORD", "Value": 2, "Description": "Запретить приложениям доступ к генеративному ИИ" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppPrivacy", "Name": "LetAppsAccessSystemAIModels", "Type": "REG_DWORD", "Value": 2, "Description": "Запретить приложениям доступ к системным ИИ-моделям" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Edge", "Name": "HubsSidebarEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить боковую панель Copilot в Edge" },
-        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Copilot (для пользователя)" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "Name": "ShowCopilotButton", "Type": "REG_DWORD", "Value": 0, "Description": "Скрыть кнопку Copilot" },
-        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableAIDataAnalysis", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить снимки Recall (для пользователя)" },
-        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableClickToDo", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить Click to Do (для пользователя)" },
-        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "RemoveMicrosoftCopilotApp", "Type": "REG_DWORD", "Value": 1, "Description": "Политика удаления приложения Copilot" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Copilot (для компьютера)", "en": "Turn off Copilot (for the computer)" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableAIDataAnalysis", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить снимки Recall", "en": "Turn off Recall snapshots" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "AllowRecallEnablement", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Сделать Recall недоступным", "en": "Make Recall unavailable" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableClickToDo", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Click to Do (для компьютера)", "en": "Turn off Click to Do (for the computer)" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableSettingsAgent", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить ИИ-агента в Параметрах", "en": "Turn off the AI agent in Settings" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableCocreator", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Cocreator в Paint", "en": "Turn off Cocreator in Paint" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableGenerativeFill", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить генеративную заливку в Paint", "en": "Turn off Generative fill in Paint" } },
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\Windows\\CurrentVersion\\Policies\\Paint", "Name": "DisableImageCreator", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Image Creator в Paint", "en": "Turn off Image Creator in Paint" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\WindowsNotepad", "Name": "DisableAIFeatures", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить ИИ-функции Блокнота", "en": "Turn off AI features in Notepad" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppPrivacy", "Name": "LetAppsAccessGenerativeAI", "Type": "REG_DWORD", "Value": 2, "Description": { "ru": "Запретить приложениям доступ к генеративному ИИ", "en": "Block app access to generative AI" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\AppPrivacy", "Name": "LetAppsAccessSystemAIModels", "Type": "REG_DWORD", "Value": 2, "Description": { "ru": "Запретить приложениям доступ к системным ИИ-моделям", "en": "Block app access to system AI models" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Edge", "Name": "HubsSidebarEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить боковую панель Copilot в Edge", "en": "Turn off the Copilot sidebar in Edge" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Copilot (для пользователя)", "en": "Turn off Copilot (for the user)" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "Name": "ShowCopilotButton", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Скрыть кнопку Copilot", "en": "Hide the Copilot button" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableAIDataAnalysis", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить снимки Recall (для пользователя)", "en": "Turn off Recall snapshots (for the user)" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "DisableClickToDo", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить Click to Do (для пользователя)", "en": "Turn off Click to Do (for the user)" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\WindowsAI", "Name": "RemoveMicrosoftCopilotApp", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Политика удаления приложения Copilot", "en": "Policy to remove the Copilot app" } }
       ]
     },
     {
       "Id": "ads",
-      "Name": "Реклама и предложения",
+      "Name": { "ru": "Реклама и предложения", "en": "Ads and suggestions" },
       "Enabled": true,
-      "Description": "Отключает рекламный контент, советы и автоматическую установку продвигаемых приложений.",
+      "Description": {
+        "ru": "Отключает рекламный контент, советы и автоматическую установку продвигаемых приложений.",
+        "en": "Turns off promotional content, tips and automatic installation of promoted apps."
+      },
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\CloudContent", "Name": "DisableWindowsConsumerFeatures", "Type": "REG_DWORD", "Value": 1, "Description": "Не устанавливать рекламные приложения автоматически" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\CloudContent", "Name": "DisableCloudOptimizedContent", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить облачный контент в «Пуске»" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "ContentDeliveryAllowed", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить доставку рекламного контента" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "SilentInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Не устанавливать приложения без спроса" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "PreInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить предустановленные рекламные приложения" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "OemPreInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить приложения производителя" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "FeatureManagementEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить продвижение функций и приложений" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "SoftLandingEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить советы при знакомстве с Windows" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "PreInstalledAppsEverEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить предустановку рекламных приложений" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\CloudContent", "Name": "DisableWindowsConsumerFeatures", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не устанавливать рекламные приложения автоматически", "en": "Do not install promoted apps automatically" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\CloudContent", "Name": "DisableCloudOptimizedContent", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить облачный контент в «Пуске»", "en": "Turn off cloud content in the Start menu" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "ContentDeliveryAllowed", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить доставку рекламного контента", "en": "Turn off delivery of promotional content" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "SilentInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не устанавливать приложения без спроса", "en": "Do not install apps without asking" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "PreInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить предустановленные рекламные приложения", "en": "Turn off preinstalled promoted apps" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "OemPreInstalledAppsEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить приложения производителя", "en": "Turn off apps from the device manufacturer" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "FeatureManagementEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить продвижение функций и приложений", "en": "Turn off promotion of features and apps" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "SoftLandingEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить советы при знакомстве с Windows", "en": "Turn off tips when you get started with Windows" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "Name": "PreInstalledAppsEverEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить предустановку рекламных приложений", "en": "Turn off preinstallation of promoted apps" } }
       ]
     },
     {
       "Id": "search",
-      "Name": "Поиск и Bing",
+      "Name": { "ru": "Поиск и Bing", "en": "Search and Bing" },
       "Enabled": true,
-      "Description": "Убирает Bing и веб-результаты из поиска Windows и меню «Пуск».",
+      "Description": {
+        "ru": "Убирает Bing и веб-результаты из поиска Windows и меню «Пуск».",
+        "en": "Removes Bing and web results from Windows Search and the Start menu."
+      },
       "Appx": [
         "Microsoft.BingSearch"
       ],
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Windows Search", "Name": "ConnectedSearchUseWeb", "Type": "REG_DWORD", "Value": 0, "Description": "Не искать в интернете из поиска Windows" },
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Search", "Name": "BingSearchEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Отключить Bing в поиске" },
-        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\Explorer", "Name": "DisableSearchBoxSuggestions", "Type": "REG_DWORD", "Value": 1, "Description": "Отключить веб-подсказки в поиске «Пуска»" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Windows Search", "Name": "ConnectedSearchUseWeb", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не искать в интернете из поиска Windows", "en": "Do not search the web from Windows Search" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Search", "Name": "BingSearchEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить Bing в поиске", "en": "Turn off Bing in search" } },
+        { "Hive": "DefaultUser", "Path": "Software\\Policies\\Microsoft\\Windows\\Explorer", "Name": "DisableSearchBoxSuggestions", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Отключить веб-подсказки в поиске «Пуска»", "en": "Turn off web suggestions in Start menu search" } }
       ]
     },
     {
       "Id": "store",
-      "Name": "Microsoft Store",
+      "Name": { "ru": "Microsoft Store", "en": "Microsoft Store" },
       "Enabled": true,
-      "Description": "Отключает автоматическую загрузку и обновление приложений из Store.",
+      "Description": {
+        "ru": "Отключает автоматическую загрузку и обновление приложений из Store.",
+        "en": "Turns off automatic download and update of Store apps."
+      },
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\WindowsStore", "Name": "AutoDownload", "Type": "REG_DWORD", "Value": 2, "Description": "Отключить автоматическую загрузку и обновление приложений Store" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\WindowsStore", "Name": "AutoDownload", "Type": "REG_DWORD", "Value": 2, "Description": { "ru": "Отключить автоматическую загрузку и обновление приложений Store", "en": "Turn off automatic download and update of Store apps" } }
       ]
     },
     {
       "Id": "drivers",
-      "Name": "Драйверы из Windows Update",
+      "Name": { "ru": "Драйверы из Windows Update", "en": "Drivers from Windows Update" },
       "Enabled": false,
-      "Description": "Windows не будет сама искать и ставить драйверы. Включайте, только если встраиваете свои драйверы: без встроенного драйвера сетевой карты или Wi-Fi после установки не будет интернета.",
+      "Description": {
+        "ru": "Windows не будет сама искать и ставить драйверы. Включайте, только если встраиваете свои драйверы: без встроенного драйвера сетевой карты или Wi-Fi после установки не будет интернета.",
+        "en": "Windows will not search for and install drivers on its own. Turn this on only if you add your own drivers: without a built-in network or Wi-Fi driver there will be no internet after setup."
+      },
       "Registry": [
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "SearchOrderConfig", "Type": "REG_DWORD", "Value": 0, "Description": "Не искать драйверы в Windows Update" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DontSearchWindowsUpdate", "Type": "REG_DWORD", "Value": 1, "Description": "Не искать драйверы в Windows Update" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DriverUpdateWizardWuSearchEnabled", "Type": "REG_DWORD", "Value": 0, "Description": "Не искать драйверы в Windows Update из мастера обновления" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DontPromptForWindowsUpdate", "Type": "REG_DWORD", "Value": 1, "Description": "Не предлагать поиск драйверов в Windows Update" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsUpdate", "Name": "ExcludeWUDriversInQualityUpdate", "Type": "REG_DWORD", "Value": 1, "Description": "Не устанавливать драйверы вместе с обновлениями Windows" },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Device Metadata", "Name": "PreventDeviceMetadataFromNetwork", "Type": "REG_DWORD", "Value": 1, "Description": "Не загружать метаданные устройств из интернета" }
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "SearchOrderConfig", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не искать драйверы в Windows Update", "en": "Do not search Windows Update for drivers" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DontSearchWindowsUpdate", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не искать драйверы в Windows Update", "en": "Do not search Windows Update for drivers" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DriverUpdateWizardWuSearchEnabled", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не искать драйверы в Windows Update из мастера обновления", "en": "Do not search Windows Update for drivers from the driver update wizard" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DontPromptForWindowsUpdate", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не предлагать поиск драйверов в Windows Update", "en": "Do not offer to search Windows Update for drivers" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsUpdate", "Name": "ExcludeWUDriversInQualityUpdate", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не устанавливать драйверы вместе с обновлениями Windows", "en": "Do not install drivers with Windows updates" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\Device Metadata", "Name": "PreventDeviceMetadataFromNetwork", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Не загружать метаданные устройств из интернета", "en": "Do not download device metadata from the internet" } }
       ]
     },
     {
       "Id": "onedrive",
-      "Name": "OneDrive",
+      "Name": { "ru": "OneDrive", "en": "OneDrive" },
       "Enabled": true,
-      "Description": "Не даёт OneDrive установиться при первом входе пользователя.",
+      "Description": {
+        "ru": "Не даёт OneDrive установиться при первом входе пользователя.",
+        "en": "Stops OneDrive from installing when a user signs in for the first time."
+      },
       "Registry": [
-        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue", "Description": "Не устанавливать OneDrive при первом входе" }
+        { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue", "Description": { "ru": "Не устанавливать OneDrive при первом входе", "en": "Do not install OneDrive at first sign-in" } }
       ]
     }
   ]

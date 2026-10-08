@@ -1,3 +1,5 @@
+English: [README.en.md](README.en.md)
+
 # LunqDebloater
 
 PowerShell-скрипт для преднастройки ISO-образа Windows 11 перед установкой. Работает офлайн, через DISM, над `install.wim`:
@@ -12,6 +14,15 @@ PowerShell-скрипт для преднастройки ISO-образа Windo
 - вносит изменения в реестр образа (кусты `SOFTWARE`, `SYSTEM` и профиль `Default`, от которого создаются все новые пользователи).
 
 На выходе получается загрузочный ISO (BIOS + UEFI) с одной выбранной редакцией. Отдельный режим «Что в образе» ничего не собирает, а выгружает список приложений и компонентов редакции, чтобы было проще составить свой профиль.
+
+## Ответственность
+
+LunqDebloater меняет установочный образ Windows так, как Microsoft официально не поддерживает: удаляет приложения и компоненты и правит реестр. **Всё, что вы делаете с его помощью, вы делаете на свой страх и риск.** Автор не отвечает за потерю данных, неработающую или нестабильную систему, проблемы с обновлениями, активацией, гарантией или поддержкой производителя.
+
+- Будущие накопительные обновления Windows могут не установиться или вернуть удалённое, если рассчитаны на вырезанные компоненты.
+- Перед установкой на рабочий компьютер проверьте собранный ISO в виртуальной машине и сохраните важные данные.
+
+Программа распространяется «как есть», без каких-либо гарантий (см. [LICENSE](LICENSE)).
 
 ## Требования
 
@@ -88,6 +99,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-CleanupComponents` | Очистить хранилище компонентов (`/ResetBase`): образ меньше, но обновления из него нельзя удалить |
 | `-KeepWorkDir` | Не удалять рабочую папку после сборки |
 | `-Force` | Перезаписать существующий итоговый ISO |
+| `-Language` | Язык интерфейса: `ru` или `en`. По умолчанию русский на русской Windows и английский на любой другой |
 
 ## Как устроен процесс
 
@@ -191,13 +203,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 
 ```jsonc
 {
+  "$schema": "../Schemas/Profile.schema.json",   // подсказки и проверка в VS Code
   "Name": "Default",
   "Description": "Что делает профиль",
   "Options": { "RemoveFeaturePayload": false },   // удалять ли файлы отключённых функций
   "Categories": [
     {
       "Id": "ai",                                 // короткое имя для -SkipCategory
-      "Name": "Copilot и ИИ",
+      "Name": { "ru": "Copilot и ИИ", "en": "Copilot and AI" },
       "Enabled": true,                            // false: категория пропускается
       "Description": "Что делает категория",
       "Appx":         ["Microsoft.Copilot"],      // DisplayName, можно с *
@@ -215,6 +228,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 ```
 
 Пустые списки в категории можно не писать.
+
+Тексты `Name` и `Description` (у профиля, категорий и записей реестра) можно писать строкой или переводами: `{ "ru": "...", "en": "..." }`. Скрипт берёт язык интерфейса, затем английский. Строка `"$schema"` подключает схему [Schemas/Profile.schema.json](Schemas/Profile.schema.json): по ней VS Code подсказывает поля и подчёркивает ошибки.
 
 ### Требования к версии Windows
 
@@ -277,8 +292,10 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 |---|---|
 | `LunqDebloater.ps1` | Сам скрипт: параметры, пошаговый режим, план и список шагов сборки |
 | `Modules\LunqDebloater\` | Модуль с функциями. Версия задаётся в манифесте `LunqDebloater.psd1` |
-| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Report`, `System` |
+| `Modules\LunqDebloater\Strings\` | Тексты интерфейса: `ru\*.psd1` и `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | Скрипт первого входа, который кладётся в образ |
+| `Schemas\Profile.schema.json` | JSON-схема профиля |
 | `Tests\` | Тесты Pester и заглушка модуля DISM |
 
 Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки, а сборка идёт в папке теста. Запустить их (нужен Pester 5):
@@ -291,6 +308,8 @@ Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSetti
 ```
 
 То же самое GitHub Actions выполняет для каждого PR. Что поменялось в каждой версии, записано в [CHANGELOG.md](CHANGELOG.md).
+
+Как предложить изменение и сообщить об ошибке, описано в [CONTRIBUTING.md](CONTRIBUTING.md). Схема профиля лежит в `Schemas\Profile.schema.json`; `.vscode\settings.json` подключает её к профилям в папках `Config*`, так что VS Code подсказывает поля профиля и проверяет их даже без интернета.
 
 ## Лицензия
 

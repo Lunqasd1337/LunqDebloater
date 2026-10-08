@@ -19,17 +19,17 @@ function Test-LunqWorkDir {
     )
 
     if ($WorkDir.TrimEnd('\', '/') -eq ([IO.Path]::GetPathRoot($WorkDir)).TrimEnd('\', '/')) {
-        return 'это корень диска'
+        return (Get-LunqText 'Checks.WorkDirIsRoot')
     }
     foreach ($path in $ProtectedPaths) {
         if ($path -and (Test-PathInside -Path $path -Folder $WorkDir)) {
-            return "внутри неё лежит $path, он был бы удалён"
+            return (Get-LunqText 'Checks.WorkDirContainsPath' $path)
         }
     }
-    if ((Test-Path -LiteralPath $WorkDir -PathType Leaf)) { return 'это файл, а не папка' }
+    if ((Test-Path -LiteralPath $WorkDir -PathType Leaf)) { return (Get-LunqText 'Checks.WorkDirIsFile') }
     if ((Test-Path -LiteralPath $WorkDir) -and -not $IsDefault -and -not (Test-Path -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker))) {
         if (@(Get-ChildItem -LiteralPath $WorkDir -Force).Count -gt 0) {
-            return 'папка не пустая и создана не этим скриптом'
+            return (Get-LunqText 'Checks.WorkDirNotEmpty')
         }
     }
     return $null
@@ -39,7 +39,7 @@ function Initialize-LunqWorkDir {
     # Создаёт рабочую папку с файлом-меткой, по которой скрипт узнаёт свою папку.
     param([Parameter(Mandatory)][string]$WorkDir)
     New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value 'Рабочая папка LunqDebloater. Удаляется после сборки.' -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value (Get-LunqText 'Checks.WorkDirMarker') -Encoding UTF8
 }
 
 function Reset-LunqWorkDir {
@@ -49,7 +49,7 @@ function Reset-LunqWorkDir {
     # и DISM не сможет отключить образ, пока они открыты.
     Dismount-OfflineHives
     foreach ($leftover in (Get-LunqMountedPaths -Paths $MountPaths)) {
-        Write-Info "Найден оставшийся смонтированный образ в $leftover, отключаю без сохранения."
+        Write-Info (Get-LunqText 'Checks.LeftoverMount' $leftover)
         Dismount-WindowsImage -Path $leftover -Discard | Out-Null
     }
     if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
@@ -69,16 +69,16 @@ function Test-LunqOutputPath {
     # Возвращает текст проблемы или $null.
     param([Parameter(Mandatory)][string]$OutputIso, [Parameter(Mandatory)][string]$IsoPath)
 
-    if ($OutputIso.TrimEnd('\', '/') -eq $IsoPath.TrimEnd('\', '/')) { return 'это исходный ISO, он был бы перезаписан' }
-    if (Test-Path -LiteralPath $OutputIso -PathType Container) { return 'это папка, а нужен путь к файлу .iso' }
+    if ($OutputIso.TrimEnd('\', '/') -eq $IsoPath.TrimEnd('\', '/')) { return (Get-LunqText 'Checks.OutputIsSource') }
+    if (Test-Path -LiteralPath $OutputIso -PathType Container) { return (Get-LunqText 'Checks.OutputIsFolder') }
     $folder = Split-Path $OutputIso -Parent
-    if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { return "папки $folder нет, создайте её" }
+    if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { return (Get-LunqText 'Checks.OutputNoFolder' $folder) }
     $probe = Join-Path $folder (".lunq_write_test_{0}.tmp" -f [guid]::NewGuid().ToString('N'))
     try {
         [IO.File]::WriteAllText($probe, '')
         Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
     }
-    catch { return "в папку $folder нельзя записать файл" }
+    catch { return (Get-LunqText 'Checks.OutputNotWritable' $folder) }
     return $null
 }
 
@@ -90,7 +90,7 @@ function Get-LunqHostWarning {
     $hostName = Get-WindowsReleaseName -Build $HostBuild
     if (-not $hostName -and $HostBuild -lt 22000) { $hostName = 'Windows 10' }
     if ($hostName) { $hostName = " ($hostName)" }
-    return "Windows на этом компьютере (сборка $HostBuild$hostName) старше образа ($ImageBuild). DISM этой системы может не справиться с частью шагов, чаще всего со встраиванием обновлений."
+    return (Get-LunqText 'Checks.HostOlder' $HostBuild $hostName $ImageBuild)
 }
 
 function Get-LunqDriveInfo {
@@ -122,7 +122,7 @@ function Test-LunqPrerequisites {
 
     $workDirProblem = Test-LunqWorkDir -WorkDir $WorkDir -ProtectedPaths $ProtectedPaths -IsDefault:$DefaultWorkDir
     if ($workDirProblem) {
-        Write-Check Fail "Рабочая папка $($WorkDir): $workDirProblem" 'Скрипт полностью очищает рабочую папку. Укажите через -WorkDir новую или пустую папку, например D:\LunqWork.'
+        Write-Check Fail (Get-LunqText 'Checks.WorkDirProblem' $WorkDir $workDirProblem) (Get-LunqText 'Checks.WorkDirProblemHint')
         $result.Errors++
     }
 
@@ -130,7 +130,7 @@ function Test-LunqPrerequisites {
     if (-not $SkipOutputCheck) {
         $outputProblem = Test-LunqOutputPath -OutputIso $OutputIso -IsoPath $IsoPath
         if ($outputProblem) {
-            Write-Check Fail "Итоговый ISO $($OutputIso): $outputProblem" 'Укажите другой путь через -OutputIso.'
+            Write-Check Fail (Get-LunqText 'Checks.OutputProblem' $OutputIso $outputProblem) (Get-LunqText 'Checks.OutputProblemHint')
             $result.Errors++
         }
     }
@@ -138,10 +138,10 @@ function Test-LunqPrerequisites {
     if (-not $SkipOscdimg) {
         try {
             $result.Oscdimg = Find-Oscdimg -Path $OscdimgPath
-            Write-Check Ok "Windows ADK: $($result.Oscdimg)"
+            Write-Check Ok (Get-LunqText 'Checks.Adk' $result.Oscdimg)
         }
         catch {
-            Write-Check Fail 'Не найден oscdimg.exe из Windows ADK' 'Установите ADK (достаточно компонента Deployment Tools): https://learn.microsoft.com/windows-hardware/get-started/adk-install'
+            Write-Check Fail (Get-LunqText 'Checks.AdkMissing') (Get-LunqText 'Checks.AdkMissingHint')
             $result.Errors++
         }
     }
@@ -155,38 +155,38 @@ function Test-LunqPrerequisites {
     if ($ExtraSize -gt 0) { $needWork += $ExtraSize }
     $needOut = [long]($isoSize + 1GB)
     if ($WorkDir.StartsWith('\\')) {
-        Write-Check Fail "Рабочая папка $WorkDir на сетевом диске" 'DISM монтирует образ только на локальном NTFS-диске. Укажите другую папку через -WorkDir.'
+        Write-Check Fail (Get-LunqText 'Checks.WorkDirNetwork' $WorkDir) (Get-LunqText 'Checks.WorkDirNetworkHint')
         $result.Errors++
         return $result
     }
     $workDrive = Get-LunqDriveInfo -Path $WorkDir
     $outDrive = $null
     if ($OutputIso.StartsWith('\\')) {
-        Write-Info "Итоговый ISO будет сохранён в сетевую папку, свободное место там не проверяется."
+        Write-Info (Get-LunqText 'Checks.OutputNetwork')
     }
     else {
         $outDrive = Get-LunqDriveInfo -Path $OutputIso
     }
 
     if ($workDrive.DriveFormat -ne 'NTFS') {
-        Write-Check Fail "Диск $($workDrive.Name) для рабочей папки не NTFS ($($workDrive.DriveFormat))" 'DISM монтирует образ только на NTFS. Укажите другую папку через -WorkDir.'
+        Write-Check Fail (Get-LunqText 'Checks.WorkDirNotNtfs' $workDrive.Name $workDrive.DriveFormat) (Get-LunqText 'Checks.WorkDirNotNtfsHint')
         $result.Errors++
     }
 
     if ($outDrive -and $workDrive.Name -eq $outDrive.Name) { $needWork += $needOut }
     if ($workDrive.AvailableFreeSpace -ge $needWork) {
-        Write-Check Ok ("Место на {0} для рабочей папки: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork))
+        Write-Check Ok (Get-LunqText 'Checks.WorkSpaceOk' $workDrive.Name (Format-Size $workDrive.AvailableFreeSpace) (Format-Size $needWork))
     }
     else {
-        Write-Check Warn ("Мало места на {0}: свободно {1}, нужно около {2}" -f $workDrive.Name, (Format-Size $workDrive.AvailableFreeSpace), (Format-Size $needWork)) 'Освободите место или укажите папку на другом диске через -WorkDir.'
+        Write-Check Warn (Get-LunqText 'Checks.WorkSpaceLow' $workDrive.Name (Format-Size $workDrive.AvailableFreeSpace) (Format-Size $needWork)) (Get-LunqText 'Checks.WorkSpaceLowHint')
         $result.Warnings++
     }
     if ($outDrive -and $workDrive.Name -ne $outDrive.Name) {
         if ($outDrive.AvailableFreeSpace -ge $needOut) {
-            Write-Check Ok ("Место на {0} для итогового ISO: свободно {1}" -f $outDrive.Name, (Format-Size $outDrive.AvailableFreeSpace))
+            Write-Check Ok (Get-LunqText 'Checks.OutputSpaceOk' $outDrive.Name (Format-Size $outDrive.AvailableFreeSpace))
         }
         else {
-            Write-Check Warn ("Мало места на {0} для итогового ISO: свободно {1}, нужно около {2}" -f $outDrive.Name, (Format-Size $outDrive.AvailableFreeSpace), (Format-Size $needOut))
+            Write-Check Warn (Get-LunqText 'Checks.OutputSpaceLow' $outDrive.Name (Format-Size $outDrive.AvailableFreeSpace) (Format-Size $needOut))
             $result.Warnings++
         }
     }
@@ -196,10 +196,10 @@ function Test-LunqPrerequisites {
     $own = @($mountedPaths | Where-Object { $OwnMountPaths -contains $_ })
     $foreign = @($mountedPaths | Where-Object { $OwnMountPaths -notcontains $_ })
     if ($own.Count -gt 0) {
-        Write-Check Ok 'Остался образ от прерванного запуска, он будет отключён без сохранения перед сборкой'
+        Write-Check Ok (Get-LunqText 'Checks.OwnMount')
     }
     if ($foreign.Count -gt 0) {
-        Write-Check Warn "В системе уже есть смонтированные образы DISM: $($foreign -join ', ')" 'Если это остатки старого запуска в другой папке, выполните: dism /Cleanup-Wim'
+        Write-Check Warn (Get-LunqText 'Checks.ForeignMount' ($foreign -join ', ')) (Get-LunqText 'Checks.ForeignMountHint')
         $result.Warnings++
     }
 

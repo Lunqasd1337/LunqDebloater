@@ -1,0 +1,23 @@
+﻿# Strings for Private\Report.ps1.
+@{
+    'Report.Section'           = 'Summary'
+    'Report.StepInstalled'     = '{0}: installed {1}, errors {2}'
+    'Report.StepAdded'         = '{0}: added {1}, errors {2}'
+    'Report.Failed'            = 'Failed: {0}'
+    'Report.RemovedOrDisabled' = 'removed or turned off: {0}'
+    'Report.RegistryPart'      = 'registry: {0} of {1}'
+    'Report.RegistryFailed'    = 'registry entries: {0}'
+    'Report.Missing'           = 'Not in the image or already removed: {0}'
+    'Report.SkippedCategories' = 'Skipped categories: {0}'
+    'Report.OutputIso'         = 'Final ISO: {0} ({1})'
+    'Report.Elapsed'           = 'Build time: {0:hh\:mm\:ss}, LunqDebloater {1}'
+    'Report.Log'               = 'Log: {0}'
+    'Report.Next'              = 'What next: write the ISO to a USB drive (for example with Rufus) or attach it to a virtual machine.'
+    'Report.UnattendRufus1'    = 'The ISO already has a LunqDebloater answer file. If you write the USB drive with Rufus, do not tick'
+    'Report.UnattendRufus2'    = 'the Windows customization options in its window: Rufus would add its own answer file, and the chosen'
+    'Report.UnattendRufus3'    = 'setup options, programs and scripts after installation would not work.'
+    'Report.FirstLogonRufus1'  = 'When writing, Rufus offers Windows customization: bypassing the TPM, Secure Boot and RAM requirements,'
+    'Report.FirstLogonRufus2'  = 'a local account and more. Do not tick any of them, or the programs and scripts will not start on'
+    'Report.FirstLogonRufus3'  = 'their own after installation. The settings you need can be turned on in the LunqDebloater answer file'
+    'Report.FirstLogonRufus4'  = '(the "What goes into the image" summary), and the programs and scripts can be run by hand: see README.'
+}

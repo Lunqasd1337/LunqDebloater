@@ -1,0 +1,73 @@
+name: Ошибка / Bug report
+description: Что-то работает не так / Something does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете об ошибке. Без лога разобраться почти невозможно: он лежит в папке `Logs` рядом со скриптом.
+        Thank you for reporting a bug. Without the log it is almost impossible to find the cause: it is in the `Logs` folder next to the script.
+  - type: input
+    id: version
+    attributes:
+      label: Версия LunqDebloater / LunqDebloater version
+      description: Видна в заголовке окна, в начале лога и в итоге сборки / Shown in the window title, at the start of the log and in the build result
+      placeholder: "1.3.0"
+    validations:
+      required: true
+  - type: input
+    id: host-windows
+    attributes:
+      label: Windows на компьютере, где идёт сборка / Windows on the computer that builds the ISO
+      description: "Выпуск и сборка, например из `winver` / Edition and build, for example from `winver`"
+      placeholder: "Windows 11 Pro 25H2, 26200.6584"
+    validations:
+      required: true
+  - type: input
+    id: iso
+    attributes:
+      label: ISO (редакция и сборка) / ISO (edition and build)
+      description: Какой ISO и какую редакцию вы собирали / Which ISO and edition you built
+      placeholder: "Win11_26H2_x64.iso, Windows 11 Pro, 26300.9457"
+    validations:
+      required: true
+  - type: textarea
+    id: parameters
+    attributes:
+      label: Параметры запуска или пошаговый режим / Parameters used or step-by-step mode
+      description: Командная строка целиком или «пошаговый режим (Start.cmd)» и что вы выбрали / The full command line, or "step-by-step mode (Start.cmd)" and what you chose
+      placeholder: |
+        .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro" -Unattend
+      render: powershell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что случилось / What happened
+      description: Что вы увидели, текст ошибки / What you saw, the error text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидалось / What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Лог / Log file
+      description: |
+        Перетащите сюда оба файла последнего запуска из папки `Logs`: `LunqDebloater_<дата>.log` и `LunqDebloater_<дата>_dism.log`. Ошибки после установки: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+        Drag both files of the last run from the `Logs` folder here: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.log`. For problems after installation: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+      placeholder: Перетащите файлы сюда / Drag the files here
+    validations:
+      required: true
+  - type: checkboxes
+    id: responsibility
+    attributes:
+      label: Ответственность / Disclaimer
+      options:
+        - label: Я прочитал(а) раздел «Ответственность» в README / I have read the "Disclaimer" section of the README
+          required: true

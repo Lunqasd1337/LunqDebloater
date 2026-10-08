@@ -1,0 +1,8 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["Config/*.json", "Config*/**/*.json"],
+      "url": "./Schemas/Profile.schema.json"
+    }
+  ]
+}

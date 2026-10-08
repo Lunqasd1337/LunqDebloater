@@ -11,7 +11,7 @@ function Mount-OfflineHives {
     foreach ($hive in $script:HiveMap.Values) {
         $file = Join-Path $MountPath $hive.File
         if ((Invoke-Native reg.exe @('load', $hive.Key, $file)) -ne 0) {
-            throw "Не удалось загрузить куст $file"
+            throw (Get-LunqText 'Registry.HiveLoadFailed' $file)
         }
     }
 }
@@ -28,7 +28,7 @@ function Dismount-OfflineHives {
             $unloaded = ((Invoke-Native reg.exe @('unload', $hive.Key)) -eq 0)
             if (-not $unloaded) { Start-Sleep -Seconds 2 }
         }
-        if (-not $unloaded) { Write-Warning "Не удалось выгрузить $($hive.Key). Выгрузите вручную: reg unload $($hive.Key)" }
+        if (-not $unloaded) { Write-Warning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key) }
     }
 }
 
@@ -41,7 +41,7 @@ function ConvertTo-LunqRegValue {
     $toNumber = {
         param($v, [int]$bits)
         $text = ([string]$v).Trim()
-        if (-not $text) { throw 'нужно число' }
+        if (-not $text) { throw (Get-LunqText 'Registry.NeedNumber') }
         if ($text -match '^0[xX]([0-9A-Fa-f]+)$') { $n = [Convert]::ToUInt64($Matches[1], 16) }
         elseif ($text -match '^-\d+$') {
             $signed = [long]$text
@@ -49,9 +49,9 @@ function ConvertTo-LunqRegValue {
             return $signed
         }
         elseif ($text -match '^\d+$') { $n = [uint64]$text }
-        else { throw "'$text' не число" }
+        else { throw (Get-LunqText 'Registry.NotNumber' $text) }
         if ($bits -eq 32) {
-            if ($n -gt [uint32]::MaxValue) { throw "$text не помещается в REG_DWORD" }
+            if ($n -gt [uint32]::MaxValue) { throw (Get-LunqText 'Registry.DwordOverflow' $text) }
             return [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$n), 0)
         }
         return [BitConverter]::ToInt64([BitConverter]::GetBytes([uint64]$n), 0)
@@ -65,12 +65,12 @@ function ConvertTo-LunqRegValue {
         'REG_QWORD'     { return @{ Kind = 'QWord'; Data = (& $toNumber $Value 64) } }
         'REG_BINARY' {
             $hex = [string]$Value -replace '[\s,]', ''
-            if ($hex -notmatch '^([0-9A-Fa-f]{2})*$') { throw "'$Value' не hex-строка (пары цифр 0-9, A-F)" }
+            if ($hex -notmatch '^([0-9A-Fa-f]{2})*$') { throw (Get-LunqText 'Registry.NotHex' ([string]$Value)) }
             $bytes = New-Object byte[] ($hex.Length / 2)
             for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16) }
             return @{ Kind = 'Binary'; Data = $bytes }
         }
-        default { throw "неизвестный тип '$Type'. Допустимо: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY" }
+        default { throw (Get-LunqText 'Registry.UnknownType' $Type) }
     }
 }
 
@@ -86,7 +86,7 @@ function Open-LunqRegistryKey {
     $base = switch ($root) {
         'HKLM' { [Microsoft.Win32.Registry]::LocalMachine }
         'HKCU' { [Microsoft.Win32.Registry]::CurrentUser }
-        default { throw "Неизвестный корень реестра: $root" }
+        default { throw (Get-LunqText 'Registry.UnknownRoot' $root) }
     }
     if ($Create) { return $base.CreateSubKey($subKey) }
     return $base.OpenSubKey($subKey, [bool]$Writable)
@@ -136,7 +136,7 @@ function Test-LunqRegistryEntry {
     $action = [string](Get-ConfigValue $Entry 'Action')
     if (-not $action) { $action = 'Set' }
     if ($script:RegistryActions -notcontains $action) {
-        return "неизвестное действие '$action'. Допустимо: $($script:RegistryActions -join ', ')"
+        return (Get-LunqText 'Registry.UnknownActionAllowed' $action ($script:RegistryActions -join ', '))
     }
     if ($action -ne 'Set') { return $null }
     try { $null = ConvertTo-LunqRegValue -Type ([string](Get-ConfigValue $Entry 'Type')) -Value (Get-ConfigValue $Entry 'Value') }
@@ -151,7 +151,7 @@ function Invoke-RegistryEntry {
     $key = '{0}\{1}' -f $script:HiveMap[[string]$Entry.Hive].Key, $Entry.Path
     # Без Name запись относится к значению «по умолчанию».
     $name = [string](Get-ConfigValue $Entry 'Name')
-    $shownName = if ($name) { $name } else { '(по умолчанию)' }
+    $shownName = if ($name) { $name } else { Get-LunqText 'Registry.DefaultValueName' }
     $action = [string](Get-ConfigValue $Entry 'Action')
     if (-not $action) { $action = 'Set' }
 
@@ -164,11 +164,11 @@ function Invoke-RegistryEntry {
             }
             'DeleteValue' { if (Remove-LunqRegistryValue -Key $key -Name $name) { return 'Applied' } else { return 'Skipped' } }
             'DeleteKey' { if (Remove-LunqRegistryKey -Key $key) { return 'Applied' } else { return 'Skipped' } }
-            default { throw "неизвестное действие '$action'" }
+            default { throw (Get-LunqText 'Registry.UnknownAction' $action) }
         }
     }
     catch {
-        Write-Warning "Не удалось применить $key\$shownName ($action): $($_.Exception.Message)"
+        Write-Warning (Get-LunqText 'Registry.ApplyFailed' $key $shownName $action $_.Exception.Message)
         return 'Failed'
     }
 }
@@ -184,14 +184,14 @@ function Set-LunqBuildStamp {
         $failed = @()
         foreach ($name in $Values.Keys) {
             $data = [string]$Values[$name]
-            if (-not $data) { $data = 'нет' }
+            if (-not $data) { $data = Get-LunqText 'Registry.StampNone' }
             try { Set-LunqRegistryValue -Key $key -Name $name -Kind 'String' -Data $data }
             catch { $failed += $name }
         }
-        if ($failed.Count -gt 0) { Write-Warning "Отметка о сборке записана не полностью: $($failed -join ', ')" }
-        else { Write-Info 'Отметка о сборке записана в реестр образа: HKLM\SOFTWARE\LunqDebloater.' }
+        if ($failed.Count -gt 0) { Write-Warning (Get-LunqText 'Registry.StampPartial' ($failed -join ', ')) }
+        else { Write-Info (Get-LunqText 'Registry.StampWritten') }
     }
-    catch { Write-Warning "Не удалось записать отметку о сборке: $($_.Exception.Message)" }
+    catch { Write-Warning (Get-LunqText 'Registry.StampFailed' $_.Exception.Message) }
     finally { Dismount-OfflineHives }
 }
 
@@ -201,9 +201,9 @@ function Set-LunqRegistry {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Реестр' 'Registry'
+    $result = New-LunqResult (Get-LunqText 'Registry.Title') 'Registry'
     $entries = Get-ConfigList $Config 'Registry'
-    if ($entries.Count -eq 0) { Write-Info 'Список твиков реестра в профиле пуст.'; return $result }
+    if ($entries.Count -eq 0) { Write-Info (Get-LunqText 'Registry.ListEmpty'); return $result }
 
     try {
         # Внутри try: если не загрузится второй куст, первый всё равно выгрузится.
@@ -223,7 +223,7 @@ function Set-LunqRegistry {
                 $result.ByCategory[$category][$status]++
             }
         }
-        Write-Info ("Реестр: применено {0}, пропущено (уже нет) {1}, ошибок {2}." -f $result.Done.Count, $result.Skipped.Count, $result.Failed.Count)
+        Write-Info (Get-LunqText 'Registry.Summary' $result.Done.Count $result.Skipped.Count $result.Failed.Count)
         return $result
     }
     finally {

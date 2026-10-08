@@ -21,7 +21,7 @@ function Select-IsoFile { return $env:LUNQ_TEST_ISO }
 function Mount-IsoImage {
     # Подключённый ISO изображает папка с sources\install.esd.
     param([Parameter(Mandatory)][string]$IsoPath)
-    if (-not (Test-Path -LiteralPath $IsoPath)) { throw "ISO не найден: $IsoPath" }
+    if (-not (Test-Path -LiteralPath $IsoPath)) { throw "ISO not found: $IsoPath" }
     $root = Join-Path $env:LUNQ_TEST_ROOT 'isoroot'
     New-Item -ItemType Directory -Path (Join-Path $root 'sources') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $root 'sources\install.esd') -Value 'esd'

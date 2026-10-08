@@ -31,10 +31,10 @@ function Format-LunqUnattendSummary {
     # Одна строка о файле ответов для плана, итога и отметки о сборке.
     param([Parameter(Mandatory)]$Unattend)
     $parts = @()
-    if ($Unattend.Oobe) { $parts += 'без вопросов о лицензии и конфиденциальности' }
-    if ($Unattend.Region) { $parts += "регион $($Unattend.Region.Locale), часовой пояс $($Unattend.Region.TimeZone)" }
-    if ($Unattend.Bypass) { $parts += 'обход требований TPM, Secure Boot и памяти' }
-    if ($Unattend.LocalAccount) { $parts += 'локальная учётная запись' }
+    if ($Unattend.Oobe) { $parts += Get-LunqText 'Unattend.Oobe' }
+    if ($Unattend.Region) { $parts += Get-LunqText 'Unattend.Region' $Unattend.Region.Locale $Unattend.Region.TimeZone }
+    if ($Unattend.Bypass) { $parts += Get-LunqText 'Unattend.Bypass' }
+    if ($Unattend.LocalAccount) { $parts += Get-LunqText 'Unattend.LocalAccount' }
     return ($parts -join ', ')
 }
 
@@ -145,9 +145,9 @@ function Install-LunqUnattend {
         [string]$ImageLanguage,
         [switch]$WithFirstLogon
     )
-    $result = New-LunqResult 'Файл ответов' 'Unattend'
+    $result = New-LunqResult (Get-LunqText 'Unattend.Title') 'Unattend'
     $path = Join-Path $IsoRoot 'autounattend.xml'
-    if (Test-Path -LiteralPath $path) { throw 'В ISO уже есть autounattend.xml, свой файл ответов добавить нельзя.' }
+    if (Test-Path -LiteralPath $path) { throw (Get-LunqText 'Unattend.Exists') }
     $command = $null
     if ($WithFirstLogon) { $command = $script:FirstLogonCommand }
     $xml = New-LunqUnattendXml -Unattend $Unattend -Architecture $Architecture -ImageLanguage $ImageLanguage -FirstLogonCommand $command
@@ -155,9 +155,9 @@ function Install-LunqUnattend {
     [void][xml]$xml
     [IO.File]::WriteAllText($path, $xml, (New-Object Text.UTF8Encoding($false)))
     $summary = Format-LunqUnattendSummary -Unattend $Unattend
-    if ($WithFirstLogon) { $summary = "$summary, запуск программ и скриптов после установки" }
+    if ($WithFirstLogon) { $summary = Get-LunqText 'Unattend.WithFirstLogon' $summary }
     $result.Summary = $summary
     Write-Info "autounattend.xml: $summary"
-    if (-not $ImageLanguage -and $Unattend.Region) { Write-Warning 'Не удалось узнать язык образа: язык установщика Windows спросит сама.' }
+    if (-not $ImageLanguage -and $Unattend.Region) { Write-Warning (Get-LunqText 'Unattend.NoImageLanguage') }
     return $result
 }

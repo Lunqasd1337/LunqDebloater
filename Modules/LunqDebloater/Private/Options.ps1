@@ -49,17 +49,17 @@ function Select-LunqBuildOptions {
         }
         Write-Info ''
         if ($numbered.Count -eq 0) { return }
-        $answer = Read-Host '    Номера пунктов, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
+        $answer = Read-Host ('    ' + (Get-LunqText 'Options.Prompt'))
         if (-not $answer -or -not $answer.Trim()) { return }
         foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
             $parsed = 0
             if (-not ([int]::TryParse($token, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $numbered.Count)) {
-                Write-Warning "Номера $token нет в списке."
+                Write-Warning (Get-LunqText 'Options.NoSuchNumber' $token)
                 continue
             }
             $option = $numbered[$parsed - 1]
             if ($option.Parent -and -not (Test-LunqOption -Options $Options -Key $option.Parent)) {
-                Write-Warning "Пункт $parsed работает только вместе с пунктом $($numbers[$option.Parent]). Сначала включите его."
+                Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($numbers[$option.Parent]))
                 continue
             }
             $option.Enabled = -not $option.Enabled

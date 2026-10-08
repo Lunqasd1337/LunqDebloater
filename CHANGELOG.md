@@ -2,6 +2,13 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.3.0
+
+- Английский интерфейс. Язык выбирается параметром `-Language ru|en`, по умолчанию русский на русской Windows и английский на остальных. Скрипт первого входа говорит на языке сборки. Названия и описания в профиле могут быть на двух языках: `{ "ru": "...", "en": "..." }`.
+- Предупреждение «на свой страх и риск» в README, в `Config\README.txt` и перед началом сборки.
+- JSON-схема профиля (`Schemas/Profile.schema.json`): подсказки и проверка в VS Code.
+- English README (`README.en.md`), `CONTRIBUTING.md`, шаблоны issue на GitHub.
+
 ## 1.2.0
 
 - Тесты Pester и проверка PSScriptAnalyzer в GitHub Actions на каждый PR (Windows PowerShell 5.1 и PowerShell 7).

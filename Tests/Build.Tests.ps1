@@ -117,7 +117,7 @@ Describe 'Ошибки и предупреждения' {
     It 'сбой посреди сборки: образ отключается без сохранения, ISO не создаётся' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
         $run.Error | Should -Not -BeNullOrEmpty
-        $run.Output | Should -Match 'Ошибка: Сбой DISM для проверки отката'
+        $run.Output | Should -Match 'Ошибка: DISM failure to test the rollback'
         $run.Output | Should -Match 'Отключаю образ без сохранения'
         $run.Output | Should -Match 'dismount .*mount save=False discard=True'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
@@ -201,5 +201,44 @@ Describe 'Пошаговый режим' {
         $run = Start-TestBuild -Interactive -Answers @('1', '', '', '5', 'n')
         $run.Output | Should -Match 'Сборка отменена'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+    }
+}
+
+Describe 'Английский интерфейс' {
+    It 'полная сборка: ни одной русской буквы в выводе' {
+        # Обновления и драйверы кладутся в Config копии скрипта, чтобы шли все шаги.
+        $run = Start-TestBuild -Parameters @{
+            Language = 'en'; UpdatesToSetup = $true; DriversToSetup = $true; CleanupComponents = $true; BypassRequirements = $true
+        } -Prepare {
+            param($t)
+            Copy-Item -Path (Join-Path $t.Updates '*') -Destination (Join-Path $t.App 'Config\Updates') -Force
+            Copy-Item -Path (Join-Path $t.Drivers '*') -Destination (Join-Path $t.App 'Config\Drivers') -Recurse -Force
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Not -Match '[А-Яа-яЁё]'
+        # Все 18 шагов: как в полной сборке выше, плюс файл ответов.
+        Assert-Steps -Output $run.Output -Expected 18
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
+    }
+
+    It 'пошаговый режим: ни одной русской буквы в выводе' {
+        $run = Start-TestBuild -Interactive -Parameters @{ Language = 'en' } -Answers @('1', '', '', '5', 'y')
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Not -Match '[А-Яа-яЁё]'
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
+    }
+
+    It 'режим «Что в образе»: список без русских букв' {
+        $run = Start-TestBuild -Parameters @{ Language = 'en'; ListContents = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Not -Match '[А-Яа-яЁё]'
+        Get-Content -LiteralPath (Join-Path $script:Test.Root 'Win11_5_contents.txt') -Raw -Encoding UTF8 | Should -Not -Match '[А-Яа-яЁё]'
+    }
+
+    It 'ошибка до сборки тоже на английском' {
+        $run = Start-TestBuild -Parameters @{ Language = 'en'; OutputIso = (Join-Path $TestDrive 'missing\out.iso') }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match '\[FAIL\]'
+        ($run.Output + $run.Error.ToString()) | Should -Not -Match '[А-Яа-яЁё]'
     }
 }

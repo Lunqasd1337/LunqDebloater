@@ -5,6 +5,8 @@ BeforeAll {
     $repo = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $PSScriptRoot 'Mocks\Dism\Dism.psm1') -Force
     Import-Module (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
+    # Проверки сверяют русский текст.
+    Set-LunqLanguage -Language ru
     $script:ProfilePath = Join-Path $repo 'Config\Profile.json'
 
     function New-TestProfile {
@@ -398,5 +400,72 @@ Describe 'Test-LunqPrerequisites: остатки прошлого запуска
         Mock -ModuleName LunqDebloater Get-WindowsImage { [pscustomobject]@{ Path = 'C:\Other\mount' } } -ParameterFilter { $Mounted }
         $r = Test-LunqPrerequisites -IsoPath $iso -WorkDir $work -OutputIso (Join-Path $TestDrive 'out.iso') -OwnMountPaths (Join-Path $work 'mount')
         $r.Warnings | Should -Be 1
+    }
+}
+
+Describe 'Строки интерфейса' {
+    BeforeAll {
+        $script:Repo = Split-Path $PSScriptRoot -Parent
+        $script:Tables = & (Get-Module LunqDebloater) { @{ ru = Import-LunqStrings -Language ru; en = Import-LunqStrings -Language en } }
+        function Get-Placeholders([string]$Text) {
+            @([regex]::Matches(($Text -replace '\{\{|\}\}', ''), '\{(\d+)') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
+        }
+    }
+
+    It 'в русской и английской таблицах одни и те же ключи' {
+        $ru = @($script:Tables.ru.Keys | Sort-Object)
+        $en = @($script:Tables.en.Keys | Sort-Object)
+        @(Compare-Object $ru $en | ForEach-Object { "$($_.InputObject) $($_.SideIndicator)" }) | Should -BeNullOrEmpty
+    }
+
+    It 'у каждого ключа одинаковые подстановки {N} в обоих языках' {
+        $mismatch = foreach ($key in $script:Tables.ru.Keys) {
+            if ($script:Tables.en.ContainsKey($key) -and ((Get-Placeholders $script:Tables.ru[$key]) -join ',') -ne ((Get-Placeholders $script:Tables.en[$key]) -join ',')) { $key }
+        }
+        @($mismatch) | Should -BeNullOrEmpty
+    }
+
+    It 'каждый ключ из кода есть в таблицах' {
+        $files = @(Get-Item -LiteralPath (Join-Path $script:Repo 'LunqDebloater.ps1')) +
+            @(Get-ChildItem -LiteralPath (Join-Path $script:Repo 'Modules\LunqDebloater\Private') -Filter '*.ps1' -File)
+        $missing = foreach ($file in $files) {
+            $text = [IO.File]::ReadAllText($file.FullName)
+            foreach ($match in [regex]::Matches($text, "Get-LunqText\s+'([^']+)'")) {
+                $key = $match.Groups[1].Value
+                if (-not $script:Tables.ru.ContainsKey($key)) { "$($file.Name): $key" }
+            }
+        }
+        @($missing) | Should -BeNullOrEmpty
+    }
+
+    It 'в английской таблице нет русских букв' {
+        @($script:Tables.en.Keys | Where-Object { $script:Tables.en[$_] -match '[А-Яа-яЁё]' }) | Should -BeNullOrEmpty
+    }
+
+    It 'текст профиля: строка или перевод, запасной язык английский' {
+        & (Get-Module LunqDebloater) {
+            try {
+                Set-LunqLanguage -Language en
+                Get-LunqLocalized 'Просто строка' | Should -Be 'Просто строка'
+                Get-LunqLocalized ([pscustomobject]@{ ru = 'Приложения'; en = 'Apps' }) | Should -Be 'Apps'
+                Set-LunqLanguage -Language ru
+                Get-LunqLocalized ([pscustomobject]@{ ru = 'Приложения'; en = 'Apps' }) | Should -Be 'Приложения'
+                Get-LunqLocalized ([pscustomobject]@{ en = 'Apps only' }) | Should -Be 'Apps only'
+                Get-LunqLocalized $null | Should -Be ''
+            }
+            finally { Set-LunqLanguage -Language ru }
+        }
+    }
+
+    It 'профиль по умолчанию переведён целиком' {
+        & (Get-Module LunqDebloater) {
+            param($Path)
+            try {
+                Set-LunqLanguage -Language en
+                $loaded = Read-LunqProfile -Path $Path
+                ($loaded.Description + ($loaded.Categories | ForEach-Object { $_.Name + $_.Description })) | Should -Not -Match '[А-Яа-яЁё]'
+            }
+            finally { Set-LunqLanguage -Language ru }
+        } $script:ProfilePath
     }
 }

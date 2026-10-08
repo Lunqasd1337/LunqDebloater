@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Schemas/Profile.schema.json",
+  "title": "LunqDebloater profile",
+  "description": "What LunqDebloater removes from a Windows 11 image and which registry changes it makes. The profile is made of categories that can be turned on and off before the build.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Link to this schema, so that the editor offers completion and checks the file.",
+      "type": "string"
+    },
+    "Name": {
+      "description": "Profile name shown when the Config folder holds several profiles. Default: the file name.",
+      "$ref": "#/definitions/localizedText"
+    },
+    "Description": {
+      "description": "What the profile does, shown under its name.",
+      "$ref": "#/definitions/localizedText"
+    },
+    "Requirements": {
+      "description": "Which Windows build the profile is made for. The script checks it right after reading the ISO. Without this block no check is made. -SkipVersionCheck ignores it.",
+      "type": "object",
+      "properties": {
+        "Build": {
+          "description": "Build number that must match exactly: 26300 is 26H2, 26200 is 25H2, 26100 is 24H2.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "MinRevision": {
+          "description": "Lowest revision, the number after the dot in 26300.9457. Anything newer is fine.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "Architecture": {
+          "description": "Image architecture.",
+          "type": "string",
+          "enum": ["amd64", "arm64"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Options": {
+      "description": "Profile-wide options.",
+      "type": "object",
+      "properties": {
+        "RemoveFeaturePayload": {
+          "description": "Also delete the files of turned off Windows features (DISM /Remove). They can then be turned on again only from a source with the files.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Categories": {
+      "description": "Categories: each one holds everything about one topic (apps, components, features, registry) and can be turned on or off as a whole.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/category" }
+    },
+
+    "Appx": {
+      "description": "Legacy format (without Categories): apps to remove.",
+      "type": "object",
+      "properties": { "Remove": { "$ref": "#/definitions/nameList" } },
+      "additionalProperties": false
+    },
+    "Capabilities": {
+      "description": "Legacy format (without Categories): capabilities to remove.",
+      "type": "object",
+      "properties": { "Remove": { "$ref": "#/definitions/nameList" } },
+      "additionalProperties": false
+    },
+    "Features": {
+      "description": "Legacy format (without Categories): optional features to turn off.",
+      "type": "object",
+      "properties": {
+        "Disable": { "$ref": "#/definitions/nameList" },
+        "RemovePayload": {
+          "description": "Legacy place of Options.RemoveFeaturePayload.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Packages": {
+      "description": "Legacy format (without Categories): CBS packages to remove.",
+      "type": "object",
+      "properties": { "Remove": { "$ref": "#/definitions/nameList" } },
+      "additionalProperties": false
+    },
+    "Registry": {
+      "description": "Legacy format (without Categories): registry entries.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/registryEntry" }
+    }
+  },
+  "additionalProperties": false,
+
+  "definitions": {
+    "localizedText": {
+      "description": "Text as a plain string, or translations by language code. The interface language is used, then English, then the first one given.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "ru": { "description": "Russian text.", "type": "string" },
+            "en": { "description": "English text.", "type": "string" }
+          },
+          "propertyNames": { "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+          "additionalProperties": { "type": "string" },
+          "minProperties": 1
+        }
+      ]
+    },
+
+    "nameList": {
+      "description": "Names exactly as DISM shows them. Wildcards * and ? are allowed.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+
+    "category": {
+      "type": "object",
+      "required": ["Id"],
+      "properties": {
+        "Id": {
+          "description": "Short unique name, used by -SkipCategory and in the build report.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "Name": {
+          "description": "Category name shown before the build. Default: the Id.",
+          "$ref": "#/definitions/localizedText"
+        },
+        "Description": {
+          "description": "What the category does, shown in the category list.",
+          "$ref": "#/definitions/localizedText"
+        },
+        "Enabled": {
+          "description": "false: the category is skipped unless you turn it on before the build.",
+          "type": "boolean",
+          "default": true
+        },
+        "Appx": {
+          "description": "Provisioned Appx apps to remove, by DisplayName (Get-AppxProvisionedPackage). Wildcards allowed.",
+          "$ref": "#/definitions/nameList"
+        },
+        "Capabilities": {
+          "description": "Capabilities to remove (Get-WindowsCapability). Wildcards allowed.",
+          "$ref": "#/definitions/nameList"
+        },
+        "Features": {
+          "description": "Optional features to turn off (Get-WindowsOptionalFeature). Wildcards allowed.",
+          "$ref": "#/definitions/nameList"
+        },
+        "Packages": {
+          "description": "CBS packages to remove. Careful: removing them can break Windows updates. Wildcards allowed.",
+          "$ref": "#/definitions/nameList"
+        },
+        "Registry": {
+          "description": "Registry changes in the image.",
+          "type": "array",
+          "items": { "$ref": "#/definitions/registryEntry" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "registryEntry": {
+      "type": "object",
+      "required": ["Hive", "Path"],
+      "properties": {
+        "Hive": {
+          "description": "SOFTWARE (HKLM\\SOFTWARE), SYSTEM (HKLM\\SYSTEM, use ControlSet001 instead of CurrentControlSet) or DefaultUser (HKCU of every new user).",
+          "type": "string",
+          "enum": ["SOFTWARE", "SYSTEM", "DefaultUser"]
+        },
+        "Path": {
+          "description": "Key path inside the hive, without the hive itself, for example Policies\\Microsoft\\Windows\\DataCollection.",
+          "type": "string",
+          "minLength": 1
+        },
+        "Name": {
+          "description": "Value name. Leave it out (or empty) for the default value of the key.",
+          "type": "string"
+        },
+        "Action": {
+          "description": "Set writes the value (default), DeleteValue deletes the value, DeleteKey deletes the key with all its subkeys.",
+          "type": "string",
+          "enum": ["Set", "DeleteValue", "DeleteKey"],
+          "default": "Set"
+        },
+        "Type": {
+          "description": "Value type. Required for Set.",
+          "type": "string",
+          "enum": ["REG_SZ", "REG_EXPAND_SZ", "REG_MULTI_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY"]
+        },
+        "Value": {
+          "description": "Value data. REG_DWORD and REG_QWORD: a number or a string \"0x...\" (for a QWORD above 9223372036854775807 use the \"0x...\" form). REG_SZ and REG_EXPAND_SZ: a string, written as is. REG_MULTI_SZ: an array of strings. REG_BINARY: a hex string such as \"de ad be ef\".",
+          "type": ["integer", "string", "array"],
+          "items": { "type": "string" }
+        },
+        "Description": {
+          "description": "What the entry does. Optional.",
+          "$ref": "#/definitions/localizedText"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "Action": { "const": "Set" } } },
+          "then": { "required": ["Type"] }
+        },
+        {
+          "if": { "properties": { "Type": { "const": "REG_DWORD" } }, "required": ["Type"] },
+          "then": {
+            "required": ["Value"],
+            "properties": {
+              "Value": {
+                "oneOf": [
+                  { "type": "integer", "minimum": -2147483648, "maximum": 4294967295 },
+                  { "type": "string", "pattern": "^\\s*(-?[0-9]+|0[xX]0*[0-9A-Fa-f]{1,8})\\s*$" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "Type": { "const": "REG_QWORD" } }, "required": ["Type"] },
+          "then": {
+            "required": ["Value"],
+            "properties": {
+              "Value": {
+                "oneOf": [
+                  { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+                  { "type": "string", "pattern": "^\\s*(-?[0-9]+|0[xX]0*[0-9A-Fa-f]{1,16})\\s*$" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "Type": { "enum": ["REG_SZ", "REG_EXPAND_SZ"] } }, "required": ["Type"] },
+          "then": { "properties": { "Value": { "type": ["string", "integer"] } } }
+        },
+        {
+          "if": { "properties": { "Type": { "const": "REG_MULTI_SZ" } }, "required": ["Type"] },
+          "then": { "properties": { "Value": { "type": ["array", "string"], "items": { "type": "string" } } } }
+        },
+        {
+          "if": { "properties": { "Type": { "const": "REG_BINARY" } }, "required": ["Type"] },
+          "then": {
+            "properties": {
+              "Value": { "type": "string", "pattern": "^[\\s,]*([0-9A-Fa-f][\\s,]*[0-9A-Fa-f][\\s,]*)*$" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
