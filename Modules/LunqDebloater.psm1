@@ -65,8 +65,8 @@ function Write-Check {
     )
     $label = @{ Ok = '[ OK ]'; Warn = '[ !! ]'; Fail = '[FAIL]' }[$Status]
     $color = @{ Ok = 'Green'; Warn = 'Yellow'; Fail = 'Red' }[$Status]
-    Write-Host "    $label " -ForegroundColor $color -NoNewline
-    Write-Host $Message
+    # Одной строкой: Write-Host -NoNewline разбивает строку в логе надвое.
+    Write-Host "    $label $Message" -ForegroundColor $color
     if ($Hint) { Write-Host "           $Hint" -ForegroundColor DarkGray }
 }
 
@@ -93,8 +93,9 @@ function Get-LunqVersion { return $script:LunqVersion }
 
 function Start-LunqLog {
     # Начинает лог запуска в папке Logs и направляет туда же подробный лог DISM, чтобы
-    # при ошибке была видна её настоящая причина. Хранятся логи последних $Keep запусков.
-    param([Parameter(Mandatory)][string]$Dir, [int]$Keep = 10)
+    # при ошибке была видна её настоящая причина. Хранятся логи последних $Keep запусков,
+    # а логи DISM, которые намного больше, только последних $KeepDism.
+    param([Parameter(Mandatory)][string]$Dir, [int]$Keep = 10, [int]$KeepDism = 3)
 
     try { New-Item -ItemType Directory -Path $Dir -Force -ErrorAction Stop | Out-Null }
     catch {
@@ -108,6 +109,9 @@ function Start-LunqLog {
         Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_dism.log') -Force -ErrorAction SilentlyContinue
     }
+    $oldDism = @(Get-ChildItem -LiteralPath $Dir -Filter 'LunqDebloater_*_dism.log' -File |
+            Sort-Object Name -Descending | Select-Object -Skip ([Math]::Max($KeepDism - 1, 0)))
+    foreach ($file in $oldDism) { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue }
 
     $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
     $log = [pscustomobject]@{
@@ -115,16 +119,23 @@ function Start-LunqLog {
         DismPath = Join-Path $Dir "LunqDebloater_${stamp}_dism.log"
     }
     Start-Transcript -Path $log.Path -Force | Out-Null
-    # Командлеты DISM вызываются и из скрипта, и из модуля, поэтому путь задаётся глобально
+    # Командлеты DISM вызываются и из скрипта, и из модуля. У модуля своя переменная
+    # PSDefaultParameterValues, глобальная на него не действует, поэтому путь задаётся в обеих
     # и убирается в Stop-LunqLog. Командлеты без параметра LogPath его просто не получают.
-    foreach ($key in $script:DismLogKeys) { $global:PSDefaultParameterValues[$key] = $log.DismPath }
+    foreach ($key in $script:DismLogKeys) {
+        $global:PSDefaultParameterValues[$key] = $log.DismPath
+        $script:PSDefaultParameterValues[$key] = $log.DismPath
+    }
     return $log
 }
 
 $script:DismLogKeys = @('*-Windows*:LogPath', '*-AppxProvisionedPackage:LogPath')
 
 function Stop-LunqLog {
-    foreach ($key in $script:DismLogKeys) { $global:PSDefaultParameterValues.Remove($key) }
+    foreach ($key in $script:DismLogKeys) {
+        $global:PSDefaultParameterValues.Remove($key)
+        $script:PSDefaultParameterValues.Remove($key)
+    }
     try { Stop-Transcript | Out-Null } catch { }
 }
 
@@ -781,6 +792,9 @@ function Initialize-LunqWorkDir {
 function Reset-LunqWorkDir {
     # Отключает образы, оставшиеся от прошлого запуска, и создаёт рабочую папку заново.
     param([Parameter(Mandatory)][string]$WorkDir, [Parameter(Mandatory)][string[]]$MountPaths)
+    # Если прошлый запуск прервали на шаге реестра, его кусты остались загружены,
+    # и DISM не сможет отключить образ, пока они открыты.
+    Dismount-OfflineHives
     foreach ($leftover in (Get-LunqMountedPaths -Paths $MountPaths)) {
         Write-Info "Найден оставшийся смонтированный образ в $leftover, отключаю без сохранения."
         Dismount-WindowsImage -Path $leftover -Discard | Out-Null
@@ -918,7 +932,8 @@ function Write-LunqReport {
         $LunqProfile,
         [string]$OutputIso,
         [TimeSpan]$Elapsed,
-        [string]$LogPath
+        [string]$LogPath,
+        [switch]$HasFirstLogon
     )
 
     Write-Section 'Итог'
@@ -970,6 +985,11 @@ function Write-LunqReport {
     if ($LogPath) { Write-Info "Лог: $LogPath" }
     Write-Info ''
     Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
+    if ($HasFirstLogon) {
+        # Свой файл ответов Rufus важнее Sysprep\unattend.xml, и тогда FirstLogonCommands из образа не выполнятся.
+        Write-Host '    Rufus при записи предлагает настройки Windows (локальная учётная запись и другие).' -ForegroundColor Yellow
+        Write-Host '    Не отмечайте их: иначе программы и скрипты после установки не запустятся.' -ForegroundColor Yellow
+    }
 }
 
 function Export-SingleEdition {
@@ -1093,6 +1113,20 @@ function Add-LunqDrivers {
         }
     }
     return $result
+}
+
+function Select-LunqPEDrivers {
+    # Для установщика и WinRE отбираются только драйверы контроллеров дисков (классы SCSIAdapter
+    # и HDC): ради них драйверы туда и добавляют. Все драйверы сразу сильно раздули бы boot.wim,
+    # а он при загрузке с флешки целиком распаковывается в память.
+    param($InfFiles)
+    $diskClasses = @('SCSIAdapter', 'HDC')
+    $selected = foreach ($inf in @($InfFiles)) {
+        # Get-Content сам распознаёт .inf в UTF-16 по метке BOM.
+        $text = Get-Content -LiteralPath $inf.FullName -Raw -ErrorAction SilentlyContinue
+        if ($text -and $text -match '(?im)^\s*Class\s*=\s*"?([A-Za-z0-9_]+)' -and $diskClasses -contains $Matches[1]) { $inf }
+    }
+    return , @($selected)
 }
 
 function Select-LunqPEUpdates {
