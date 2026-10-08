@@ -239,7 +239,7 @@ function Write-CategoryList {
         $i++
         $mark = if ($category.Enabled) { '[x]' } else { '[ ]' }
         $color = if ($category.Enabled) { 'Green' } else { 'DarkGray' }
-        $prefix = if ($Numbered) { '    [{0,2}] ' -f $i } else { '    ' }
+        $prefix = if ($Numbered) { '    {0,-4} ' -f "[$i]" } else { '    ' }
         Write-Host $prefix -NoNewline -ForegroundColor Cyan
         Write-Host "$mark " -NoNewline -ForegroundColor $color
         Write-Host $category.Name -NoNewline
@@ -279,6 +279,75 @@ function Select-LunqCategories {
                 $category.Enabled = -not $category.Enabled
             }
             else { Write-Warning "Номера $token нет в списке." }
+        }
+    }
+}
+
+function New-LunqOption {
+    # Пункт сводки «Что войдёт в образ». Parent: Key пункта, без которого этот не имеет смысла.
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Name,
+        [bool]$Enabled = $true,
+        [bool]$Available = $true,
+        [string[]]$Details = @(),
+        [string]$Parent
+    )
+    return [pscustomobject]@{
+        Key = $Key; Name = $Name; Enabled = $Enabled; Available = $Available
+        Details = @($Details); Parent = $Parent
+    }
+}
+
+function Test-LunqOption {
+    # Включён ли пункт с учётом родителя.
+    param([Parameter(Mandatory)]$Options, [Parameter(Mandatory)][string]$Key)
+    $option = $Options | Where-Object { $_.Key -eq $Key }
+    if (-not $option -or -not $option.Available -or -not $option.Enabled) { return $false }
+    if ($option.Parent) { return (Test-LunqOption -Options $Options -Key $option.Parent) }
+    return $true
+}
+
+function Select-LunqBuildOptions {
+    # Одна сводка вместо отдельных вопросов: всё, что найдено в папке Config, с переключением по номерам.
+    # Пункты, для которых ничего не найдено, показываются с подсказкой и без номера.
+    param([Parameter(Mandatory)]$Options)
+
+    $numbered = @($Options | Where-Object { $_.Available })
+    $numbers = @{}
+    for ($i = 0; $i -lt $numbered.Count; $i++) { $numbers[$numbered[$i].Key] = $i + 1 }
+    while ($true) {
+        Write-Info ''
+        foreach ($option in $Options) {
+            if (-not $option.Available -and $option.Parent) { continue }
+            $indent = if ($option.Parent) { '    ' } else { '' }
+            $on = Test-LunqOption -Options $Options -Key $option.Key
+            if ($option.Available) {
+                Write-Host ('    {0,-4} ' -f "[$($numbers[$option.Key])]") -ForegroundColor Cyan -NoNewline
+            }
+            else { Write-Host '         ' -NoNewline }
+            $mark = if ($on) { '[x]' } else { '[ ]' }
+            $color = if ($on) { 'Green' } else { 'DarkGray' }
+            Write-Host "$indent$mark " -NoNewline -ForegroundColor $color
+            if ($option.Available) { Write-Host $option.Name } else { Write-Host $option.Name -ForegroundColor DarkGray }
+            foreach ($line in $option.Details) { Write-Host "           $indent$line" -ForegroundColor DarkGray }
+        }
+        Write-Info ''
+        if ($numbered.Count -eq 0) { return }
+        $answer = Read-Host '    Номера пунктов, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
+        if (-not $answer -or -not $answer.Trim()) { return }
+        foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
+            $parsed = 0
+            if (-not ([int]::TryParse($token, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $numbered.Count)) {
+                Write-Warning "Номера $token нет в списке."
+                continue
+            }
+            $option = $numbered[$parsed - 1]
+            if ($option.Parent -and -not (Test-LunqOption -Options $Options -Key $option.Parent)) {
+                Write-Warning "Пункт $parsed работает только вместе с пунктом $($numbers[$option.Parent]). Сначала включите его."
+                continue
+            }
+            $option.Enabled = -not $option.Enabled
         }
     }
 }
@@ -468,7 +537,7 @@ function Write-EditionList {
     param([Parameter(Mandatory)]$Images)
 
     foreach ($img in $Images) {
-        Write-Host ("    [{0,2}] " -f $img.ImageIndex) -ForegroundColor Cyan -NoNewline
+        Write-Host ("    {0,-4} " -f "[$($img.ImageIndex)]") -ForegroundColor Cyan -NoNewline
         Write-Host $img.ImageName -NoNewline
         $hint = Get-EditionHint -Name $img.ImageName
         if ($hint) { Write-Host "  ($hint)" -ForegroundColor DarkGray } else { Write-Host '' }
@@ -557,7 +626,7 @@ function Select-IsoFile {
 }
 
 function Select-LunqProfile {
-    # Показывает профили из папки Profiles и даёт выбрать один.
+    # Показывает профили (*.json) из папки Config и даёт выбрать один, если их несколько.
     param([Parameter(Mandatory)][string]$ProfileDir)
 
     $files = @(Get-ChildItem -LiteralPath $ProfileDir -Filter '*.json' -File | Sort-Object Name)
@@ -635,6 +704,17 @@ function Initialize-LunqWorkDir {
     Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value 'Рабочая папка LunqDebloater. Удаляется после сборки.' -Encoding UTF8
 }
 
+function Reset-LunqWorkDir {
+    # Отключает образы, оставшиеся от прошлого запуска, и создаёт рабочую папку заново.
+    param([Parameter(Mandatory)][string]$WorkDir, [Parameter(Mandatory)][string[]]$MountPaths)
+    foreach ($leftover in (Get-LunqMountedPaths -Paths $MountPaths)) {
+        Write-Info "Найден оставшийся смонтированный образ в $leftover, отключаю без сохранения."
+        Dismount-WindowsImage -Path $leftover -Discard | Out-Null
+    }
+    if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
+    Initialize-LunqWorkDir -WorkDir $WorkDir
+}
+
 function Get-LunqMountedPaths {
     # Какие из указанных папок сейчас заняты смонтированным образом DISM.
     param([string[]]$Paths)
@@ -654,7 +734,9 @@ function Test-LunqPrerequisites {
         [long]$UpdatesSize = 0,
         [long]$DriversSize = 0,
         [string[]]$ProtectedPaths = @(),
-        [switch]$DefaultWorkDir
+        [switch]$DefaultWorkDir,
+        [long]$ExtraSize = 0,
+        [switch]$SkipOscdimg
     )
 
     $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
@@ -671,13 +753,15 @@ function Test-LunqPrerequisites {
         $result.Errors++
     }
 
-    try {
-        $result.Oscdimg = Find-Oscdimg -Path $OscdimgPath
-        Write-Check Ok "Windows ADK: $($result.Oscdimg)"
-    }
-    catch {
-        Write-Check Fail 'Не найден oscdimg.exe из Windows ADK' 'Установите ADK (достаточно компонента Deployment Tools): https://learn.microsoft.com/windows-hardware/get-started/adk-install'
-        $result.Errors++
+    if (-not $SkipOscdimg) {
+        try {
+            $result.Oscdimg = Find-Oscdimg -Path $OscdimgPath
+            Write-Check Ok "Windows ADK: $($result.Oscdimg)"
+        }
+        catch {
+            Write-Check Fail 'Не найден oscdimg.exe из Windows ADK' 'Установите ADK (достаточно компонента Deployment Tools): https://learn.microsoft.com/windows-hardware/get-started/adk-install'
+            $result.Errors++
+        }
     }
 
     # Рабочей папке нужно место под копию ISO, экспорт install.wim и распакованный образ.
@@ -686,6 +770,7 @@ function Test-LunqPrerequisites {
     # DISM распаковывает обновления во временную папку, а образ после них растёт.
     if ($UpdatesSize -gt 0) { $needWork += [long]($UpdatesSize * 3) }
     if ($DriversSize -gt 0) { $needWork += [long]($DriversSize * 2) }
+    if ($ExtraSize -gt 0) { $needWork += $ExtraSize }
     $needOut = [long]($isoSize + 1GB)
     if ($WorkDir.StartsWith('\\')) {
         Write-Check Fail "Рабочая папка $WorkDir на сетевом диске" 'DISM монтирует образ только на локальном NTFS-диске. Укажите другую папку через -WorkDir.'
@@ -764,8 +849,9 @@ function Write-LunqReport {
     Write-Section 'Итог'
     $results = @($Results | Where-Object { $null -ne $_ })
 
-    foreach ($r in @($results | Where-Object { $_.Kind -in 'Updates', 'Drivers', 'SetupDrivers' })) {
-        $verb = if ($r.Kind -eq 'Updates') { 'установлено' } else { 'добавлено' }
+    foreach ($r in @($results | Where-Object { $_.Kind -like 'Updates*' -or $_.Kind -like 'Drivers*' -or $_.Kind -eq 'FirstLogon' })) {
+        if ($r.Kind -eq 'FirstLogon') { Write-Info ("{0}: {1}" -f $r.Title, $r.Summary); continue }
+        $verb = if ($r.Kind -like 'Updates*') { 'установлено' } else { 'добавлено' }
         Write-Info ("{0}: {1} {2}, ошибок {3}" -f $r.Title, $verb, $r.Done.Count, $r.Failed.Count)
         if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
     }
@@ -862,10 +948,12 @@ function Add-LunqUpdates {
     param(
         [Parameter(Mandatory)][string]$MountPath,
         [Parameter(Mandatory)]$Files,
-        [Parameter(Mandatory)][string]$ScratchDir
+        [Parameter(Mandatory)][string]$ScratchDir,
+        [string]$Title = 'Обновления',
+        [string]$Kind = 'Updates'
     )
 
-    $result = New-LunqResult 'Обновления' Updates
+    $result = New-LunqResult $Title $Kind
     New-Item -ItemType Directory -Path $ScratchDir -Force | Out-Null
     $i = 0
     foreach ($file in $Files) {
@@ -931,29 +1019,274 @@ function Add-LunqDrivers {
     return $result
 }
 
-function Add-LunqSetupDrivers {
-    # Добавляет драйверы в boot.wim (образ 2, «Установка Windows»), чтобы установщик
-    # видел диски на контроллерах без встроенного драйвера (Intel RST/VMD, RAID).
+function Select-LunqPEUpdates {
+    # Для установщика и WinRE подходят только обновления самой Windows (windows11.0-kb...),
+    # обновления .NET (ndp) в Windows PE не ставятся.
+    param($Files)
+    return , @(@($Files) | Where-Object { $_.Name -match '(?i)^windows1[01]\.0-kb' -and $_.Name -notmatch '(?i)ndp' })
+}
+
+function Update-LunqPEImage {
+    # Встраивает обновления и драйверы в образ на базе Windows PE: boot.wim или winre.wim.
     param(
-        [Parameter(Mandatory)][string]$IsoRoot,
+        [Parameter(Mandatory)][string]$ImagePath,
+        [Parameter(Mandatory)][int]$Index,
         [Parameter(Mandatory)][string]$MountPath,
-        [Parameter(Mandatory)]$InfFiles,
-        [Parameter(Mandatory)][string]$Root
+        [Parameter(Mandatory)][string]$ScratchDir,
+        [Parameter(Mandatory)][string]$Where,
+        [Parameter(Mandatory)][string]$KindSuffix,
+        $Updates = @(),
+        $Drivers = @(),
+        [string]$DriversRoot
     )
 
-    $bootWim = Join-Path $IsoRoot 'sources\boot.wim'
-    if (-not (Test-Path -LiteralPath $bootWim)) { throw 'В ISO нет sources\boot.wim, драйверы в установщик добавить нельзя.' }
+    $results = @()
     New-Item -ItemType Directory -Path $MountPath -Force | Out-Null
-    Mount-WindowsImage -ImagePath $bootWim -Index 2 -Path $MountPath | Out-Null
+    Mount-WindowsImage -ImagePath $ImagePath -Index $Index -Path $MountPath | Out-Null
     try {
-        $result = Add-LunqDrivers -MountPath $MountPath -InfFiles $InfFiles -Root $Root -Title 'Драйверы в установщике' -Kind 'SetupDrivers'
+        $updated = 0
+        if (@($Updates).Count -gt 0) {
+            $r = Add-LunqUpdates -MountPath $MountPath -Files $Updates -ScratchDir $ScratchDir -Title "Обновления в $Where" -Kind "Updates$KindSuffix"
+            $updated = $r.Done.Count
+            $results += $r
+        }
+        if (@($Drivers).Count -gt 0) {
+            $results += Add-LunqDrivers -MountPath $MountPath -InfFiles $Drivers -Root $DriversRoot -Title "Драйверы в $Where" -Kind "Drivers$KindSuffix"
+        }
+        if ($updated -gt 0) {
+            Write-Info 'Удаляю старые версии файлов после обновлений...'
+            try { Repair-WindowsImage -Path $MountPath -StartComponentCleanup -ResetBase | Out-Null }
+            catch { Write-Warning "Очистка не удалась, образ будет больше: $($_.Exception.Message)" }
+        }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
-        return $result
     }
     catch {
         Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction SilentlyContinue | Out-Null
         throw
     }
+    return $results
+}
+
+function Optimize-LunqWim {
+    # Пересобирает WIM со всеми его образами: после обслуживания файл заметно меньше.
+    # -BootIndex помечает образ загрузочным (в boot.wim это образ 2, «Установка Windows»).
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [int]$BootIndex = 0
+    )
+    $temp = "$Path.tmp"
+    if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+    foreach ($image in @(Get-WindowsImage -ImagePath $Path | Sort-Object ImageIndex)) {
+        $params = @{ SourceImagePath = $Path; SourceIndex = $image.ImageIndex; DestinationImagePath = $temp; CompressionType = 'Max' }
+        if ($image.ImageIndex -eq $BootIndex) { $params.SetBootable = $true }
+        Export-WindowsImage @params | Out-Null
+    }
+    Remove-Item -LiteralPath $Path -Force
+    Move-Item -LiteralPath $temp -Destination $Path
+}
+
+function Update-LunqRecovery {
+    # Среда восстановления лежит внутри системы: Windows\System32\Recovery\Winre.wim.
+    # Её копируют в рабочую папку, обслуживают, пересжимают и возвращают на место.
+    param(
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)][string]$WorkDir,
+        [Parameter(Mandatory)][string]$PEMountPath,
+        $Updates = @(),
+        $Drivers = @(),
+        [string]$DriversRoot
+    )
+
+    $inImage = Join-Path $MountPath 'Windows\System32\Recovery\Winre.wim'
+    if (-not (Test-Path -LiteralPath $inImage)) {
+        Write-Warning 'В образе нет Windows\System32\Recovery\Winre.wim, среда восстановления пропущена.'
+        return
+    }
+    $original = Get-Item -LiteralPath $inImage -Force
+    $attributes = $original.Attributes
+    $work = Join-Path $WorkDir 'winre.wim'
+    Copy-Item -LiteralPath $inImage -Destination $work -Force
+    (Get-Item -LiteralPath $work -Force).Attributes = 'Normal'
+
+    $results = Update-LunqPEImage -ImagePath $work -Index 1 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
+        -Where 'WinRE' -KindSuffix 'Recovery' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
+    Write-Info 'Пересжимаю Winre.wim...'
+    Optimize-LunqWim -Path $work
+    Write-Info ("Winre.wim: было {0}, стало {1}" -f (Format-Size $original.Length), (Format-Size (Get-Item -LiteralPath $work).Length))
+
+    $original.Attributes = 'Normal'
+    Copy-Item -LiteralPath $work -Destination $inImage -Force
+    (Get-Item -LiteralPath $inImage -Force).Attributes = $attributes
+    Remove-Item -LiteralPath $work -Force
+    return $results
+}
+
+function Update-LunqSetup {
+    # Установщик: boot.wim, образ 2 («Установка Windows»), с которого загружается флешка.
+    param(
+        [Parameter(Mandatory)][string]$IsoRoot,
+        [Parameter(Mandatory)][string]$WorkDir,
+        [Parameter(Mandatory)][string]$PEMountPath,
+        $Updates = @(),
+        $Drivers = @(),
+        [string]$DriversRoot
+    )
+
+    $bootWim = Join-Path $IsoRoot 'sources\boot.wim'
+    if (-not (Test-Path -LiteralPath $bootWim)) { throw 'В ISO нет sources\boot.wim, установщик обновить нельзя.' }
+    $before = (Get-Item -LiteralPath $bootWim).Length
+    $results = Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
+        -Where 'установщике' -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
+    Write-Info 'Пересжимаю boot.wim...'
+    Optimize-LunqWim -Path $bootWim -BootIndex 2
+    Write-Info ("boot.wim: было {0}, стало {1}" -f (Format-Size $before), (Format-Size (Get-Item -LiteralPath $bootWim).Length))
+    return $results
+}
+
+function Get-LunqFirstLogon {
+    # Что выполнится при первом входе: программы из Apps.txt и скрипты *.ps1 из папки Scripts.
+    # Если файла или папки нет, соответствующий список просто пуст.
+    param([Parameter(Mandatory)][string]$AppsPath, [Parameter(Mandatory)][string]$ScriptsPath)
+    $apps = @()
+    if (Test-Path -LiteralPath $AppsPath -PathType Leaf) {
+        $apps = @(Get-Content -LiteralPath $AppsPath -Encoding UTF8 | ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { ($_ -split '\s+')[0] })
+    }
+    $scripts = @()
+    if (Test-Path -LiteralPath $ScriptsPath -PathType Container) {
+        $scripts = @(Get-ChildItem -LiteralPath $ScriptsPath -Filter '*.ps1' -File | Where-Object { $_.Extension -eq '.ps1' } | Sort-Object Name)
+    }
+    return [pscustomobject]@{
+        AppsPath    = $AppsPath
+        Apps        = $apps
+        ScriptsPath = $ScriptsPath
+        Scripts     = $scripts
+    }
+}
+
+function Format-FirstLogonSummary {
+    # Одна короткая строка для плана и итога: длинный список программ в ней не нужен.
+    param([Parameter(Mandatory)]$FirstLogon)
+    $parts = @()
+    if ($FirstLogon.Apps.Count -gt 0) { $parts += "программ: $($FirstLogon.Apps.Count) (winget)" }
+    if ($FirstLogon.Scripts.Count -gt 0) { $parts += "скриптов: $($FirstLogon.Scripts.Count)" }
+    return ($parts -join ', ')
+}
+
+function Install-LunqFirstLogon {
+    # Кладёт в образ скрипт первого входа и unattend.xml, который запускает его через
+    # FirstLogonCommands. SetupComplete.cmd не подходит: Windows не запускает его,
+    # если в BIOS ноутбука зашит OEM-ключ, а это почти все ноутбуки с Home и Pro.
+    param(
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)]$FirstLogon,
+        [Parameter(Mandatory)][string]$Architecture
+    )
+
+    $result = New-LunqResult 'После установки' 'FirstLogon'
+    $unattend = Join-Path $MountPath 'Windows\System32\Sysprep\unattend.xml'
+    if (Test-Path -LiteralPath $unattend) {
+        throw 'В образе уже есть Windows\System32\Sysprep\unattend.xml, скрипт первого входа добавить нельзя.'
+    }
+
+    $target = Join-Path $MountPath 'Windows\Setup\Scripts\Lunq'
+    $userTarget = Join-Path $target 'User'
+    New-Item -ItemType Directory -Path $userTarget -Force | Out-Null
+    if ($FirstLogon.Apps.Count -gt 0) {
+        Copy-Item -LiteralPath $FirstLogon.AppsPath -Destination (Join-Path $userTarget 'Apps.txt') -Force
+    }
+    if ($FirstLogon.Scripts.Count -gt 0) {
+        # Вместе со скриптами копируется всё, что лежит рядом с ними: скрипты могут этим пользоваться.
+        $skip = @('.gitkeep', 'README.txt', 'README.md')
+        foreach ($item in @(Get-ChildItem -LiteralPath $FirstLogon.ScriptsPath -Force | Where-Object { $skip -notcontains $_.Name })) {
+            Copy-Item -LiteralPath $item.FullName -Destination $userTarget -Recurse -Force
+        }
+    }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
+
+    $command = 'cmd.exe /c start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINDIR%\Setup\Scripts\Lunq\FirstLogon.ps1"'
+    $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Created by LunqDebloater: runs the first logon setup script. -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="$Architecture" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>$([Security.SecurityElement]::Escape($command))</CommandLine>
+          <Description>LunqDebloater first logon</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>
+"@
+    New-Item -ItemType Directory -Path (Split-Path $unattend -Parent) -Force | Out-Null
+    [IO.File]::WriteAllText($unattend, $xml, (New-Object Text.UTF8Encoding($false)))
+
+    foreach ($app in $FirstLogon.Apps) { $result.Done.Add($app) }
+    $result | Add-Member -NotePropertyName Summary -NotePropertyValue (Format-FirstLogonSummary -FirstLogon $FirstLogon)
+    Write-Info ("Добавлено: {0}. Запустится при первом входе в Windows." -f $result.Summary)
+    return $result
+}
+
+function Write-LunqInventory {
+    # Сохраняет в текстовый файл всё, что есть в образе, в виде, удобном для профиля.
+    # Справа помечаются категории профиля, которые уже упоминают элемент.
+    param(
+        [Parameter(Mandatory)][string]$MountPath,
+        [Parameter(Mandatory)]$LunqProfile,
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$Header = @()
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($h in $Header) { $lines.Add($h) }
+    $lines.Add("Профиль для сравнения: $($LunqProfile.Name). [id] справа: элемент уже есть в категории профиля с этим Id.")
+    $lines.Add('')
+
+    $categories = @($LunqProfile.Categories)
+    $mark = {
+        param([string]$Name, [string]$Kind)
+        $ids = @($categories | Where-Object { Test-NamePattern -Name $Name -Patterns @($_.$Kind) } | ForEach-Object { $_.Id })
+        if ($ids.Count -gt 0) { return '[' + ($ids -join ', ') + ']' }
+        return ''
+    }
+    $addSection = {
+        param([string]$Title, [string[]]$Names, [string]$Kind)
+        $lines.Add("== $Title ==")
+        foreach ($n in $Names) { $lines.Add(('  {0,-60} {1}' -f $n, (& $mark $n $Kind)).TrimEnd()) }
+        if ($Names.Count -eq 0) { $lines.Add('  (нет)') }
+        $lines.Add('')
+    }
+
+    $appx = @(Get-AppxProvisionedPackage -Path $MountPath | ForEach-Object { $_.DisplayName } | Sort-Object -Unique)
+    & $addSection "Приложения Appx: $($appx.Count). Для раздела Appx" $appx 'Appx'
+
+    $caps = @(Get-WindowsCapability -Path $MountPath | Where-Object State -eq 'Installed' | ForEach-Object { $_.Name } | Sort-Object)
+    & $addSection "Компоненты (Capabilities), установлены: $($caps.Count). Для раздела Capabilities, версию после ~~~~ можно заменить на *" $caps 'Capabilities'
+
+    $features = @(Get-WindowsOptionalFeature -Path $MountPath | Sort-Object FeatureName)
+    $enabled = @($features | Where-Object { [string]$_.State -eq 'Enabled' } | ForEach-Object { $_.FeatureName })
+    $disabled = @($features | Where-Object { [string]$_.State -ne 'Enabled' } | ForEach-Object { $_.FeatureName })
+    & $addSection "Функции Windows (Optional Features), включены: $($enabled.Count). Для раздела Features" $enabled 'Features'
+    & $addSection "Функции Windows, выключены: $($disabled.Count). Их отключать не нужно" $disabled 'Features'
+
+    $missing = @()
+    foreach ($category in $categories) {
+        foreach ($pair in @(@('Appx', $appx), @('Capabilities', $caps), @('Features', $enabled))) {
+            foreach ($pattern in @($category.($pair[0]))) {
+                if (-not (@($pair[1]) | Where-Object { $_ -like $pattern })) { $missing += ('  {0,-60} [{1}]' -f "$($pair[0]): $pattern", $category.Id) }
+            }
+        }
+    }
+    $lines.Add("== Есть в профиле, но нет в образе (или уже выключено): $($missing.Count) ==")
+    foreach ($m in $missing) { $lines.Add($m) }
+    if ($missing.Count -eq 0) { $lines.Add('  (нет)') }
+
+    $lines | Set-Content -LiteralPath $Path -Encoding UTF8
+    return [pscustomobject]@{ Appx = $appx.Count; Capabilities = $caps.Count; Enabled = $enabled.Count; Disabled = $disabled.Count; Missing = $missing.Count }
 }
 
 function Remove-LunqAppx {
