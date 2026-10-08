@@ -16,7 +16,7 @@ $script:HiveMap = [ordered]@{
 }
 
 # Версия LunqDebloater: видна в заголовке окна, в логе, в итоге и в реестре собранного образа.
-$script:LunqVersion = '1.0.1'
+$script:LunqVersion = '1.0.2'
 
 # Счётчик шагов для вывода «Шаг N из M».
 $script:StepCurrent = 0
@@ -811,6 +811,24 @@ function Get-LunqMountedPaths {
     return , @($mountedImages | Where-Object { $Paths -contains $_.Path } | ForEach-Object { $_.Path })
 }
 
+function Test-LunqOutputPath {
+    # Можно ли записать итоговый ISO: папка есть, писать в неё можно, и это не исходный ISO.
+    # Возвращает текст проблемы или $null.
+    param([Parameter(Mandatory)][string]$OutputIso, [Parameter(Mandatory)][string]$IsoPath)
+
+    if ($OutputIso.TrimEnd('\', '/') -eq $IsoPath.TrimEnd('\', '/')) { return 'это исходный ISO, он был бы перезаписан' }
+    if (Test-Path -LiteralPath $OutputIso -PathType Container) { return 'это папка, а нужен путь к файлу .iso' }
+    $folder = Split-Path $OutputIso -Parent
+    if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { return "папки $folder нет, создайте её" }
+    $probe = Join-Path $folder (".lunq_write_test_{0}.tmp" -f [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.File]::WriteAllText($probe, '')
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    }
+    catch { return "в папку $folder нельзя записать файл" }
+    return $null
+}
+
 function Test-LunqPrerequisites {
     # Проверяет всё, что нужно для сборки, до начала долгой работы.
     # Возвращает путь к oscdimg, ошибки и предупреждения.
@@ -824,7 +842,8 @@ function Test-LunqPrerequisites {
         [string[]]$ProtectedPaths = @(),
         [switch]$DefaultWorkDir,
         [long]$ExtraSize = 0,
-        [switch]$SkipOscdimg
+        [switch]$SkipOscdimg,
+        [switch]$SkipOutputCheck
     )
 
     $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
@@ -833,6 +852,15 @@ function Test-LunqPrerequisites {
     if ($workDirProblem) {
         Write-Check Fail "Рабочая папка $($WorkDir): $workDirProblem" 'Скрипт полностью очищает рабочую папку. Укажите через -WorkDir новую или пустую папку, например D:\LunqWork.'
         $result.Errors++
+    }
+
+    # Итоговый ISO пишется последним шагом, поэтому папку для него лучше проверить сейчас.
+    if (-not $SkipOutputCheck) {
+        $outputProblem = Test-LunqOutputPath -OutputIso $OutputIso -IsoPath $IsoPath
+        if ($outputProblem) {
+            Write-Check Fail "Итоговый ISO $($OutputIso): $outputProblem" 'Укажите другой путь через -OutputIso.'
+            $result.Errors++
+        }
     }
 
     if (Test-Administrator) { Write-Check Ok 'Права администратора' }
@@ -987,8 +1015,10 @@ function Write-LunqReport {
     Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
     if ($HasFirstLogon) {
         # Свой файл ответов Rufus важнее Sysprep\unattend.xml, и тогда FirstLogonCommands из образа не выполнятся.
-        Write-Host '    Rufus при записи предлагает настройки Windows (локальная учётная запись и другие).' -ForegroundColor Yellow
-        Write-Host '    Не отмечайте их: иначе программы и скрипты после установки не запустятся.' -ForegroundColor Yellow
+        Write-Host '    Rufus при записи предлагает настройки Windows: обход требований TPM, Secure Boot и памяти,' -ForegroundColor Yellow
+        Write-Host '    локальную учётную запись и другие. Не отмечайте ни одну: иначе программы и скрипты после' -ForegroundColor Yellow
+        Write-Host '    установки не запустятся сами. Если без этих настроек не обойтись, запустите программы' -ForegroundColor Yellow
+        Write-Host '    и скрипты вручную после установки: команда есть в README, раздел «После установки».' -ForegroundColor Yellow
     }
 }
 
@@ -1283,6 +1313,22 @@ function Format-FirstLogonSummary {
     return ($parts -join ', ')
 }
 
+function ConvertTo-LunqUtf8Bom {
+    # Windows PowerShell 5.1 читает скрипт без BOM в кодировке ANSI. Русские буквы в UTF-8 тогда
+    # частично становятся кавычками (байты «Г», «Д» в 1251 это “ ”), и скрипт не разбирается вовсе.
+    # Файл в UTF-8 без BOM пересохраняется с BOM. Возвращает $true, если файл изменён.
+    param([Parameter(Mandatory)][string]$Path)
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { return $false }
+    if ($bytes.Length -ge 2 -and (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) -or ($bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF))) { return $false }
+    # Только латиница: читается одинаково в любой кодировке.
+    if (-not ($bytes | Where-Object { $_ -ge 0x80 } | Select-Object -First 1)) { return $false }
+    try { $text = (New-Object Text.UTF8Encoding($false, $true)).GetString($bytes) }
+    catch { return $false }   # не UTF-8, скорее всего уже ANSI: оставляем как есть
+    [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding($true)))
+    return $true
+}
+
 function Install-LunqFirstLogon {
     # Кладёт в образ скрипт первого входа и unattend.xml, который запускает его через
     # FirstLogonCommands. SetupComplete.cmd не подходит: Windows не запускает его,
@@ -1310,6 +1356,11 @@ function Install-LunqFirstLogon {
         $skip = @('.gitkeep', 'README.txt', 'README.md')
         foreach ($item in @(Get-ChildItem -LiteralPath $FirstLogon.ScriptsPath -Force | Where-Object { $skip -notcontains $_.Name })) {
             Copy-Item -LiteralPath $item.FullName -Destination $userTarget -Recurse -Force
+        }
+        $converted = @(Get-ChildItem -LiteralPath $userTarget -Recurse -File -Include '*.ps1', '*.psm1' |
+                Where-Object { ConvertTo-LunqUtf8Bom -Path $_.FullName })
+        if ($converted.Count -gt 0) {
+            Write-Info ("Пересохранено в UTF-8 с BOM, чтобы русский текст работал в Windows PowerShell 5.1: {0}" -f (($converted | ForEach-Object { $_.Name }) -join ', '))
         }
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
