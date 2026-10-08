@@ -8,8 +8,8 @@ BeforeAll {
     $script:PowerShell = (Get-Process -Id $PID).Path
 
     function New-FirstLogonTest {
-        # Папка C:\Windows\Setup\Scripts\Lunq в миниатюре: скрипт, Apps.txt, свои скрипты, unattend.xml.
-        param([string[]]$Apps = @(), [hashtable]$Scripts = @{})
+        # Папка C:\Windows\Setup\Scripts\Lunq в миниатюре: скрипт, Language.txt, Apps.txt, свои скрипты, unattend.xml.
+        param([string[]]$Apps = @(), [hashtable]$Scripts = @{}, [ValidateSet('ru', 'en')][string]$Language = 'ru')
         $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0, 8))
         $lunq = Join-Path $root 'Lunq'
         $user = Join-Path $lunq 'User'
@@ -21,6 +21,7 @@ BeforeAll {
             $text = $text.Replace('$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())', '')
         }
         [IO.File]::WriteAllText((Join-Path $lunq 'FirstLogon.ps1'), $text, (New-Object Text.UTF8Encoding($true)))
+        [IO.File]::WriteAllText((Join-Path $lunq 'Language.txt'), $Language, (New-Object Text.UTF8Encoding($false)))
         if ($Apps.Count -gt 0) { Set-Content -LiteralPath (Join-Path $user 'Apps.txt') -Value $Apps -Encoding UTF8 }
         foreach ($name in $Scripts.Keys) { [IO.File]::WriteAllText((Join-Path $user $name), $Scripts[$name], (New-Object Text.UTF8Encoding($true))) }
         Set-Content -LiteralPath (Join-Path $user 'secret.txt') -Value 'password'
@@ -111,6 +112,15 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath (Join-Path $t.Windows 'System32\Sysprep\unattend.xml') | Should -BeFalse
         Test-Path -LiteralPath $t.Task | Should -BeFalse
         $out | Should -Match 'Установлено программ: 2'
+    }
+
+    It 'по-английски, если в Language.txt записано en' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip', 'Mozilla.Firefox --scope machine') -Language en
+        $out = Invoke-FirstLogon -Test $t
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip', 'Mozilla.Firefox')
+        Test-Path -LiteralPath $t.Task | Should -BeFalse
+        $out | Should -Match 'Apps installed: 2'
+        $out | Should -Not -Match 'Установлено программ'
     }
 
     It 'неудавшаяся программа ставится при следующем входе, остальные повторно не ставятся' {

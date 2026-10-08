@@ -1,0 +1,25 @@
+name: Предложение / Feature request
+description: Идея новой возможности или улучшения / An idea for a new feature or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает / What problem does it solve
+      description: Что вы хотите сделать и что мешает сейчас / What you want to do and what gets in the way now
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Что предлагается / What you propose
+      description: "Как это могло бы работать: параметр, пункт сводки, запись в профиле / How it could work: a parameter, a summary item, a profile entry"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Другие варианты / Alternatives
+      description: Как вы обходитесь сейчас или что ещё рассматривали / How you manage now or what else you considered
+    validations:
+      required: false

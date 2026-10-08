@@ -35,7 +35,7 @@ function Add-LunqUpdates {
         [Parameter(Mandatory)][string]$MountPath,
         [Parameter(Mandatory)]$Files,
         [Parameter(Mandatory)][string]$ScratchDir,
-        [string]$Title = 'Обновления',
+        [string]$Title = (Get-LunqText 'Servicing.UpdatesTitle'),
         [string]$Kind = 'Updates'
     )
 
@@ -44,13 +44,13 @@ function Add-LunqUpdates {
     $i = 0
     foreach ($file in $Files) {
         $i++
-        Write-Info ("[{0}/{1}] Устанавливаю {2} ({3})..." -f $i, $Files.Count, $file.Name, (Format-Size $file.Length))
+        Write-Info (Get-LunqText 'Servicing.Installing' $i $Files.Count $file.Name (Format-Size $file.Length))
         try {
             Add-WindowsPackage -Path $MountPath -PackagePath $file.FullName -ScratchDirectory $ScratchDir -NoRestart -ErrorAction Stop | Out-Null
             $result.Done.Add($file.Name)
         }
         catch {
-            Write-Warning "Не удалось установить $($file.Name): $($_.Exception.Message)"
+            Write-Warning (Get-LunqText 'Servicing.UpdateFailed' $file.Name $_.Exception.Message)
             $result.Failed.Add($file.Name)
         }
     }
@@ -81,7 +81,7 @@ function Add-LunqDrivers {
         [Parameter(Mandatory)][string]$MountPath,
         [Parameter(Mandatory)]$InfFiles,
         [Parameter(Mandatory)][string]$Root,
-        [string]$Title = 'Драйверы',
+        [string]$Title = (Get-LunqText 'Servicing.DriversTitle'),
         [string]$Kind = 'Drivers'
     )
 
@@ -98,7 +98,7 @@ function Add-LunqDrivers {
             $result.Done.Add($relative)
         }
         catch {
-            Write-Warning "Не удалось добавить $($relative): $($_.Exception.Message)"
+            Write-Warning (Get-LunqText 'Servicing.DriverFailed' $relative $_.Exception.Message)
             $result.Failed.Add($relative)
         }
     }
@@ -146,15 +146,15 @@ function Update-LunqPEImage {
     try {
         $updated = 0
         if (@($Updates).Count -gt 0) {
-            $r = Add-LunqUpdates -MountPath $MountPath -Files $Updates -ScratchDir $ScratchDir -Title "Обновления в $Where" -Kind "Updates$KindSuffix"
+            $r = Add-LunqUpdates -MountPath $MountPath -Files $Updates -ScratchDir $ScratchDir -Title (Get-LunqText 'Servicing.UpdatesIn' $Where) -Kind "Updates$KindSuffix"
             $updated = $r.Done.Count
             $results += $r
         }
         if (@($Drivers).Count -gt 0) {
-            $results += Add-LunqDrivers -MountPath $MountPath -InfFiles $Drivers -Root $DriversRoot -Title "Драйверы в $Where" -Kind "Drivers$KindSuffix"
+            $results += Add-LunqDrivers -MountPath $MountPath -InfFiles $Drivers -Root $DriversRoot -Title (Get-LunqText 'Servicing.DriversIn' $Where) -Kind "Drivers$KindSuffix"
         }
         if ($updated -gt 0) {
-            Write-Info 'Удаляю старые версии файлов после обновлений...'
+            Write-Info (Get-LunqText 'Servicing.Cleanup')
             $null = Invoke-LunqComponentCleanup -MountPath $MountPath -ScratchDir $ScratchDir
         }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
@@ -180,7 +180,7 @@ function Update-LunqRecovery {
 
     $inImage = Join-Path $MountPath 'Windows\System32\Recovery\Winre.wim'
     if (-not (Test-Path -LiteralPath $inImage)) {
-        Write-Warning 'В образе нет Windows\System32\Recovery\Winre.wim, среда восстановления пропущена.'
+        Write-Warning (Get-LunqText 'Servicing.NoWinre')
         return
     }
     $original = Get-Item -LiteralPath $inImage -Force
@@ -191,9 +191,9 @@ function Update-LunqRecovery {
 
     $results = Update-LunqPEImage -ImagePath $work -Index 1 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
         -Where 'WinRE' -KindSuffix 'Recovery' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
-    Write-Info 'Пересжимаю Winre.wim...'
+    Write-Info (Get-LunqText 'Servicing.Recompressing' 'Winre.wim')
     Optimize-LunqWim -Path $work
-    Write-Info ("Winre.wim: было {0}, стало {1}" -f (Format-Size $original.Length), (Format-Size (Get-Item -LiteralPath $work).Length))
+    Write-Info (Get-LunqText 'Servicing.SizeChange' 'Winre.wim' (Format-Size $original.Length) (Format-Size (Get-Item -LiteralPath $work).Length))
 
     $original.Attributes = 'Normal'
     Copy-Item -LiteralPath $work -Destination $inImage -Force
@@ -214,12 +214,12 @@ function Update-LunqSetup {
     )
 
     $bootWim = Join-Path $IsoRoot 'sources\boot.wim'
-    if (-not (Test-Path -LiteralPath $bootWim)) { throw 'В ISO нет sources\boot.wim, установщик обновить нельзя.' }
+    if (-not (Test-Path -LiteralPath $bootWim)) { throw (Get-LunqText 'Servicing.NoBootWim') }
     $before = (Get-Item -LiteralPath $bootWim).Length
     $results = Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
-        -Where 'установщике' -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
-    Write-Info 'Пересжимаю boot.wim...'
+        -Where (Get-LunqText 'Servicing.WhereSetup') -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
+    Write-Info (Get-LunqText 'Servicing.Recompressing' 'boot.wim')
     Optimize-LunqWim -Path $bootWim -BootIndex 2
-    Write-Info ("boot.wim: было {0}, стало {1}" -f (Format-Size $before), (Format-Size (Get-Item -LiteralPath $bootWim).Length))
+    Write-Info (Get-LunqText 'Servicing.SizeChange' 'boot.wim' (Format-Size $before) (Format-Size (Get-Item -LiteralPath $bootWim).Length))
     return $results
 }

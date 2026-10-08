@@ -48,7 +48,7 @@ function Invoke-LunqComponentCleanup {
     if ($script:DismLogPath) { $arguments += "/LogPath:$($script:DismLogPath)" }
     $code = Invoke-Native dism.exe $arguments
     if ($code -eq 0) { return $true }
-    Write-Warning "Очистка хранилища компонентов не удалась (dism.exe вернул код $code), образ будет больше. Подробности в логе DISM."
+    Write-Warning (Get-LunqText 'Image.CleanupFailed' $code)
     return $false
 }
 
@@ -57,7 +57,7 @@ function Find-Oscdimg {
 
     if ($Path) {
         if (Test-Path -LiteralPath $Path) { return $Path }
-        throw "oscdimg.exe не найден по пути $Path"
+        throw (Get-LunqText 'Image.OscdimgNotFoundAt' $Path)
     }
 
     $command = Get-Command oscdimg.exe -ErrorAction SilentlyContinue
@@ -73,7 +73,7 @@ function Find-Oscdimg {
         if (Test-Path -LiteralPath $adk) { return $adk }
     }
 
-    throw 'oscdimg.exe не найден. Установите Windows ADK (компонент Deployment Tools) или укажите -OscdimgPath.'
+    throw (Get-LunqText 'Image.OscdimgNotFound')
 }
 
 function New-BootableIso {
@@ -87,7 +87,7 @@ function New-BootableIso {
     $bios = Join-Path $IsoRoot 'boot\etfsboot.com'
     $uefi = Join-Path $IsoRoot 'efi\microsoft\boot\efisys.bin'
     foreach ($file in $bios, $uefi) {
-        if (-not (Test-Path -LiteralPath $file)) { throw "Не найден загрузочный файл $file" }
+        if (-not (Test-Path -LiteralPath $file)) { throw (Get-LunqText 'Image.BootFileMissing' $file) }
     }
 
     # Путь с пробелом внутри -bootdata пришлось бы брать в кавычки, а Windows PowerShell 5.1
@@ -98,7 +98,7 @@ function New-BootableIso {
     if ($IsoRoot -match '\s') {
         $location = Split-Path $IsoRoot -Parent
         $source = Split-Path $IsoRoot -Leaf
-        if ($source -match '\s') { throw "В имени папки $source есть пробел, oscdimg не сможет собрать ISO." }
+        if ($source -match '\s') { throw (Get-LunqText 'Image.FolderNameHasSpace' $source) }
         $bios = Join-Path $source 'boot\etfsboot.com'
         $uefi = Join-Path $source 'efi\microsoft\boot\efisys.bin'
     }
@@ -106,5 +106,5 @@ function New-BootableIso {
     if ($location) { Push-Location -LiteralPath $location }
     try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $OutputPath) -ShowOutput }
     finally { if ($location) { Pop-Location } }
-    if ($code -ne 0) { throw "oscdimg завершился с кодом $code" }
+    if ($code -ne 0) { throw (Get-LunqText 'Image.OscdimgFailed' $code) }
 }

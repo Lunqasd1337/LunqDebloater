@@ -18,7 +18,7 @@
         Start-Sleep -Seconds 1
     }
     Dismount-IsoImage -Iso $iso
-    throw 'Не удалось получить букву диска подключённого ISO.'
+    throw (Get-LunqText 'Iso.NoDriveLetter')
 }
 
 function Dismount-IsoImage {
@@ -32,7 +32,7 @@ function Get-IsoEditions {
     param([Parameter(Mandatory)][string]$IsoRoot)
 
     try { $imagePath = Get-InstallImagePath -IsoRoot $IsoRoot }
-    catch { throw 'В ISO нет sources\install.wim или install.esd. Похоже, это не установочный образ Windows.' }
+    catch { throw (Get-LunqText 'Iso.NotWindowsIso') }
     return , @(Get-WindowsImage -ImagePath $imagePath | Sort-Object ImageIndex)
 }
 
@@ -83,22 +83,22 @@ function Test-LunqImageRequirements {
     if ($release) { $actual = "$actual ($release)" }
 
     if ($Requirements.Architecture -and $Info.Architecture -ne $Requirements.Architecture) {
-        $result.Errors.Add("Архитектура образа $($Info.Architecture), а профиль рассчитан на $($Requirements.Architecture).")
+        $result.Errors.Add((Get-LunqText 'Iso.ArchMismatch' $Info.Architecture $Requirements.Architecture))
     }
 
     if ($Requirements.Build -gt 0 -and $Info.Build -ne $Requirements.Build) {
         $wanted = [string]$Requirements.Build
         $wantedRelease = Get-WindowsReleaseName -Build $Requirements.Build
         if ($wantedRelease) { $wanted = "$wanted ($wantedRelease)" }
-        $result.Errors.Add("Сборка образа $actual, а профиль рассчитан на сборку $wanted. Нужен ISO именно этой версии Windows.")
+        $result.Errors.Add((Get-LunqText 'Iso.BuildMismatch' $actual $wanted))
     }
     elseif ($Requirements.MinRevision -gt 0 -and $Info.Revision -lt $Requirements.MinRevision) {
         $wanted = '{0}.{1}' -f $Info.Build, $Requirements.MinRevision
         if ($HasCumulativeUpdate) {
-            $result.Warnings.Add("Сборка образа $actual старше $wanted, но накопительное обновление из папки обновлений её поднимет.")
+            $result.Warnings.Add((Get-LunqText 'Iso.RevisionOldWithUpdate' $actual $wanted))
         }
         else {
-            $result.Errors.Add("Сборка образа $actual старше, чем нужно профилю: $wanted или новее.")
+            $result.Errors.Add((Get-LunqText 'Iso.RevisionTooOld' $actual $wanted))
         }
     }
     return $result
@@ -114,12 +114,12 @@ function Copy-IsoContent {
     $iso = Mount-IsoImage -IsoPath $IsoPath
     $source = $iso.Root
     try {
-        Write-Info "ISO подключён как $source, копирую файлы..."
+        Write-Info (Get-LunqText 'Iso.Copying' $source)
 
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
         # robocopy возвращает коды < 8 при успехе.
         $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1')
-        if ($code -ge 8) { throw "robocopy завершился с кодом $code" }
+        if ($code -ge 8) { throw (Get-LunqText 'Iso.RobocopyFailed' $code) }
     }
     finally {
         Dismount-IsoImage -Iso $iso
@@ -135,7 +135,7 @@ function Get-InstallImagePath {
         $path = Join-Path $IsoRoot "sources\$name"
         if (Test-Path -LiteralPath $path) { return $path }
     }
-    throw 'В папке sources не найден install.wim или install.esd.'
+    throw (Get-LunqText 'Iso.NoInstallImage')
 }
 
 function Get-EditionHint {
@@ -144,16 +144,16 @@ function Get-EditionHint {
 
     # Названия редакций в ISO зависят от языка, поэтому шаблоны на английском и русском.
     $hint = switch -Regex ($Name) {
-        'for Workstations|для рабочих станций'     { 'Pro для мощных рабочих станций: ReFS, больше процессоров и памяти'; break }
-        'Pro.*(Education|образовательных)'         { 'Pro для учебных заведений'; break }
-        'Education|образовательных'                { 'для учебных заведений, по возможностям близка к Корпоративной'; break }
-        'Enterprise|Корпоративная'                 { 'корпоративная: всё из Pro плюс функции для организаций, нужна корпоративная лицензия'; break }
-        'Single Language|для одного языка'         { 'Домашняя с одним языком интерфейса, сменить язык нельзя'; break }
-        'Pro'                                      { 'BitLocker, групповые политики, Hyper-V, удалённый рабочий стол; подходит большинству'; break }
-        'Home|Домашняя'                            { 'для домашнего ПК, без BitLocker, групповых политик и Hyper-V'; break }
+        'for Workstations|для рабочих станций'     { Get-LunqText 'Iso.HintProWorkstations'; break }
+        'Pro.*(Education|образовательных)'         { Get-LunqText 'Iso.HintProEducation'; break }
+        'Education|образовательных'                { Get-LunqText 'Iso.HintEducation'; break }
+        'Enterprise|Корпоративная'                 { Get-LunqText 'Iso.HintEnterprise'; break }
+        'Single Language|для одного языка'         { Get-LunqText 'Iso.HintSingleLanguage'; break }
+        'Pro'                                      { Get-LunqText 'Iso.HintPro'; break }
+        'Home|Домашняя'                            { Get-LunqText 'Iso.HintHome'; break }
         default                                    { '' }
     }
-    if ($Name -match '(^|\s)N(\s|$)') { $hint = "$hint. Версия N: без мультимедийных компонентов".TrimStart('. ') }
+    if ($Name -match '(^|\s)N(\s|$)') { $hint = (Get-LunqText 'Iso.HintN' $hint).TrimStart('. ') }
     return $hint
 }
 
@@ -178,9 +178,9 @@ function Select-LunqEdition {
 
     if ($Index -gt 0) {
         if (-not ($Images | Where-Object ImageIndex -eq $Index)) {
-            Write-Info 'Доступные редакции:'
+            Write-Info (Get-LunqText 'Iso.AvailableEditions')
             Write-EditionList -Images $Images
-            throw "В образе нет редакции с номером $Index. Выберите номер из списка выше."
+            throw (Get-LunqText 'Iso.NoEditionIndex' $Index)
         }
         return $Index
     }
@@ -188,30 +188,30 @@ function Select-LunqEdition {
     if ($Edition) {
         $match = @($Images | Where-Object { $_.ImageName -eq $Edition })
         if ($match.Count -eq 0) {
-            Write-Info 'Доступные редакции:'
+            Write-Info (Get-LunqText 'Iso.AvailableEditions')
             Write-EditionList -Images $Images
-            throw "Редакция '$Edition' не найдена. Укажите имя из списка выше в кавычках или номер через -Index."
+            throw (Get-LunqText 'Iso.EditionNotFound' $Edition)
         }
         return $match[0].ImageIndex
     }
 
     if ($Images.Count -eq 1) {
-        Write-Info "В образе одна редакция: $($Images[0].ImageName)"
+        Write-Info (Get-LunqText 'Iso.SingleEdition' $Images[0].ImageName)
         return $Images[0].ImageIndex
     }
 
-    Write-Info 'Какую редакцию Windows подготовить? В итоговом ISO останется только она.'
-    Write-Info 'Если сомневаетесь, выбирайте ту, на которую у вас есть ключ (обычно Home или Pro).'
+    Write-Info (Get-LunqText 'Iso.ChooseEdition')
+    Write-Info (Get-LunqText 'Iso.ChooseEditionHint')
     Write-Info ''
     Write-EditionList -Images $Images
     Write-Info ''
     while ($true) {
-        $answer = Read-Host '    Введите номер редакции'
+        $answer = Read-Host ('    ' + (Get-LunqText 'Iso.EditionPrompt'))
         $parsed = 0
         if ([int]::TryParse($answer, [ref]$parsed) -and ($Images | Where-Object ImageIndex -eq $parsed)) {
             return $parsed
         }
-        Write-Warning 'Такого номера нет в списке, попробуйте ещё раз.'
+        Write-Warning (Get-LunqText 'Iso.NoSuchNumber')
     }
 }
 
@@ -225,8 +225,8 @@ function Select-IsoFile {
             try {
                 Add-Type -AssemblyName System.Windows.Forms
                 $dialog = New-Object System.Windows.Forms.OpenFileDialog
-                $dialog.Title = 'Выберите ISO-образ Windows 11'
-                $dialog.Filter = 'Образ диска (*.iso)|*.iso'
+                $dialog.Title = Get-LunqText 'Iso.DialogTitle'
+                $dialog.Filter = Get-LunqText 'Iso.DialogFilter'
                 # Невидимое окно-владелец поверх остальных, чтобы диалог не открылся за консолью.
                 $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
                 $dialogResult = $dialog.ShowDialog($owner)
@@ -235,16 +235,16 @@ function Select-IsoFile {
             catch { $useDialog = $false }
 
             if ($null -ne $dialogResult) {
-                if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) { throw 'Выбор ISO отменён.' }
+                if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) { throw (Get-LunqText 'Iso.SelectCancelled') }
                 $path = $dialog.FileName
             }
         }
         if (-not $path) {
-            $path = (Read-Host '    Путь к ISO (можно перетащить файл в это окно)').Trim().Trim('"')
+            $path = (Read-Host ('    ' + (Get-LunqText 'Iso.PathPrompt'))).Trim().Trim('"')
         }
         if ($path -and (Test-Path -LiteralPath $path -PathType Leaf) -and $path -like '*.iso') {
             return (Resolve-Path -LiteralPath $path).Path
         }
-        Write-Warning "Файл не найден или это не ISO: $path"
+        Write-Warning (Get-LunqText 'Iso.FileNotIso' $path)
     }
 }

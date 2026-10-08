@@ -4,26 +4,26 @@
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Приложения Appx' Appx
+    $result = New-LunqResult (Get-LunqText 'Removal.AppxTitle') Appx
     $patterns = Get-ConfigList $Config 'Appx', 'Remove'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Appx в профиле пуст.'; return $result }
+    if ($patterns.Count -eq 0) { Write-Info (Get-LunqText 'Removal.AppxEmpty'); return $result }
 
     $packages = @(Get-AppxProvisionedPackage -Path $MountPath)
     foreach ($pkg in $packages) {
         if (Test-NamePattern -Name $pkg.DisplayName -Patterns $patterns) {
-            Write-Info "Удаляю $($pkg.DisplayName)"
+            Write-Info (Get-LunqText 'Removal.Removing' $pkg.DisplayName)
             try {
                 Remove-AppxProvisionedPackage -Path $MountPath -PackageName $pkg.PackageName -ErrorAction Stop | Out-Null
                 $result.Done.Add($pkg.DisplayName)
             }
             catch {
-                Write-Warning "Не удалось удалить $($pkg.DisplayName): $($_.Exception.Message)"
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $pkg.DisplayName $_.Exception.Message)
                 $result.Failed.Add($pkg.DisplayName)
             }
         }
     }
     Add-NotMatched $result $patterns @($packages | ForEach-Object { $_.DisplayName })
-    Write-Info "Удалено Appx-пакетов: $($result.Done.Count) из $($packages.Count) в образе."
+    Write-Info (Get-LunqText 'Removal.AppxSummary' $result.Done.Count $packages.Count)
     return $result
 }
 
@@ -33,20 +33,20 @@ function Remove-LunqCapabilities {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Компоненты (Capabilities)' Capabilities
+    $result = New-LunqResult (Get-LunqText 'Removal.CapabilitiesTitle') Capabilities
     $patterns = Get-ConfigList $Config 'Capabilities', 'Remove'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Capabilities в профиле пуст.'; return $result }
+    if ($patterns.Count -eq 0) { Write-Info (Get-LunqText 'Removal.CapabilitiesEmpty'); return $result }
 
     $installed = @(Get-WindowsCapability -Path $MountPath | Where-Object State -eq 'Installed')
     foreach ($cap in $installed) {
         if (Test-NamePattern -Name $cap.Name -Patterns $patterns) {
-            Write-Info "Удаляю компонент $($cap.Name)"
+            Write-Info (Get-LunqText 'Removal.RemovingCapability' $cap.Name)
             try {
                 Remove-WindowsCapability -Path $MountPath -Name $cap.Name -ErrorAction Stop | Out-Null
                 $result.Done.Add($cap.Name)
             }
             catch {
-                Write-Warning "Не удалось удалить $($cap.Name): $($_.Exception.Message)"
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $cap.Name $_.Exception.Message)
                 $result.Failed.Add($cap.Name)
             }
         }
@@ -61,16 +61,16 @@ function Disable-LunqFeatures {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Функции Windows (Optional Features)' Features
+    $result = New-LunqResult (Get-LunqText 'Removal.FeaturesTitle') Features
     $patterns = Get-ConfigList $Config 'Features', 'Disable'
-    if ($patterns.Count -eq 0) { Write-Info 'Список Features в профиле пуст.'; return $result }
+    if ($patterns.Count -eq 0) { Write-Info (Get-LunqText 'Removal.FeaturesEmpty'); return $result }
 
     $removePayload = [bool](Get-ConfigValue $Config 'Features', 'RemovePayload')
 
     $enabled = @(Get-WindowsOptionalFeature -Path $MountPath | Where-Object State -eq 'Enabled')
     foreach ($feature in $enabled) {
         if (Test-NamePattern -Name $feature.FeatureName -Patterns $patterns) {
-            Write-Info "Отключаю компонент $($feature.FeatureName)"
+            Write-Info (Get-LunqText 'Removal.DisablingFeature' $feature.FeatureName)
             try {
                 $params = @{ Path = $MountPath; FeatureName = $feature.FeatureName; NoRestart = $true; ErrorAction = 'Stop' }
                 if ($removePayload) { $params.Remove = $true }
@@ -78,7 +78,7 @@ function Disable-LunqFeatures {
                 $result.Done.Add($feature.FeatureName)
             }
             catch {
-                Write-Warning "Не удалось отключить $($feature.FeatureName): $($_.Exception.Message)"
+                Write-Warning (Get-LunqText 'Removal.DisableFailed' $feature.FeatureName $_.Exception.Message)
                 $result.Failed.Add($feature.FeatureName)
             }
         }
@@ -94,21 +94,21 @@ function Remove-LunqPackages {
         [Parameter(Mandatory)]$Config
     )
 
-    $result = New-LunqResult 'Системные пакеты' Packages
+    $result = New-LunqResult (Get-LunqText 'Removal.PackagesTitle') Packages
     $patterns = Get-ConfigList $Config 'Packages', 'Remove'
     if ($patterns.Count -eq 0) { return $null }
 
-    Write-Warning 'Удаление системных пакетов может помешать установке обновлений.'
+    Write-Warning (Get-LunqText 'Removal.PackagesWarning')
     $packages = @(Get-WindowsPackage -Path $MountPath | Where-Object PackageState -eq 'Installed')
     foreach ($pkg in $packages) {
         if (Test-NamePattern -Name $pkg.PackageName -Patterns $patterns) {
-            Write-Info "Удаляю пакет $($pkg.PackageName)"
+            Write-Info (Get-LunqText 'Removal.RemovingPackage' $pkg.PackageName)
             try {
                 Remove-WindowsPackage -Path $MountPath -PackageName $pkg.PackageName -NoRestart -ErrorAction Stop | Out-Null
                 $result.Done.Add($pkg.PackageName)
             }
             catch {
-                Write-Warning "Не удалось удалить $($pkg.PackageName): $($_.Exception.Message)"
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $pkg.PackageName $_.Exception.Message)
                 $result.Failed.Add($pkg.PackageName)
             }
         }

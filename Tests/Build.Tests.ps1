@@ -216,7 +216,8 @@ Describe 'Английский интерфейс' {
         }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Not -Match '[А-Яа-яЁё]'
-        Assert-Steps -Output $run.Output -Expected 17
+        # Все 18 шагов: как в полной сборке выше, плюс файл ответов.
+        Assert-Steps -Output $run.Output -Expected 18
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
     }
 

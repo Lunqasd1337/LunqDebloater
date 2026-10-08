@@ -23,8 +23,8 @@ function Format-FirstLogonSummary {
     # Одна короткая строка для плана и итога: длинный список программ в ней не нужен.
     param([Parameter(Mandatory)]$FirstLogon)
     $parts = @()
-    if ($FirstLogon.Apps.Count -gt 0) { $parts += "программ: $($FirstLogon.Apps.Count) (winget)" }
-    if ($FirstLogon.Scripts.Count -gt 0) { $parts += "скриптов: $($FirstLogon.Scripts.Count)" }
+    if ($FirstLogon.Apps.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Apps' $FirstLogon.Apps.Count }
+    if ($FirstLogon.Scripts.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Scripts' $FirstLogon.Scripts.Count }
     return ($parts -join ', ')
 }
 
@@ -57,10 +57,10 @@ function Install-LunqFirstLogon {
         [Parameter(Mandatory)][string]$Architecture
     )
 
-    $result = New-LunqResult 'После установки' 'FirstLogon'
+    $result = New-LunqResult (Get-LunqText 'PostInstall.Title') 'FirstLogon'
     $unattend = Join-Path $MountPath 'Windows\System32\Sysprep\unattend.xml'
     if (Test-Path -LiteralPath $unattend) {
-        throw 'В образе уже есть Windows\System32\Sysprep\unattend.xml, скрипт первого входа добавить нельзя.'
+        throw (Get-LunqText 'PostInstall.UnattendExists')
     }
 
     $target = Join-Path $MountPath 'Windows\Setup\Scripts\Lunq'
@@ -78,10 +78,12 @@ function Install-LunqFirstLogon {
         $converted = @(Get-ChildItem -LiteralPath $userTarget -Recurse -File -Include '*.ps1', '*.psm1' |
                 Where-Object { ConvertTo-LunqUtf8Bom -Path $_.FullName })
         if ($converted.Count -gt 0) {
-            Write-Info ("Пересохранено в UTF-8 с BOM, чтобы русский текст работал в Windows PowerShell 5.1: {0}" -f (($converted | ForEach-Object { $_.Name }) -join ', '))
+            Write-Info (Get-LunqText 'PostInstall.ConvertedToBom' (($converted | ForEach-Object { $_.Name }) -join ', '))
         }
     }
     Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
+    # Скрипт первого входа работает без модуля, поэтому язык интерфейса ему передаётся файлом.
+    [IO.File]::WriteAllText((Join-Path $target 'Language.txt'), (Get-LunqLanguage), (New-Object Text.UTF8Encoding($false)))
 
     $command = $script:FirstLogonCommand
     $xml = @"
@@ -106,6 +108,6 @@ function Install-LunqFirstLogon {
 
     foreach ($app in $FirstLogon.Apps) { $result.Done.Add($app) }
     $result.Summary = Format-FirstLogonSummary -FirstLogon $FirstLogon
-    Write-Info ("Добавлено: {0}. Запустится при первом входе в Windows." -f $result.Summary)
+    Write-Info (Get-LunqText 'PostInstall.Added' $result.Summary)
     return $result
 }
