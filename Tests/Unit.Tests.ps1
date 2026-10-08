@@ -46,6 +46,8 @@ Describe 'Справка скрипта' {
         $script = Join-Path (Split-Path $PSScriptRoot -Parent) 'LunqDebloater.ps1'
         $help = Get-Help $script -Full
         $help.Synopsis | Should -Match 'Windows 11'
+        # Get-Help -Online открывает первую ссылку: английское описание параметров.
+        @($help.relatedLinks.navigationLink)[0].uri | Should -BeLike 'https://github.com/*/README.en.md*'
         $common = [System.Management.Automation.PSCmdlet]::CommonParameters
         foreach ($name in @((Get-Command $script).Parameters.Keys | Where-Object { $common -notcontains $_ })) {
             $description = ($help.parameters.parameter | Where-Object { $_.name -eq $name }).description | Out-String

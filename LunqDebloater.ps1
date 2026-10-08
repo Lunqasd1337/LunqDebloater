@@ -1,6 +1,7 @@
 ﻿<#
 .SYNOPSIS
     Преднастройка ISO-образа Windows 11: удаление Appx, компонентов Windows и твики реестра.
+    Offline preconfiguration of a Windows 11 ISO. English help: Get-Help .\LunqDebloater.ps1 -Online
 
 .DESCRIPTION
     Скрипт копирует содержимое ISO во временную папку, оставляет в install.wim одну
@@ -142,7 +143,14 @@
 .EXAMPLE
     .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -ListContents
     Сохраняет список приложений и компонентов редакции в D:\Win11_<номер>_contents.txt.
+
+.LINK
+    https://github.com/Lunqasd1337/LunqDebloater/blob/main/README.en.md#running-with-parameters
+
+.LINK
+    https://github.com/Lunqasd1337/LunqDebloater#readme
 #>
+
 # #Requires стоит после справки: перед ней он мешает Get-Help её найти.
 #Requires -Version 5.1
 [CmdletBinding()]

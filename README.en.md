@@ -62,7 +62,7 @@ To keep several sets of settings, copy the folder (for example, to `Config-Offic
 
 ## Running with parameters
 
-The full description of every parameter: `Get-Help .\LunqDebloater.ps1 -Full`. For repeated builds and automation you can set everything with parameters. Then the script asks nothing and takes everything that is in `Config`:
+The full description of every parameter: `Get-Help .\LunqDebloater.ps1 -Online` opens the English parameter reference on GitHub in your browser. `Get-Help .\LunqDebloater.ps1 -Full` shows the built-in help, which is in Russian only. For repeated builds and automation you can set everything with parameters. Then the script asks nothing and takes everything that is in `Config`:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
