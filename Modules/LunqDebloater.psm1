@@ -16,7 +16,7 @@ $script:HiveMap = [ordered]@{
 }
 
 # Версия LunqDebloater: видна в заголовке окна, в логе, в итоге и в реестре собранного образа.
-$script:LunqVersion = '1.0.2'
+$script:LunqVersion = '1.1.0'
 
 # Счётчик шагов для вывода «Шаг N из M».
 $script:StepCurrent = 0
@@ -961,14 +961,15 @@ function Write-LunqReport {
         [string]$OutputIso,
         [TimeSpan]$Elapsed,
         [string]$LogPath,
-        [switch]$HasFirstLogon
+        [switch]$HasFirstLogon,
+        [switch]$HasUnattend
     )
 
     Write-Section 'Итог'
     $results = @($Results | Where-Object { $null -ne $_ })
 
-    foreach ($r in @($results | Where-Object { $_.Kind -like 'Updates*' -or $_.Kind -like 'Drivers*' -or $_.Kind -eq 'FirstLogon' })) {
-        if ($r.Kind -eq 'FirstLogon') { Write-Info ("{0}: {1}" -f $r.Title, $r.Summary); continue }
+    foreach ($r in @($results | Where-Object { $_.Kind -like 'Updates*' -or $_.Kind -like 'Drivers*' -or $_.Kind -in 'FirstLogon', 'Unattend' })) {
+        if ($r.Kind -in 'FirstLogon', 'Unattend') { Write-Info ("{0}: {1}" -f $r.Title, $r.Summary); continue }
         $verb = if ($r.Kind -like 'Updates*') { 'установлено' } else { 'добавлено' }
         Write-Info ("{0}: {1} {2}, ошибок {3}" -f $r.Title, $verb, $r.Done.Count, $r.Failed.Count)
         if ($r.Failed.Count -gt 0) { Write-Host "        Не удалось: $($r.Failed -join ', ')" -ForegroundColor Yellow }
@@ -1013,12 +1014,18 @@ function Write-LunqReport {
     if ($LogPath) { Write-Info "Лог: $LogPath" }
     Write-Info ''
     Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
-    if ($HasFirstLogon) {
+    if ($HasUnattend) {
+        # Файл ответов Rufus заменил бы autounattend.xml из ISO.
+        Write-Host '    В ISO уже есть файл ответов LunqDebloater. Если записываете флешку через Rufus, не отмечайте' -ForegroundColor Yellow
+        Write-Host '    в его окне настройки Windows: Rufus добавит свой файл ответов, и выбранные настройки установки,' -ForegroundColor Yellow
+        Write-Host '    программы и скрипты после установки не сработают.' -ForegroundColor Yellow
+    }
+    elseif ($HasFirstLogon) {
         # Свой файл ответов Rufus важнее Sysprep\unattend.xml, и тогда FirstLogonCommands из образа не выполнятся.
         Write-Host '    Rufus при записи предлагает настройки Windows: обход требований TPM, Secure Boot и памяти,' -ForegroundColor Yellow
         Write-Host '    локальную учётную запись и другие. Не отмечайте ни одну: иначе программы и скрипты после' -ForegroundColor Yellow
-        Write-Host '    установки не запустятся сами. Если без этих настроек не обойтись, запустите программы' -ForegroundColor Yellow
-        Write-Host '    и скрипты вручную после установки: команда есть в README, раздел «После установки».' -ForegroundColor Yellow
+        Write-Host '    установки не запустятся сами. Нужные настройки можно включить в файле ответов LunqDebloater' -ForegroundColor Yellow
+        Write-Host '    (сводка «Что войдёт в образ»), а программы и скрипты запустить вручную: команда в README.' -ForegroundColor Yellow
     }
 }
 
@@ -1313,6 +1320,9 @@ function Format-FirstLogonSummary {
     return ($parts -join ', ')
 }
 
+# Команда первого входа: и в Sysprep\unattend.xml в образе, и в autounattend.xml в корне ISO.
+$script:FirstLogonCommand = 'cmd.exe /c start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINDIR%\Setup\Scripts\Lunq\FirstLogon.ps1"'
+
 function ConvertTo-LunqUtf8Bom {
     # Windows PowerShell 5.1 читает скрипт без BOM в кодировке ANSI. Русские буквы в UTF-8 тогда
     # частично становятся кавычками (байты «Г», «Д» в 1251 это “ ”), и скрипт не разбирается вовсе.
@@ -1365,7 +1375,7 @@ function Install-LunqFirstLogon {
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
 
-    $command = 'cmd.exe /c start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINDIR%\Setup\Scripts\Lunq\FirstLogon.ps1"'
+    $command = $script:FirstLogonCommand
     $xml = @"
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Created by LunqDebloater: runs the first logon setup script. -->
@@ -1389,6 +1399,151 @@ function Install-LunqFirstLogon {
     foreach ($app in $FirstLogon.Apps) { $result.Done.Add($app) }
     $result | Add-Member -NotePropertyName Summary -NotePropertyValue (Format-FirstLogonSummary -FirstLogon $FirstLogon)
     Write-Info ("Добавлено: {0}. Запустится при первом входе в Windows." -f $result.Summary)
+    return $result
+}
+
+function Get-LunqHostRegion {
+    # Формат, раскладки и часовой пояс компьютера, на котором собирается образ: их получит и новая Windows.
+    $region = [pscustomobject]@{ Locale = 'en-US'; InputLocale = '0409:00000409'; Keyboards = @('en-US'); TimeZone = 'UTC' }
+    try { $culture = (Get-Culture).Name; if ($culture) { $region.Locale = $culture } } catch { }
+    try {
+        $languages = @(Get-WinUserLanguageList -ErrorAction Stop)
+        $tips = @($languages | ForEach-Object { @($_.InputMethodTips) } | Where-Object { $_ } | Select-Object -Unique)
+        if ($tips.Count -gt 0) {
+            $region.InputLocale = $tips -join ';'
+            $region.Keyboards = @($languages | ForEach-Object { $_.LanguageTag })
+        }
+    }
+    catch { }
+    try { $zone = (Get-TimeZone).Id; if ($zone) { $region.TimeZone = $zone } } catch { }
+    return $region
+}
+
+function Format-LunqUnattendSummary {
+    # Одна строка о файле ответов для плана, итога и отметки о сборке.
+    param([Parameter(Mandatory)]$Unattend)
+    $parts = @()
+    if ($Unattend.Oobe) { $parts += 'без вопросов о лицензии и конфиденциальности' }
+    if ($Unattend.Region) { $parts += "регион $($Unattend.Region.Locale), часовой пояс $($Unattend.Region.TimeZone)" }
+    if ($Unattend.Bypass) { $parts += 'обход требований TPM, Secure Boot и памяти' }
+    if ($Unattend.LocalAccount) { $parts += 'локальная учётная запись' }
+    return ($parts -join ', ')
+}
+
+function New-LunqUnattendXml {
+    # autounattend.xml для корня ISO. Windows Setup находит его на флешке, применяет на всех этапах
+    # установки и сохраняет в Windows\Panther. Диск для установки по-прежнему выбирает человек.
+    param(
+        [Parameter(Mandatory)]$Unattend,
+        [Parameter(Mandatory)][string]$Architecture,
+        [string]$ImageLanguage,
+        [string]$FirstLogonCommand
+    )
+    $e = { param($text) [Security.SecurityElement]::Escape([string]$text) }
+    $attrs = 'processorArchitecture="{0}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"' -f $Architecture
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('<?xml version="1.0" encoding="utf-8"?>')
+    $lines.Add('<!-- Created by LunqDebloater: setup answer file. -->')
+    $lines.Add('<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">')
+
+    # windowsPE: язык установщика, лицензия, обход проверки требований.
+    $lines.Add('  <settings pass="windowsPE">')
+    if ($Unattend.Region -and $ImageLanguage) {
+        $lines.Add("    <component name=`"Microsoft-Windows-International-Core-WinPE`" $attrs>")
+        $lines.Add("      <UILanguage>$(& $e $ImageLanguage)</UILanguage>")
+        $lines.Add('    </component>')
+    }
+    $lines.Add("    <component name=`"Microsoft-Windows-Setup`" $attrs>")
+    if ($Unattend.Bypass) {
+        $lines.Add('      <RunSynchronous>')
+        $order = 0
+        foreach ($value in 'BypassTPMCheck', 'BypassSecureBootCheck', 'BypassRAMCheck') {
+            $order++
+            $lines.Add('        <RunSynchronousCommand wcm:action="add">')
+            $lines.Add("          <Order>$order</Order>")
+            $lines.Add("          <Path>reg.exe add &quot;HKLM\SYSTEM\Setup\LabConfig&quot; /v $value /t REG_DWORD /d 1 /f</Path>")
+            $lines.Add('        </RunSynchronousCommand>')
+        }
+        $lines.Add('      </RunSynchronous>')
+    }
+    # Ключ продукта и выбор редакции остаются как без файла ответов.
+    $lines.Add('      <UserData>')
+    $lines.Add('        <ProductKey>')
+    $lines.Add('          <Key>00000-00000-00000-00000-00000</Key>')
+    $lines.Add('          <WillShowUI>Always</WillShowUI>')
+    $lines.Add('        </ProductKey>')
+    $lines.Add("        <AcceptEula>$(([string][bool]$Unattend.Oobe).ToLower())</AcceptEula>")
+    $lines.Add('      </UserData>')
+    $lines.Add('      <UseConfigurationSet>false</UseConfigurationSet>')
+    $lines.Add('    </component>')
+    $lines.Add('  </settings>')
+
+    if ($Unattend.Region) {
+        $lines.Add('  <settings pass="specialize">')
+        $lines.Add("    <component name=`"Microsoft-Windows-Shell-Setup`" $attrs>")
+        $lines.Add("      <TimeZone>$(& $e $Unattend.Region.TimeZone)</TimeZone>")
+        $lines.Add('    </component>')
+        $lines.Add('  </settings>')
+    }
+
+    # oobeSystem: регион, вопросы при первом запуске и команда первого входа.
+    $lines.Add('  <settings pass="oobeSystem">')
+    if ($Unattend.Region) {
+        $lines.Add("    <component name=`"Microsoft-Windows-International-Core`" $attrs>")
+        $lines.Add("      <InputLocale>$(& $e $Unattend.Region.InputLocale)</InputLocale>")
+        $lines.Add("      <SystemLocale>$(& $e $Unattend.Region.Locale)</SystemLocale>")
+        if ($ImageLanguage) { $lines.Add("      <UILanguage>$(& $e $ImageLanguage)</UILanguage>") }
+        $lines.Add("      <UserLocale>$(& $e $Unattend.Region.Locale)</UserLocale>")
+        $lines.Add('    </component>')
+    }
+    $lines.Add("    <component name=`"Microsoft-Windows-Shell-Setup`" $attrs>")
+    $lines.Add('      <OOBE>')
+    if ($Unattend.Oobe) {
+        # 3: все параметры конфиденциальности выключены, страница с ними не показывается.
+        $lines.Add('        <ProtectYourPC>3</ProtectYourPC>')
+        $lines.Add('        <HideEULAPage>true</HideEULAPage>')
+    }
+    # Без учётной записи Майкрософт OOBE сразу предлагает создать локальную.
+    $lines.Add("        <HideOnlineAccountScreens>$(([string][bool]$Unattend.LocalAccount).ToLower())</HideOnlineAccountScreens>")
+    $lines.Add('      </OOBE>')
+    if ($FirstLogonCommand) {
+        $lines.Add('      <FirstLogonCommands>')
+        $lines.Add('        <SynchronousCommand wcm:action="add">')
+        $lines.Add('          <Order>1</Order>')
+        $lines.Add("          <CommandLine>$(& $e $FirstLogonCommand)</CommandLine>")
+        $lines.Add('          <Description>LunqDebloater first logon</Description>')
+        $lines.Add('        </SynchronousCommand>')
+        $lines.Add('      </FirstLogonCommands>')
+    }
+    $lines.Add('    </component>')
+    $lines.Add('  </settings>')
+    $lines.Add('</unattend>')
+    return ($lines -join "`r`n")
+}
+
+function Install-LunqUnattend {
+    # Кладёт autounattend.xml в корень будущего ISO.
+    param(
+        [Parameter(Mandatory)][string]$IsoRoot,
+        [Parameter(Mandatory)]$Unattend,
+        [Parameter(Mandatory)][string]$Architecture,
+        [string]$ImageLanguage,
+        [switch]$WithFirstLogon
+    )
+    $result = New-LunqResult 'Файл ответов' 'Unattend'
+    $path = Join-Path $IsoRoot 'autounattend.xml'
+    if (Test-Path -LiteralPath $path) { throw 'В ISO уже есть autounattend.xml, свой файл ответов добавить нельзя.' }
+    $command = $null
+    if ($WithFirstLogon) { $command = $script:FirstLogonCommand }
+    $xml = New-LunqUnattendXml -Unattend $Unattend -Architecture $Architecture -ImageLanguage $ImageLanguage -FirstLogonCommand $command
+    # Проверка, что получился корректный XML.
+    [void][xml]$xml
+    [IO.File]::WriteAllText($path, $xml, (New-Object Text.UTF8Encoding($false)))
+    $summary = Format-LunqUnattendSummary -Unattend $Unattend
+    if ($WithFirstLogon) { $summary = "$summary, запуск программ и скриптов после установки" }
+    $result | Add-Member -NotePropertyName Summary -NotePropertyValue $summary
+    Write-Info "autounattend.xml: $summary"
+    if (-not $ImageLanguage -and $Unattend.Region) { Write-Warning 'Не удалось узнать язык образа: язык установщика Windows спросит сама.' }
     return $result
 }
 
