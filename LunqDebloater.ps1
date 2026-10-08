@@ -79,6 +79,19 @@
 .PARAMETER SkipScripts
     Не выполнять скрипты из Config\Scripts при первом входе.
 
+.PARAMETER Unattend
+    Положить в ISO файл ответов (autounattend.xml): установка не спрашивает про лицензию и
+    конфиденциальность (всё выключено), язык, формат, раскладки и часовой пояс берутся с этого
+    компьютера. Диск для установки по-прежнему выбирается вручную. В пошаговом режиме включено
+    по умолчанию.
+
+.PARAMETER BypassRequirements
+    Добавить в файл ответов обход требований Windows 11: TPM 2.0, Secure Boot и памяти. Включает -Unattend.
+
+.PARAMETER LocalAccount
+    Добавить в файл ответов вход без учётной записи Майкрософт: Windows сразу предложит создать
+    локальную учётную запись. Включает -Unattend.
+
 .PARAMETER ListContents
     Ничего не собирать, а сохранить в текстовый файл рядом с ISO список приложений Appx,
     компонентов и функций выбранной редакции. Помогает составить свой профиль.
@@ -128,6 +141,9 @@ param(
     [switch]$SkipDrivers,
     [switch]$SkipApps,
     [switch]$SkipScripts,
+    [switch]$Unattend,
+    [switch]$BypassRequirements,
+    [switch]$LocalAccount,
     [switch]$ListContents,
     [string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
@@ -315,6 +331,14 @@ try {
     $useDrivers = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
     $useApps = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
     $useScripts = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
+    # Файл ответов: в пошаговом режиме включён по умолчанию, с параметрами только по ключам.
+    $useUnattend = $interactive -or $Unattend -or $BypassRequirements -or $LocalAccount
+    $useOobe = $useUnattend
+    $useRegion = $useUnattend
+    $useBypass = [bool]$BypassRequirements
+    $useLocalAccount = [bool]$LocalAccount
+    $hostRegion = $null
+    if (-not $listMode) { $hostRegion = Get-LunqHostRegion }
 
     if ($interactive -and -not $listMode) {
         Write-Section 'Что войдёт в образ'
@@ -349,13 +373,28 @@ try {
                 -Details $(if ($foundLogon.Apps.Count -gt 0) { $foundLogon.Apps -join ', ' } else { 'Впишите Id программ из winget в Config\Apps.txt.' })),
             (New-LunqOption -Key 'scripts' -Enabled $useScripts -Available ($foundLogon.Scripts.Count -gt 0) `
                 -Name $(if ($foundLogon.Scripts.Count -gt 0) { "Скрипты после установки: $($foundLogon.Scripts.Count) шт." } else { 'Скрипты после установки: не найдены' }) `
-                -Details $(if ($foundLogon.Scripts.Count -gt 0) { ($foundLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { 'Положите свои *.ps1 в Config\Scripts.' }))
+                -Details $(if ($foundLogon.Scripts.Count -gt 0) { ($foundLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { 'Положите свои *.ps1 в Config\Scripts.' })),
+            (New-LunqOption -Key 'unattend' -Enabled $useUnattend -Name 'Файл ответов: меньше вопросов при установке Windows' `
+                -Details 'В ISO добавится autounattend.xml. Диск для установки по-прежнему выбирается вручную.'),
+            (New-LunqOption -Key 'oobe' -Parent 'unattend' -Enabled $useOobe -Name 'Не спрашивать про лицензию и конфиденциальность' `
+                -Details 'Все параметры конфиденциальности (диагностика, реклама, местоположение) будут выключены.'),
+            (New-LunqOption -Key 'region' -Parent 'unattend' -Enabled $useRegion -Name 'Язык, регион и часовой пояс как на этом компьютере' `
+                -Details ("Формат: {0}, раскладки: {1}, часовой пояс: {2}." -f $hostRegion.Locale, ($hostRegion.Keyboards -join ', '), $hostRegion.TimeZone)),
+            (New-LunqOption -Key 'bypass' -Parent 'unattend' -Enabled $useBypass -Name 'Обойти требования Windows 11: TPM 2.0, Secure Boot и память' `
+                -Details 'Для компьютеров, на которые Windows 11 иначе не ставится. На остальных ничего не меняет.'),
+            (New-LunqOption -Key 'localAccount' -Parent 'unattend' -Enabled $useLocalAccount -Name 'Локальная учётная запись вместо учётной записи Майкрософт' `
+                -Details 'Windows не будет предлагать войти в учётную запись Майкрософт и сразу спросит имя и пароль.')
         )
         Select-LunqBuildOptions -Options $options
         $useUpdates = Test-LunqOption -Options $options -Key 'updates'
         $useDrivers = Test-LunqOption -Options $options -Key 'drivers'
         $useApps = Test-LunqOption -Options $options -Key 'apps'
         $useScripts = Test-LunqOption -Options $options -Key 'scripts'
+        $useUnattend = Test-LunqOption -Options $options -Key 'unattend'
+        $useOobe = Test-LunqOption -Options $options -Key 'oobe'
+        $useRegion = Test-LunqOption -Options $options -Key 'region'
+        $useBypass = Test-LunqOption -Options $options -Key 'bypass'
+        $useLocalAccount = Test-LunqOption -Options $options -Key 'localAccount'
         $UpdatesToSetup = [switch](Test-LunqOption -Options $options -Key 'updatesToSetup')
         $DriversToSetup = [switch](Test-LunqOption -Options $options -Key 'driversToSetup')
         if ($foundUpdates.Count -gt 0) { $CleanupComponents = [switch](Test-LunqOption -Options $options -Key 'cleanup') }
@@ -393,6 +432,16 @@ try {
             Apps        = $logonApps
             ScriptsPath = $foundLogon.ScriptsPath
             Scripts     = $logonScripts
+        }
+    }
+
+    $setupAnswers = $null
+    if (-not $listMode -and $useUnattend -and ($useOobe -or $useRegion -or $useBypass -or $useLocalAccount)) {
+        $setupAnswers = [pscustomobject]@{
+            Oobe         = [bool]$useOobe
+            Region       = $(if ($useRegion) { $hostRegion } else { $null })
+            Bypass       = [bool]$useBypass
+            LocalAccount = [bool]$useLocalAccount
         }
     }
 
@@ -525,6 +574,8 @@ try {
         Write-Info ("После установки:  {0}, при первом входе в Windows" -f (Format-FirstLogonSummary -FirstLogon $firstLogon))
     }
     else { Write-Info 'После установки:  ничего не выполняется' }
+    if ($setupAnswers) { Write-Info ("Установка:        файл ответов, {0}" -f (Format-LunqUnattendSummary -Unattend $setupAnswers)) }
+    else { Write-Info 'Установка:        без файла ответов, все вопросы как обычно' }
     $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
     Write-Info ("Категории:        включено {0} из {1}" -f $enabledCount, $lunqProfile.Categories.Count)
     Write-CategoryList -LunqProfile $lunqProfile
@@ -552,6 +603,7 @@ try {
     if ($drivers.Count -gt 0) { $steps += 1 }
     if ($servicePE) { $steps += 2 }
     if ($firstLogon) { $steps += 1 }
+    if ($setupAnswers) { $steps += 1 }
     if (-not $SkipAppx) { $steps += 1 }
     if (-not $SkipComponents) { $steps += 2 }
     if (-not $SkipRegistry) { $steps += 1 }
@@ -598,6 +650,18 @@ try {
         $results += Install-LunqFirstLogon -MountPath $mountDir -FirstLogon $firstLogon -Architecture $imageInfo.Architecture
     }
 
+    if ($setupAnswers) {
+        Write-Step 'Файл ответов' 'В корень ISO кладётся autounattend.xml: с ним установка Windows задаёт меньше вопросов.'
+        $imageLanguage = $null
+        if ($info.PSObject.Properties['Languages'] -and @($info.Languages).Count -gt 0) {
+            $languageIndex = 0
+            if ($info.PSObject.Properties['DefaultLanguageIndex'] -and $info.DefaultLanguageIndex -lt @($info.Languages).Count) { $languageIndex = $info.DefaultLanguageIndex }
+            # Только сам код языка, например ru-RU: при выводе к нему дописывается «(Default)».
+            if ([string]@($info.Languages)[$languageIndex] -match '^[A-Za-z]{2,3}(-[A-Za-z0-9]+)*') { $imageLanguage = $Matches[0] }
+        }
+        $results += Install-LunqUnattend -IsoRoot $isoDir -Unattend $setupAnswers -Architecture $imageInfo.Architecture -ImageLanguage $imageLanguage -WithFirstLogon:([bool]$firstLogon)
+    }
+
     if (-not $SkipAppx) {
         Write-Step 'Удаление приложений Appx' 'Удаляются предустановленные приложения из профиля. У новых пользователей они не появятся.'
         $results += Remove-LunqAppx -MountPath $mountDir -Config $config
@@ -640,6 +704,7 @@ try {
             Updates           = (@($updates | ForEach-Object { $_.Name }) -join ', ')
             Drivers           = [string]$drivers.Count
             SetupAndWinRE     = $(if ($servicePE) { 'да' } else { 'нет' })
+            SetupAnswerFile   = $(if ($setupAnswers) { Format-LunqUnattendSummary -Unattend $setupAnswers } else { 'нет' })
             CleanupComponents = $(if ($CleanupComponents) { 'да' } else { 'нет' })
             Apps              = $(if ($firstLogon) { $firstLogon.Apps -join ', ' } else { '' })
             Scripts           = $(if ($firstLogon) { @($firstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { '' })
@@ -658,7 +723,7 @@ try {
     Write-Step 'Сборка ISO' 'oscdimg собирает загрузочный ISO для BIOS и UEFI.'
     New-BootableIso -IsoRoot $isoDir -OutputPath $OutputIso -Oscdimg $check.Oscdimg -Label $Label
 
-    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -HasFirstLogon:([bool]$firstLogon)
+    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
 }
 catch {
     Write-Host ''
