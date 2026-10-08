@@ -59,8 +59,9 @@
     Папка с драйверами (распакованные .inf, можно в подпапках) вместо Config\Drivers.
 
 .PARAMETER DriversToSetup
-    Добавить драйверы ещё и в установщик (boot.wim) и среду восстановления (WinRE). Нужно,
-    если установщик не видит диск, например на контроллерах Intel RST/VMD или RAID.
+    Добавить драйверы контроллеров дисков ещё и в установщик (boot.wim) и среду восстановления
+    (WinRE). Нужно, если установщик не видит диск, например на контроллерах Intel RST/VMD или RAID.
+    Остальные драйверы туда не добавляются.
 
 .PARAMETER UpdatesToSetup
     Встроить обновления Windows ещё и в установщик (boot.wim) и среду восстановления (WinRE).
@@ -179,8 +180,25 @@ if (-not (Test-Administrator)) {
     $elevated = $false
     if (Read-YesNo 'Перезапустить скрипт от имени администратора?') {
         $shell = (Get-Process -Id $PID).Path
+        # Новое окно открывается в System32, поэтому пути передаются полными. Start-Process
+        # склеивает аргументы через пробел, поэтому каждый берётся в кавычки сам.
+        $pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath'
+        $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+        foreach ($param in $PSBoundParameters.GetEnumerator()) {
+            if ($param.Value -is [switch]) {
+                if ($param.Value) { $relaunch += "-$($param.Key)" }
+                continue
+            }
+            $value = @($param.Value) -join ','
+            if ($pathParams -contains $param.Key) {
+                $value = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($value)
+            }
+            # Обратная косая черта перед закрывающей кавычкой экранировала бы её.
+            $relaunch += "-$($param.Key)"
+            $relaunch += '"{0}"' -f $value.TrimEnd('\')
+        }
         try {
-            Start-Process -FilePath $shell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+            Start-Process -FilePath $shell -Verb RunAs -ArgumentList ($relaunch -join ' ')
             $elevated = $true
         }
         catch { Write-Warning 'Права администратора не выданы (в окне UAC нажата «Нет»?).' }
@@ -324,8 +342,8 @@ try {
                 -Details $(if ($foundDrivers.Count -gt 0) { 'Windows сама поставит их во время установки.' }
                     else { 'Положите распакованные драйверы в Config\Drivers, например: Export-WindowsDriver -Online -Destination .\Config\Drivers' })),
             (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled ([bool]$DriversToSetup) -Available ($foundDrivers.Count -gt 0) `
-                -Name 'Добавить драйверы и в установщик со средой восстановления (WinRE)' `
-                -Details 'Нужно, если установщик не видит диск (контроллеры Intel RST/VMD, RAID).'),
+                -Name "Добавить драйверы дисков и в установщик со средой восстановления (WinRE): $((Select-LunqPEDrivers $foundDrivers).Count) шт." `
+                -Details 'Нужно, если установщик не видит диск (контроллеры Intel RST/VMD, RAID). Остальные драйверы туда не добавляются.'),
             (New-LunqOption -Key 'apps' -Enabled $useApps -Available ($foundLogon.Apps.Count -gt 0) `
                 -Name $(if ($foundLogon.Apps.Count -gt 0) { "Программы после установки: $($foundLogon.Apps.Count) шт. (winget)" } else { 'Программы после установки: список пуст' }) `
                 -Details $(if ($foundLogon.Apps.Count -gt 0) { $foundLogon.Apps -join ', ' } else { 'Впишите Id программ из winget в Config\Apps.txt.' })),
@@ -358,7 +376,10 @@ try {
     $peUpdates = @()
     if ($UpdatesToSetup) { $peUpdates = Select-LunqPEUpdates $updates }
     $peDrivers = @()
-    if ($DriversToSetup) { $peDrivers = $drivers }
+    if ($DriversToSetup) {
+        $peDrivers = Select-LunqPEDrivers $drivers
+        if ($peDrivers.Count -eq 0) { Write-Warning 'Среди драйверов нет драйверов контроллеров дисков, в установщик и WinRE добавлять нечего.' }
+    }
     $servicePE = ($peUpdates.Count + $peDrivers.Count) -gt 0
 
     $firstLogon = $null
@@ -490,15 +511,13 @@ try {
     }
     else { Write-Info 'Обновления:       не встраиваются' }
     if ($drivers.Count -gt 0) {
-        $where = 'в систему'
-        if ($DriversToSetup) { $where = 'в систему, установщик и WinRE' }
-        Write-Info ("Драйверы:         {0} шт. (.inf), {1}, {2}: {3}" -f $drivers.Count, (Format-Size $driversSize), $where, $DriversPath)
+        Write-Info ("Драйверы:         {0} шт. (.inf), {1}, в систему: {2}" -f $drivers.Count, (Format-Size $driversSize), $DriversPath)
     }
     else { Write-Info 'Драйверы:         не встраиваются' }
     if ($servicePE) {
         $what = @()
         if ($peUpdates.Count -gt 0) { $what += "обновления ($($peUpdates.Count) шт.)" }
-        if ($peDrivers.Count -gt 0) { $what += 'драйверы' }
+        if ($peDrivers.Count -gt 0) { $what += "драйверы дисков ($($peDrivers.Count) шт.)" }
         Write-Info ("Установщик/WinRE: {0}" -f ($what -join ' и '))
         if ($UpdatesToSetup -and $peUpdates.Count -lt $updates.Count) { Write-Info '                  обновления .NET и прочие не для Windows PE пропускаются' }
     }
@@ -639,7 +658,7 @@ try {
     Write-Step 'Сборка ISO' 'oscdimg собирает загрузочный ISO для BIOS и UEFI.'
     New-BootableIso -IsoRoot $isoDir -OutputPath $OutputIso -Oscdimg $check.Oscdimg -Label $Label
 
-    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path
+    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -HasFirstLogon:([bool]$firstLogon)
 }
 catch {
     Write-Host ''
