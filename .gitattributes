@@ -1,2 +1,8 @@
-*.cmd text eol=crlf
-*.txt text eol=crlf
+* text=auto
+# Windows-скрипты и настройки хранятся с окончаниями строк Windows у всех, кто их правит.
+*.cmd  text eol=crlf
+*.txt  text eol=crlf
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.json text eol=crlf

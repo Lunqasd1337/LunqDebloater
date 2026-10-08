@@ -1,6 +1,6 @@
 {
   "Name": "Default",
-  "Description": "Очистка образа: убирает рекламные и редко нужные приложения, телеметрию и ИИ-функции, отключает драйверы и автообновление приложений Store через Windows Update. Не трогает Store, winget, Терминал, Фотографии, Калькулятор и Блокнот.",
+  "Description": "Очистка образа: убирает рекламные и редко нужные приложения, телеметрию и ИИ-функции, отключает автообновление приложений Store. Не трогает Store, winget, Терминал, Фотографии, Калькулятор и Блокнот. Запрет драйверов из Windows Update (категория drivers) выключен по умолчанию.",
 
   "Requirements": {
     "Build": 26300,
@@ -20,7 +20,6 @@
       "Description": "Удаляет предустановленные приложения и не даёт Windows доустановить Outlook и Dev Home после установки.",
       "Appx": [
         "Clipchamp.Clipchamp",
-        "Microsoft.549981C3F5F10",
         "Microsoft.BingNews",
         "Microsoft.BingWeather",
         "Microsoft.GetHelp",
@@ -52,15 +51,14 @@
       "Id": "legacy",
       "Name": "Устаревшие компоненты",
       "Enabled": true,
-      "Description": "Удаляет старые компоненты (IE, WordPad, PowerShell ISE, Steps Recorder) и отключает редко нужные функции Windows.",
+      "Description": "Удаляет старые компоненты (IE, PowerShell ISE, Steps Recorder) и отключает редко нужные функции Windows.",
       "Capabilities": [
         "App.StepsRecorder*",
         "App.Support.QuickAssist*",
         "Browser.InternetExplorer*",
         "MathRecognizer*",
         "Media.WindowsMediaPlayer*",
-        "Microsoft.Windows.PowerShell.ISE*",
-        "Microsoft.Windows.WordPad*"
+        "Microsoft.Windows.PowerShell.ISE*"
       ],
       "Features": [
         "WorkFolders-Client",
@@ -164,8 +162,8 @@
     {
       "Id": "drivers",
       "Name": "Драйверы из Windows Update",
-      "Enabled": true,
-      "Description": "Windows не будет сама искать и ставить драйверы. Если для сетевой карты или Wi-Fi нет встроенного драйвера, его придётся поставить вручную.",
+      "Enabled": false,
+      "Description": "Windows не будет сама искать и ставить драйверы. Включайте, только если встраиваете свои драйверы: без встроенного драйвера сетевой карты или Wi-Fi после установки не будет интернета.",
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "SearchOrderConfig", "Type": "REG_DWORD", "Value": 0, "Description": "Не искать драйверы в Windows Update" },
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\DriverSearching", "Name": "DontSearchWindowsUpdate", "Type": "REG_DWORD", "Value": 1, "Description": "Не искать драйверы в Windows Update" },

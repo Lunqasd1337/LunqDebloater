@@ -49,6 +49,7 @@ function Find-Winget {
     $command = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
     # Сразу после установки App Installer может быть ещё не зарегистрирован для пользователя.
+    # Если регистрация не удалась, winget просто ищется ещё раз в Wait-For.
     try { Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop } catch { }
     $command = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
@@ -135,11 +136,19 @@ if ($scripts.Count -gt 0) {
     Write-Host ''
     Write-Host "==> Ваши скрипты ($($scripts.Count))" -ForegroundColor Cyan
     Push-Location $userDir
-    foreach ($script in $scripts) {
-        Write-Line $script.Name
-        try { & $script.FullName }
-        catch { Write-Line "Ошибка в $($script.Name): $($_.Exception.Message)" 'Yellow'; $failed += $script.Name }
-        Add-Content -LiteralPath $scriptsDoneFile -Value $script.Name -Encoding UTF8
+    foreach ($userScript in $scripts) {
+        Write-Line $userScript.Name
+        # Неудачей считается и исключение, и ненулевой код выхода (exit 1 в скрипте).
+        $global:LASTEXITCODE = 0
+        try {
+            & $userScript.FullName
+            if ($global:LASTEXITCODE -ne 0) {
+                Write-Line "$($userScript.Name) завершился с кодом $($global:LASTEXITCODE)" 'Yellow'
+                $failed += $userScript.Name
+            }
+        }
+        catch { Write-Line "Ошибка в $($userScript.Name): $($_.Exception.Message)" 'Yellow'; $failed += $userScript.Name }
+        Add-Content -LiteralPath $scriptsDoneFile -Value $userScript.Name -Encoding UTF8
     }
     Pop-Location
 }
