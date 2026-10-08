@@ -2,3 +2,4 @@ Config/Updates/*
 !Config/Updates/.gitkeep
 Config/Drivers/*
 !Config/Drivers/.gitkeep
+Logs/

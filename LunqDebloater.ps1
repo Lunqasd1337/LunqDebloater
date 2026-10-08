@@ -204,16 +204,22 @@ $bootMountDir = Join-Path $WorkDir 'bootmount'
 $reMountDir = Join-Path $WorkDir 'remount'
 $allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
 $listMode = [bool]$ListContents
-$transcript = $false
+$lunqLog = $null
 $isoDir = Join-Path $WorkDir 'iso'
 $mountDir = Join-Path $WorkDir 'mount'
 $wimPath = Join-Path $isoDir 'sources\install.wim'
 
+try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
+
 try {
+    # Лог ведётся с самого начала: так в него попадают и ошибки при выборе ISO и проверке системы.
+    $lunqLog = Start-LunqLog -Dir (Join-Path $PSScriptRoot 'Logs')
+    Write-LunqRunInfo -BoundParameters $PSBoundParameters -DismLog $lunqLog.DismPath
+
     # ---------- Подготовка: всё, что можно проверить до долгой работы ----------
     if ($interactive) {
         Write-Host ''
-        Write-Host 'LunqDebloater: преднастройка ISO-образа Windows 11' -ForegroundColor Cyan
+        Write-Host "LunqDebloater $(Get-LunqVersion): преднастройка ISO-образа Windows 11" -ForegroundColor Cyan
         Write-Info 'Скрипт удалит лишние приложения и компоненты из установочного образа'
         Write-Info 'и внесёт настройки реестра. Исходный ISO не изменяется: результат'
         Write-Info 'сохраняется в новый файл. Сборка обычно занимает 15-40 минут.'
@@ -457,7 +463,7 @@ try {
         $inventory = Write-LunqInventory -MountPath $mountDir -LunqProfile $lunqProfile -Path $contentsPath -Header @(
             "Содержимое образа: [$selected] $editionName, $buildText",
             "ISO: $IsoPath",
-            "Создано LunqDebloater $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            "Создано LunqDebloater $(Get-LunqVersion), $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
             '')
         Dismount-WindowsImage -Path $mountDir -Discard | Out-Null
         $mounted = $false
@@ -471,9 +477,6 @@ try {
     }
 
     # ---------- План и подтверждение ----------
-    Start-Transcript -Path "$OutputIso.log" -Force | Out-Null
-    $transcript = $true
-
     $skipped = 'пропущено (указан ключ -Skip)'
 
     Write-Section 'План сборки'
@@ -513,15 +516,12 @@ try {
     if ($CleanupComponents) { Write-Info 'Очистка WinSxS:   да (/ResetBase)' }
     Write-Info "Итоговый ISO:     $OutputIso"
     Write-Info "Рабочая папка:    $WorkDir (удаляется после сборки)"
-    Write-Info "Лог:              $OutputIso.log"
+    Write-Info "Лог:              $($lunqLog.Path)"
 
     if ($interactive) {
         Write-Info ''
         Write-Info 'Во время сборки не закрывайте окно и не выключайте компьютер.'
         if (-not (Read-YesNo 'Начать сборку?')) {
-            Stop-Transcript | Out-Null
-            $transcript = $false
-            Remove-Item -LiteralPath "$OutputIso.log" -Force -ErrorAction SilentlyContinue
             Write-Info 'Сборка отменена, ничего не изменено.'
             return
         }
@@ -603,7 +603,28 @@ try {
         Repair-WindowsImage -Path $mountDir -StartComponentCleanup -ResetBase | Out-Null
     }
 
-    Write-Step 'Сохранение образа' 'Изменения записываются обратно в install.wim.'
+    Write-Step 'Сохранение образа' 'В реестр образа записывается отметка о сборке, затем изменения записываются обратно в install.wim.'
+    $skippedSteps = @()
+    if ($SkipAppx) { $skippedSteps += 'Appx' }
+    if ($SkipComponents) { $skippedSteps += 'Components' }
+    if ($SkipRegistry) { $skippedSteps += 'Registry' }
+    Set-LunqBuildStamp -MountPath $mountDir -Values ([ordered]@{
+            Version           = Get-LunqVersion
+            BuildDate         = Get-Date -Format 'yyyy-MM-dd HH:mm'
+            SourceIso         = Split-Path $IsoPath -Leaf
+            Edition           = $editionName
+            SourceBuild       = $buildText
+            Profile           = "$($lunqProfile.Name) ($(Split-Path $ProfilePath -Leaf))"
+            Categories        = (@($lunqProfile.Categories | Where-Object { $_.Enabled } | ForEach-Object { $_.Id }) -join ', ')
+            SkippedCategories = (@($lunqProfile.Categories | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Id }) -join ', ')
+            SkippedSteps      = ($skippedSteps -join ', ')
+            Updates           = (@($updates | ForEach-Object { $_.Name }) -join ', ')
+            Drivers           = [string]$drivers.Count
+            SetupAndWinRE     = $(if ($servicePE) { 'да' } else { 'нет' })
+            CleanupComponents = $(if ($CleanupComponents) { 'да' } else { 'нет' })
+            Apps              = $(if ($firstLogon) { $firstLogon.Apps -join ', ' } else { '' })
+            Scripts           = $(if ($firstLogon) { @($firstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { '' })
+        })
     Dismount-WindowsImage -Path $mountDir -Save | Out-Null
     $mounted = $false
 
@@ -618,7 +639,7 @@ try {
     Write-Step 'Сборка ISO' 'oscdimg собирает загрузочный ISO для BIOS и UEFI.'
     New-BootableIso -IsoRoot $isoDir -OutputPath $OutputIso -Oscdimg $check.Oscdimg -Label $Label
 
-    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started)
+    Write-LunqReport -Results $results -Registry $registry -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path
 }
 catch {
     Write-Host ''
@@ -629,7 +650,10 @@ catch {
         Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
         $mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
     }
-    if ($transcript) { Write-Info "Подробности в логе: $OutputIso.log" }
+    if ($lunqLog) {
+        Write-Info "Подробности в логе: $($lunqLog.Path)"
+        if (Test-Path -LiteralPath $lunqLog.DismPath) { Write-Info "Подробный лог DISM: $($lunqLog.DismPath)" }
+    }
     if (-not $interactive) { throw }
 }
 finally {
@@ -639,7 +663,7 @@ finally {
     elseif (-not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if ($transcript) { Stop-Transcript | Out-Null }
+    if ($lunqLog) { Stop-LunqLog }
     if ($interactive) {
         Write-Host ''
         Read-Host 'Нажмите Enter, чтобы закрыть окно' | Out-Null
