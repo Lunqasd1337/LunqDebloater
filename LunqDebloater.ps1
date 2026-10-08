@@ -121,6 +121,10 @@
     Выполнить очистку хранилища компонентов (StartComponentCleanup /ResetBase).
     Образ станет меньше, но установленные в него обновления нельзя будет удалить.
 
+.PARAMETER Language
+    Язык интерфейса: ru или en (interface language). По умолчанию русский на русской
+    Windows и английский на любой другой.
+
 .EXAMPLE
     .\LunqDebloater.ps1
     Пошаговый режим: скрипт сам спросит всё, что нужно.
@@ -171,7 +175,8 @@ param(
     [switch]$CleanupComponents,
     [switch]$SkipVersionCheck,
     [switch]$KeepWorkDir,
-    [switch]$Force
+    [switch]$Force,
+    [ValidateSet('ru', 'en')][string]$Language
 )
 
 $ErrorActionPreference = 'Stop'
@@ -180,6 +185,8 @@ $interactive = -not $IsoPath
 if ($env:OS -ne 'Windows_NT') { throw 'Скрипт работает только в Windows.' }
 
 Import-Module (Join-Path $PSScriptRoot 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
+if (-not $Language) { $Language = Get-LunqDefaultLanguage }
+Set-LunqLanguage -Language $Language
 # Параметры с путями: при перезапуске они передаются полными, ведь новое окно может открыться в другой папке.
 $pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath'
 

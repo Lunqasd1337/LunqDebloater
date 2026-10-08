@@ -17,7 +17,7 @@ function Write-Step {
     Write-Host ''
     if ($script:StepTotal -gt 0) {
         $script:StepCurrent++
-        Write-Host ("==> Шаг {0} из {1}. {2}" -f $script:StepCurrent, $script:StepTotal, $Message) -ForegroundColor Cyan
+        Write-Host ('==> ' + (Get-LunqText 'Console.Step' $script:StepCurrent $script:StepTotal $Message)) -ForegroundColor Cyan
     }
     else {
         Write-Host "==> $Message" -ForegroundColor Cyan
@@ -51,7 +51,8 @@ function Write-Check {
 }
 
 function Read-YesNo {
-    # Спрашивает да/нет. Принимает y/yes/д/да в любом регистре, всё остальное означает «нет».
+    # Спрашивает да/нет. Принимает y/yes/д/да в любом регистре и на любом языке интерфейса,
+    # всё остальное означает «нет».
     param([Parameter(Mandatory)][string]$Prompt)
     $answer = Read-Host "    $Prompt [Y/N]"
     return ($answer.Trim().ToLower() -in @('y', 'yes', 'д', 'да'))
@@ -59,6 +60,6 @@ function Read-YesNo {
 
 function Format-Size {
     param([double]$Bytes)
-    if ($Bytes -lt 1GB) { return ('{0:N0} МБ' -f ($Bytes / 1MB)) }
-    return ('{0:N1} ГБ' -f ($Bytes / 1GB))
+    if ($Bytes -lt 1GB) { return (Get-LunqText 'Console.SizeMB' ($Bytes / 1MB)) }
+    return (Get-LunqText 'Console.SizeGB' ($Bytes / 1GB))
 }

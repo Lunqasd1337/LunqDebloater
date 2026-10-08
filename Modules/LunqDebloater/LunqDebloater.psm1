@@ -20,3 +20,6 @@ $script:LunqVersion = [string](Import-PowerShellDataFile -Path (Join-Path $PSScr
 foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Private') -Filter '*.ps1' -File | Sort-Object Name)) {
     . $file.FullName
 }
+
+# Язык по умолчанию берётся из системы. Скрипт переключает его параметром -Language.
+Set-LunqLanguage -Language (Get-LunqDefaultLanguage)

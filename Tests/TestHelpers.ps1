@@ -98,6 +98,8 @@ function Invoke-LunqTestRun {
         }
     }
     function global:Start-Process { Write-Host "    [mock] Start-Process $args" }
+    # Проверки сверяют русский текст, если тест сам не выбрал язык.
+    if (-not $Parameters.ContainsKey('Language')) { $Parameters = $Parameters.Clone(); $Parameters['Language'] = 'ru' }
 
     $errorRecord = $null
     $lines = New-Object System.Collections.Generic.List[string]

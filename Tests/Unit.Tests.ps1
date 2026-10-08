@@ -5,6 +5,8 @@ BeforeAll {
     $repo = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $PSScriptRoot 'Mocks\Dism\Dism.psm1') -Force
     Import-Module (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
+    # Проверки сверяют русский текст.
+    Set-LunqLanguage -Language ru
     $script:ProfilePath = Join-Path $repo 'Config\Profile.json'
 
     function New-TestProfile {

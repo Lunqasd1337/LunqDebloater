@@ -10,6 +10,11 @@
 
     # Функции, которые вызывает LunqDebloater.ps1. Остальные внутренние и снаружи не видны.
     FunctionsToExport = @(
+        'Get-LunqDefaultLanguage',
+        'Get-LunqLanguage',
+        'Get-LunqLocalized',
+        'Get-LunqText',
+        'Set-LunqLanguage',
         'Add-LunqDrivers',
         'Add-LunqUpdates',
         'ConvertTo-LunqArgumentList',
