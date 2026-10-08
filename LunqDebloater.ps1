@@ -620,6 +620,8 @@ try {
 
     if ($interactive) {
         Write-Info ''
+        Write-Host '    Всё, что делает скрипт, вы делаете на свой страх и риск. Проверьте ISO в виртуальной' -ForegroundColor Yellow
+        Write-Host '    машине, прежде чем ставить его на рабочий компьютер (см. README, «Ответственность»).' -ForegroundColor Yellow
         Write-Info 'Во время сборки не закрывайте окно и не выключайте компьютер.'
         if (-not (Read-YesNo 'Начать сборку?')) {
             Write-Info 'Сборка отменена, ничего не изменено.'
