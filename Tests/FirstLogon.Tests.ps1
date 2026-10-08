@@ -46,7 +46,13 @@ public static class FakeWinget {
     }
 }
 "@
-            Add-Type -TypeDefinition $code -OutputAssembly (Join-Path $bin 'winget.exe') -OutputType ConsoleApplication -ReferencedAssemblies System.Core
+            # Add-Type в PowerShell 7 не собирает exe, поэтому собирает компилятор из .NET Framework.
+            $source = Join-Path $root 'winget.cs'
+            [IO.File]::WriteAllText($source, $code)
+            $csc = @('Framework64', 'Framework') | ForEach-Object { Join-Path $env:WINDIR "Microsoft.NET\$_\v4.0.30319\csc.exe" } |
+                Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            $compilerOutput = & $csc /nologo /target:exe /reference:System.Core.dll "/out:$(Join-Path $bin 'winget.exe')" $source 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать winget.exe: $compilerOutput" }
         }
         else {
             $sh = "#!/bin/sh`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> '$wingetLog'`nif [ -f '$failing' ] && grep -qx `"`$id`" '$failing'; then exit 1; fi`nexit 0`n"
