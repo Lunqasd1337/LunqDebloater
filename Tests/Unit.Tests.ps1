@@ -42,14 +42,24 @@ Describe 'Манифест и версия' {
 }
 
 Describe 'Справка скрипта' {
-    It 'Get-Help описывает каждый параметр LunqDebloater.ps1' {
+    It 'Get-Help показывает описание и ссылку на GitHub' {
         $script = Join-Path (Split-Path $PSScriptRoot -Parent) 'LunqDebloater.ps1'
         $help = Get-Help $script -Full
         $help.Synopsis | Should -Match 'Windows 11'
+        # Get-Help -Online открывает первую ссылку.
+        @($help.relatedLinks.navigationLink)[0].uri | Should -BeLike 'https://github.com/*'
+    }
+
+    It 'каждый параметр описан в README.md и README.en.md' {
+        # Подробная справка живёт только в README, поэтому новый параметр нельзя забыть там.
+        $repo = Split-Path $PSScriptRoot -Parent
         $common = [System.Management.Automation.PSCmdlet]::CommonParameters
-        foreach ($name in @((Get-Command $script).Parameters.Keys | Where-Object { $common -notcontains $_ })) {
-            $description = ($help.parameters.parameter | Where-Object { $_.name -eq $name }).description | Out-String
-            $description.Trim() | Should -Not -BeNullOrEmpty -Because "у -$name должно быть описание"
+        $names = @((Get-Command (Join-Path $repo 'LunqDebloater.ps1')).Parameters.Keys | Where-Object { $common -notcontains $_ })
+        foreach ($readme in 'README.md', 'README.en.md') {
+            $text = [IO.File]::ReadAllText((Join-Path $repo $readme))
+            foreach ($name in $names) {
+                $text | Should -Match "``-$name\b" -Because "-$name должен быть в $readme"
+            }
         }
     }
 }

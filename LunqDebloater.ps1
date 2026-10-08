@@ -1,148 +1,23 @@
 ﻿<#
 .SYNOPSIS
-    Преднастройка ISO-образа Windows 11: удаление Appx, компонентов Windows и твики реестра.
+    Преднастройка ISO-образа Windows 11: удаление приложений, компонентов и настройки реестра.
+    Offline preconfiguration of a Windows 11 ISO: removes apps and components, applies registry settings.
 
 .DESCRIPTION
-    Скрипт копирует содержимое ISO во временную папку, оставляет в install.wim одну
-    выбранную редакцию, монтирует её через DISM и применяет профиль (JSON):
-      - удаляет предустановленные Appx-приложения;
-      - удаляет компоненты Windows (Capabilities, Optional Features, при желании CBS-пакеты);
-      - вносит изменения в офлайн-реестр (SOFTWARE, SYSTEM, профиль Default).
-    Затем образ пересжимается, и oscdimg собирает загрузочный ISO (BIOS + UEFI).
+    Запуск без параметров открывает пошаговый режим: скрипт сам спросит всё, что нужно.
+    Описание всех параметров: README.md рядом со скриптом или Get-Help .\LunqDebloater.ps1 -Online.
 
-    Все настройки лежат в папке Config рядом со скриптом: профиль (Profile.json), список
-    программ (Apps.txt), свои скрипты (Scripts), драйверы (Drivers) и обновления (Updates).
-    Всё, что там найдено, попадает в образ.
+    Run it without parameters for the step-by-step mode: the script asks for everything it needs.
+    All parameters are described in README.en.md next to the script and online:
+    https://github.com/Lunqasd1337/LunqDebloater/blob/main/README.en.md
 
-    Если запустить скрипт без -IsoPath, он работает в пошаговом режиме: предложит
-    выбрать ISO и редакцию, покажет сводку того, что найдено в Config, и даст выключить
-    лишнее, проверит систему, покажет план и спросит подтверждение. Исходный ISO при этом
-    не изменяется.
+.LINK
+    https://github.com/Lunqasd1337/LunqDebloater#readme
 
-.PARAMETER IsoPath
-    Путь к исходному ISO Windows 11. Без него скрипт запускается в пошаговом режиме.
-
-.PARAMETER OutputIso
-    Путь к итоговому ISO. По умолчанию рядом с исходным с суффиксом _Lunq.
-
-.PARAMETER ConfigPath
-    Папка с настройками. По умолчанию Config рядом со скриптом. Удобно, если настроек
-    несколько: например, -ConfigPath .\Config-Office.
-
-.PARAMETER ProfilePath
-    JSON-профиль. По умолчанию Config\Profile.json.
-
-.PARAMETER SkipCategory
-    Id категорий профиля, которые нужно пропустить, через запятую: -SkipCategory drivers,store.
-    Список Id показывается в плане сборки и в пошаговом режиме.
-
-.PARAMETER Index
-    Индекс редакции в install.wim / install.esd.
-
-.PARAMETER Edition
-    Имя редакции, например "Windows 11 Pro". Если не указаны ни Index, ни Edition,
-    скрипт покажет список с пояснениями и спросит.
-
-.PARAMETER WorkDir
-    Рабочая папка (нужно около 25 ГБ свободного места на NTFS-диске). Скрипт полностью
-    очищает её, поэтому принимает только новую или пустую папку либо папку, которую
-    сам создал раньше. Корень диска и папка с исходным ISO не подойдут.
-
-.PARAMETER OscdimgPath
-    Путь к oscdimg.exe, если он не в стандартной папке Windows ADK.
-
-.PARAMETER UpdatesPath
-    Папка с обновлениями (.msu, .cab) вместо Config\Updates.
-
-.PARAMETER DriversPath
-    Папка с драйверами (распакованные .inf, можно в подпапках) вместо Config\Drivers.
-
-.PARAMETER DriversToSetup
-    Добавить драйверы контроллеров дисков ещё и в установщик (boot.wim) и среду восстановления
-    (WinRE). Нужно, если установщик не видит диск, например на контроллерах Intel RST/VMD или RAID.
-    Остальные драйверы туда не добавляются.
-
-.PARAMETER UpdatesToSetup
-    Встроить обновления Windows ещё и в установщик (boot.wim) и среду восстановления (WinRE).
-    Сборка займёт на 10-20 минут дольше.
-
-.PARAMETER SkipUpdates
-    Не встраивать обновления, даже если они есть в Config\Updates.
-
-.PARAMETER SkipDrivers
-    Не встраивать драйверы, даже если они есть в Config\Drivers.
-
-.PARAMETER SkipApps
-    Не ставить программы из Config\Apps.txt при первом входе.
-
-.PARAMETER SkipScripts
-    Не выполнять скрипты из Config\Scripts при первом входе.
-
-.PARAMETER Unattend
-    Положить в ISO файл ответов (autounattend.xml): установка не спрашивает про лицензию и
-    конфиденциальность (всё выключено), язык, формат, раскладки и часовой пояс берутся с этого
-    компьютера. Диск для установки по-прежнему выбирается вручную. В пошаговом режиме включено
-    по умолчанию.
-
-.PARAMETER BypassRequirements
-    Добавить в файл ответов обход требований Windows 11: TPM 2.0, Secure Boot и памяти. Включает -Unattend.
-
-.PARAMETER LocalAccount
-    Добавить в файл ответов вход без учётной записи Майкрософт: Windows сразу предложит создать
-    локальную учётную запись. Включает -Unattend.
-
-.PARAMETER Label
-    Метка тома итогового ISO, её видно в Проводнике и в меню загрузки. По умолчанию LUNQ_WIN11.
-
-.PARAMETER SkipAppx
-    Не удалять приложения Appx из профиля.
-
-.PARAMETER SkipComponents
-    Не удалять компоненты (Capabilities) и не отключать функции Windows (Optional Features) из профиля.
-
-.PARAMETER SkipRegistry
-    Не вносить записи реестра из профиля. Отметка о сборке (HKLM\SOFTWARE\LunqDebloater) пишется всё равно.
-
-.PARAMETER KeepWorkDir
-    Не удалять рабочую папку после сборки, например чтобы посмотреть, что попало в образ.
-
-.PARAMETER Force
-    Перезаписать итоговый ISO, если он уже есть, не спрашивая.
-
-.PARAMETER ListContents
-    Ничего не собирать, а сохранить в текстовый файл рядом с ISO список приложений Appx,
-    компонентов и функций выбранной редакции. Помогает составить свой профиль.
-
-.PARAMETER SkipVersionCheck
-    Не останавливаться, если сборка или архитектура ISO не совпадает с Requirements профиля.
-    Нужен только тем, кто сознательно собирает образ на другой версии Windows.
-
-.PARAMETER CleanupComponents
-    Выполнить очистку хранилища компонентов (StartComponentCleanup /ResetBase).
-    Образ станет меньше, но установленные в него обновления нельзя будет удалить.
-
-.PARAMETER Language
-    Язык интерфейса: ru или en (interface language). По умолчанию русский на русской
-    Windows и английский на любой другой.
-
-.EXAMPLE
-    .\LunqDebloater.ps1
-    Пошаговый режим: скрипт сам спросит всё, что нужно.
-
-.EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro"
-
-.EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -CleanupComponents
-    Встраивает обновления из Config\Updates и затем очищает хранилище компонентов.
-
-.EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Index 6 -SkipDrivers -SkipApps -SkipRegistry
-
-.EXAMPLE
-    .\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -ListContents
-    Сохраняет список приложений и компонентов редакции в D:\Win11_<номер>_contents.txt.
+.LINK
+    https://github.com/Lunqasd1337/LunqDebloater/blob/main/README.en.md
 #>
+
 # #Requires стоит после справки: перед ней он мешает Get-Help её найти.
 #Requires -Version 5.1
 [CmdletBinding()]
