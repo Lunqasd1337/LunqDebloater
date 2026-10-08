@@ -15,6 +15,9 @@ $script:HiveMap = [ordered]@{
     DefaultUser = @{ Key = 'HKLM\LUNQ_NTUSER';   File = 'Users\Default\NTUSER.DAT' }
 }
 
+# Версия LunqDebloater: видна в заголовке окна, в логе, в итоге и в реестре собранного образа.
+$script:LunqVersion = '1.0.0'
+
 # Счётчик шагов для вывода «Шаг N из M».
 $script:StepCurrent = 0
 $script:StepTotal = 0
@@ -84,6 +87,77 @@ function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-LunqVersion { return $script:LunqVersion }
+
+function Start-LunqLog {
+    # Начинает лог запуска в папке Logs и направляет туда же подробный лог DISM, чтобы
+    # при ошибке была видна её настоящая причина. Хранятся логи последних $Keep запусков.
+    param([Parameter(Mandatory)][string]$Dir, [int]$Keep = 10)
+
+    try { New-Item -ItemType Directory -Path $Dir -Force -ErrorAction Stop | Out-Null }
+    catch {
+        # Например, скрипт запущен с носителя только для чтения.
+        $Dir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\Logs'
+        New-Item -ItemType Directory -Path $Dir -Force | Out-Null
+    }
+    $old = @(Get-ChildItem -LiteralPath $Dir -Filter 'LunqDebloater_*.log' -File |
+            Where-Object { $_.Name -notlike '*_dism.log' } | Sort-Object Name -Descending | Select-Object -Skip ([Math]::Max($Keep - 1, 0)))
+    foreach ($file in $old) {
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_dism.log') -Force -ErrorAction SilentlyContinue
+    }
+
+    $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
+    $log = [pscustomobject]@{
+        Path     = Join-Path $Dir "LunqDebloater_$stamp.log"
+        DismPath = Join-Path $Dir "LunqDebloater_${stamp}_dism.log"
+    }
+    Start-Transcript -Path $log.Path -Force | Out-Null
+    # Командлеты DISM вызываются и из скрипта, и из модуля, поэтому путь задаётся глобально
+    # и убирается в Stop-LunqLog. Командлеты без параметра LogPath его просто не получают.
+    foreach ($key in $script:DismLogKeys) { $global:PSDefaultParameterValues[$key] = $log.DismPath }
+    return $log
+}
+
+$script:DismLogKeys = @('*-Windows*:LogPath', '*-AppxProvisionedPackage:LogPath')
+
+function Stop-LunqLog {
+    foreach ($key in $script:DismLogKeys) { $global:PSDefaultParameterValues.Remove($key) }
+    try { Stop-Transcript | Out-Null } catch { }
+}
+
+function Write-LunqRunInfo {
+    # Первые строки лога: версия, система и параметры запуска. По ним видно, в каких
+    # условиях запускался скрипт, даже если ошибка случилась в самом начале.
+    param($BoundParameters, [string]$DismLog)
+
+    $lines = @()
+    $lines += ("LunqDebloater {0}, запуск {1}" -f (Get-LunqVersion), (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
+    $system = 'неизвестно'
+    try {
+        $nt = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
+        $product = [string]$nt.ProductName
+        # В ProductName у Windows 11 по-прежнему написано «Windows 10».
+        if ([int]$nt.CurrentBuild -ge 22000) { $product = $product -replace 'Windows 10', 'Windows 11' }
+        $display = if ($nt.PSObject.Properties['DisplayVersion']) { " $($nt.DisplayVersion)" } else { '' }
+        $system = '{0}{1} ({2}.{3})' -f $product, $display, $nt.CurrentBuild, $nt.UBR
+    }
+    catch { }
+    $lines += ("Система: {0}, PowerShell {1}" -f $system, $PSVersionTable.PSVersion)
+    $params = @()
+    if ($BoundParameters) {
+        foreach ($p in $BoundParameters.GetEnumerator()) {
+            if ($p.Value -is [switch]) { if ($p.Value) { $params += "-$($p.Key)" } }
+            else { $params += "-$($p.Key) $(@($p.Value) -join ',')" }
+        }
+    }
+    if ($params.Count -eq 0) { $params = @('нет (пошаговый режим)') }
+    $lines += ("Параметры: {0}" -f ($params -join ' '))
+    if ($DismLog) { $lines += "Подробный лог DISM: $DismLog" }
+    # Приглушённым цветом: это нужно для разбора лога, а не для работы со скриптом.
+    foreach ($line in $lines) { Write-Host "    $line" -ForegroundColor DarkGray }
 }
 
 function Invoke-Native {
@@ -843,7 +917,8 @@ function Write-LunqReport {
         $Registry,
         $LunqProfile,
         [string]$OutputIso,
-        [TimeSpan]$Elapsed
+        [TimeSpan]$Elapsed,
+        [string]$LogPath
     )
 
     Write-Section 'Итог'
@@ -891,7 +966,8 @@ function Write-LunqReport {
     if ($OutputIso -and (Test-Path -LiteralPath $OutputIso)) {
         Write-Info ("Итоговый ISO: {0} ({1})" -f $OutputIso, (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
     }
-    if ($Elapsed) { Write-Info ('Время сборки: {0:hh\:mm\:ss}' -f $Elapsed) }
+    if ($Elapsed) { Write-Info ('Время сборки: {0:hh\:mm\:ss}, LunqDebloater {1}' -f $Elapsed, (Get-LunqVersion)) }
+    if ($LogPath) { Write-Info "Лог: $LogPath" }
     Write-Info ''
     Write-Info 'Что дальше: запишите ISO на флешку (например, через Rufus) или подключите его к виртуальной машине.'
 }
@@ -1489,6 +1565,28 @@ function Invoke-RegistryEntry {
     if ($code -eq 0) { return 'Applied' }
     Write-Warning "reg.exe вернул код $code для $key ($action $name)"
     return 'Failed'
+}
+
+function Set-LunqBuildStamp {
+    # Записывает в образ HKLM\SOFTWARE\LunqDebloater: чем, когда и с какими настройками он собран.
+    # Ошибка здесь не срывает сборку: это справочная информация.
+    param([Parameter(Mandatory)][string]$MountPath, [Parameter(Mandatory)]$Values)
+
+    $key = "$($script:HiveMap.SOFTWARE.Key)\LunqDebloater"
+    try {
+        Mount-OfflineHives -MountPath $MountPath
+        $failed = @()
+        foreach ($name in $Values.Keys) {
+            # Пустой /d и кавычки reg.exe в Windows PowerShell 5.1 получает искажёнными.
+            $data = ([string]$Values[$name]).Replace('"', "'").TrimEnd('\')
+            if (-not $data) { $data = 'нет' }
+            if ((Invoke-Native reg.exe @('add', $key, '/v', $name, '/t', 'REG_SZ', '/d', $data, '/f')) -ne 0) { $failed += $name }
+        }
+        if ($failed.Count -gt 0) { Write-Warning "Отметка о сборке записана не полностью: $($failed -join ', ')" }
+        else { Write-Info 'Отметка о сборке записана в реестр образа: HKLM\SOFTWARE\LunqDebloater.' }
+    }
+    catch { Write-Warning "Не удалось записать отметку о сборке: $($_.Exception.Message)" }
+    finally { Dismount-OfflineHives }
 }
 
 function Set-LunqRegistry {
