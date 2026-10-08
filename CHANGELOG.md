@@ -8,6 +8,7 @@
 - Предупреждение «на свой страх и риск» в README, в `Config\README.txt` и перед началом сборки.
 - JSON-схема профиля (`Schemas/Profile.schema.json`): подсказки и проверка в VS Code.
 - English README (`README.en.md`), `CONTRIBUTING.md`, шаблоны issue на GitHub.
+- Справка `Get-Help` стала короткой и двуязычной: подробное описание параметров теперь только в README, а `Get-Help -Online` открывает его на GitHub.
 
 ## 1.2.0
 
