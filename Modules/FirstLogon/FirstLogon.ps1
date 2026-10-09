@@ -92,8 +92,10 @@ $Host.UI.RawUI.WindowTitle = Get-Text 'WindowTitle'
 # от Windows права на чтение для всех пользователей, поэтому доступ оставляется только администраторам
 # и SYSTEM. Сам FirstLogon.ps1 остаётся доступным: иначе его не запустить без повышения прав.
 function Protect-Path([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    # ErrorActionPreference здесь Continue, поэтому ошибки командлетов явно превращаются в исключения.
     try {
-        $acl = Get-Acl -LiteralPath $Path
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
         $acl.SetAccessRuleProtection($true, $false)
         foreach ($rule in @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
         $inheritance = 'None'
@@ -102,14 +104,14 @@ function Protect-Path([string]$Path) {
             $identity = New-Object Security.Principal.SecurityIdentifier $sid
             $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', $inheritance, 'None', 'Allow'))
         }
-        Set-Acl -LiteralPath $Path -AclObject $acl
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
     }
     catch { }   # права не поменять: работа идёт как раньше
 }
 
 Start-Transcript -Path $log -Append | Out-Null
 Protect-Path $log
-if (Test-Path -LiteralPath $userDir) { Protect-Path $userDir }
+Protect-Path $userDir
 
 function Write-Line([string]$Text, [string]$Color = 'Gray') { Write-Host "    $Text" -ForegroundColor $Color }
 
