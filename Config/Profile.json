@@ -22,8 +22,8 @@
       "Name": { "ru": "Встроенные приложения", "en": "Built-in apps" },
       "Enabled": true,
       "Description": {
-        "ru": "Удаляет предустановленные приложения, в том числе виджеты, Paint и Камеру, и не даёт Windows доустановить Outlook и Dev Home после установки.",
-        "en": "Removes preinstalled apps, including Widgets, Paint and Camera, and stops Windows from installing Outlook and Dev Home after setup."
+        "ru": "Удаляет предустановленные приложения, в том числе виджеты, Paint и Камеру, и не даёт Windows доустановить Outlook, Dev Home и Cross Device после установки.",
+        "en": "Removes preinstalled apps, including Widgets, Paint and Camera, and stops Windows from installing Outlook, Dev Home and Cross Device after setup."
       },
       "Appx": [
         "Clipchamp.Clipchamp",
@@ -55,6 +55,7 @@
         "MSTeams"
       ],
       "Registry": [
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\CrossDeviceUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать Cross Device после установки", "en": "Do not install Cross Device after setup" } },
         { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\DevHomeUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать Dev Home после установки", "en": "Do not install Dev Home after setup" } },
         { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } }
       ]
