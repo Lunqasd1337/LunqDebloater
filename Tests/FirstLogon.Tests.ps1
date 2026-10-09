@@ -64,17 +64,18 @@ public static class FakeWinget {
         # Обёртка: заглушки и запуск скрипта. Часы идут вперёд на каждый Start-Sleep, так что
         # ожидание интернета «до 5 минут» проходит мгновенно.
         $wrapper = @'
-param($Lunq, $Windows, $Bin, $State, [switch]$Offline)
+param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask)
 $env:PATH = $Bin + [IO.Path]::PathSeparator + $env:PATH
 $env:WINDIR = $Windows
 $global:Now = [datetime]'2026-01-01'
 $global:Offline = [bool]$Offline
+$global:NoTask = [bool]$NoTask
 $global:TaskFile = Join-Path $State 'task'
 function global:Get-Date { $global:Now }
 function global:Start-Sleep { param($Seconds = 0, $Milliseconds = 0) $global:Now = $global:Now.AddSeconds($Seconds).AddMilliseconds($Milliseconds) }
 function global:Invoke-WebRequest { param($Uri, [switch]$UseBasicParsing, $TimeoutSec) if ($global:Offline) { throw 'нет сети' }; [pscustomobject]@{ Content = 'Microsoft Connect Test' } }
 function global:Get-ScheduledTask { param($TaskName, $ErrorAction) if (Test-Path -LiteralPath $global:TaskFile) { 'task' } }
-function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) Set-Content -LiteralPath $global:TaskFile -Value $Settings }
+function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) if ($global:NoTask) { throw 'планировщик недоступен' }; Set-Content -LiteralPath $global:TaskFile -Value $Settings }
 function global:Unregister-ScheduledTask { Remove-Item -LiteralPath $global:TaskFile -ErrorAction SilentlyContinue }
 function global:New-ScheduledTaskAction { 'action' }
 function global:New-ScheduledTaskTrigger { 'trigger' }
@@ -91,9 +92,10 @@ function global:Add-AppxPackage { }
 
     function Invoke-FirstLogon {
         # Один вход в Windows: запуск скрипта в отдельном процессе. Возвращает вывод.
-        param([Parameter(Mandatory)]$Test, [switch]$Offline)
+        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask)
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Test.Root 'wrapper.ps1'), '-Lunq', $Test.Lunq, '-Windows', $Test.Windows, '-Bin', $Test.Bin, '-State', $Test.Root)
         if ($Offline) { $arguments += '-Offline' }
+        if ($NoTask) { $arguments += '-NoTask' }
         $output = & $script:PowerShell @arguments 2>&1 | Out-String
         return $output
     }
@@ -151,6 +153,15 @@ Describe 'Скрипт первого входа' {
         $out = Invoke-FirstLogon -Test $t -Offline
         $out | Should -Match 'привет'
         Get-Lines (Join-Path $t.Lunq 'scripts.done') | Should -Be @('10-hello.ps1')
+    }
+
+    It 'задание не создалось: скрипты выполняются сразу и за собой убрано' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip') -Scripts @{ '10-hello.ps1' = "Write-Host 'привет'" }
+        $out = Invoke-FirstLogon -Test $t -Offline -NoTask
+        $out | Should -Match 'Не удалось создать задание'
+        $out | Should -Match 'привет'
+        $out | Should -Match 'повторить попытку при следующем входе нельзя'
+        Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
     }
 
     It 'скрипт с exit 1 считается неудачным, но повторно не запускается' {

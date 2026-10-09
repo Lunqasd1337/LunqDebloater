@@ -36,6 +36,7 @@ $texts = @{
         ScriptsLater   = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
         AppsNextLogon  = 'Неустановленные программы будут поставлены при следующем входе в Windows.'
         AppsGaveUp     = 'Не все программы установлены за {0} попыток. Поставьте их вручную, список в {1}'
+        AppsNoRetry    = 'Не все программы установлены, а повторить попытку при следующем входе нельзя. Поставьте их вручную, список в {0}'
         Done           = '==> Готово'
         Installed      = 'Установлено программ: {0}'
         Failed         = 'С ошибками: {0}'
@@ -60,6 +61,7 @@ $texts = @{
         ScriptsLater   = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
         AppsNextLogon  = 'Apps that were not installed will be installed at the next sign-in to Windows.'
         AppsGaveUp     = 'Not all apps were installed after {0} attempts. Install them manually, the list is in {1}'
+        AppsNoRetry    = 'Not all apps were installed, and they cannot be retried at the next sign-in. Install them manually, the list is in {0}'
         Done           = '==> Done'
         Installed      = 'Apps installed: {0}'
         Failed         = 'With errors: {0}'
@@ -160,6 +162,7 @@ function Read-Lines([string]$Path) {
 # Задание на следующий вход ставится сразу, до работы: если окно закроют или компьютер
 # выключится на середине, недоделанное продолжится при следующем входе.
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$retryScheduled = [bool]$task
 if (-not $task -and -not $lastAttempt) {
     try {
         $user = "$env:USERDOMAIN\$env:USERNAME"
@@ -170,9 +173,13 @@ if (-not $task -and -not $lastAttempt) {
         # на ноутбуке программы так и не поставились бы. Ограничение в 3 дня тоже не нужно.
         $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
+        $retryScheduled = $true
     }
     catch { Write-Line (Get-Text 'TaskFailed' $_.Exception.Message) 'Yellow' }
 }
+
+# Без задания следующего входа не будет: эта попытка последняя, и откладывать ничего нельзя.
+$finalRun = $lastAttempt -or -not $retryScheduled
 
 $installed = @()
 $failed = @()
@@ -224,7 +231,7 @@ $scripts = @(Get-ChildItem -LiteralPath $userDir -Filter '*.ps1' -File -ErrorAct
         Where-Object { $_.Extension -eq '.ps1' -and $doneScripts -notcontains $_.Name } | Sort-Object Name)
 # Скрипты идут после программ: они могут настраивать то, что ещё не поставилось. На последней
 # попытке они выполняются в любом случае.
-if ($scripts.Count -gt 0 -and $appsPending -and -not $lastAttempt) {
+if ($scripts.Count -gt 0 -and $appsPending -and -not $finalRun) {
     Write-Host ''
     Write-Line (Get-Text 'ScriptsLater' $scripts.Count) 'Yellow'
 }
@@ -249,17 +256,26 @@ elseif ($scripts.Count -gt 0) {
     Pop-Location
 }
 
-if ($appsPending -and -not $lastAttempt) {
+if ($appsPending -and -not $finalRun) {
     Write-Line (Get-Text 'AppsNextLogon') 'Yellow'
 }
 else {
     # Всё сделано или попытки кончились: задание больше не нужно.
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    if ($appsPending) { Write-Line (Get-Text 'AppsGaveUp' $maxAttempts $appsFile) 'Yellow' }
+    if ($appsPending -and $lastAttempt) { Write-Line (Get-Text 'AppsGaveUp' $maxAttempts $appsFile) 'Yellow' }
+    elseif ($appsPending) { Write-Line (Get-Text 'AppsNoRetry' $appsFile) 'Yellow' }
     # В скриптах и файлах рядом с ними могут быть пароли и ключи, поэтому их копии удаляются.
     # Apps.txt и лог остаются. unattend.xml тоже удаляется, чтобы его не подхватил Sysprep.
     Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
+    # можно открыть без прав администратора.
+    try {
+        $acl = Get-Acl -LiteralPath $userDir -ErrorAction Stop
+        $acl.SetAccessRuleProtection($false, $false)
+        Set-Acl -LiteralPath $userDir -AclObject $acl -ErrorAction Stop
+    }
+    catch { }   # права не вернуть: список доступен администраторам
     $unattend = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
     if ((Test-Path -LiteralPath $unattend) -and (Select-String -LiteralPath $unattend -SimpleMatch 'Created by LunqDebloater' -Quiet)) {
         Remove-Item -LiteralPath $unattend -Force -ErrorAction SilentlyContinue

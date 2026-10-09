@@ -43,7 +43,13 @@ function Initialize-LunqWorkDir {
     # Тогда он подменил бы install.wim или скрипты первого входа, пока идёт сборка, поэтому
     # доступ к папке и всему в ней остаётся только у администраторов и SYSTEM.
     # Права NTFS есть только в Windows; тесты в Linux подменяют $env:OS, поэтому проверяется сама платформа.
+    # Без прав администратора (так идут тесты на обычной учётной записи) папка закрылась бы от самого
+    # процесса, а сборка без них всё равно не запускается.
+    $elevated = $false
     if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
+        $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    if ($elevated) {
         $acl = Get-Acl -LiteralPath $WorkDir
         $acl.SetAccessRuleProtection($true, $false)
         foreach ($rule in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
