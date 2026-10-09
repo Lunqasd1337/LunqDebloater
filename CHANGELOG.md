@@ -2,6 +2,11 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.4.0
+
+- Safe OS Dynamic Update и Setup Dynamic Update: их можно положить в подпапки `Config\Updates\SafeOS` и `Config\Updates\Setup`. Вместе с `-UpdatesToSetup` Safe OS ставится в WinRE после накопительного обновления, а Setup Dynamic Update распаковывается в `sources` ISO, как в инструкции Microsoft.
+- После обновления установщика `setup.exe` и `setuphost.exe` копируются из `boot.wim` в `sources` ISO. Раньше с `-UpdatesToSetup` они могли не совпасть с версиями внутри `boot.wim`, и установка могла не запуститься.
+
 ## 1.3.0
 
 - Английский интерфейс. Язык выбирается параметром `-Language ru|en`, по умолчанию русский на русской Windows и английский на остальных. Скрипт первого входа говорит на языке сборки. Названия и описания в профиле могут быть на двух языках: `{ "ru": "...", "en": "..." }`.

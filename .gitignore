@@ -1,5 +1,11 @@
 Config/Updates/*
 !Config/Updates/.gitkeep
+!Config/Updates/SafeOS/
+Config/Updates/SafeOS/*
+!Config/Updates/SafeOS/.gitkeep
+!Config/Updates/Setup/
+Config/Updates/Setup/*
+!Config/Updates/Setup/.gitkeep
 Config/Drivers/*
 !Config/Drivers/.gitkeep
 Logs/

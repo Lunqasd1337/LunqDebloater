@@ -191,6 +191,8 @@ try {
     $updatesDir = Join-Path $ConfigPath 'Updates'
     $driversDir = Join-Path $ConfigPath 'Drivers'
     $foundUpdates = @()
+    $foundSafeOS = @()
+    $foundSetupDU = @()
     $foundDrivers = @()
     $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
     if (-not $listMode) {
@@ -199,7 +201,10 @@ try {
             $updatesDir = (Resolve-Path -LiteralPath $UpdatesPath).Path
         }
         $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
-        if ($UpdatesPath -and $foundUpdates.Count -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
+        # Safe OS и Setup Dynamic Update лежат в своих подпапках: они для WinRE и установщика, а не для системы.
+        $foundSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
+        $foundSetupDU = @(Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup') | Where-Object { $_.Extension -eq '.cab' })
+        if ($UpdatesPath -and ($foundUpdates.Count + $foundSafeOS.Count + $foundSetupDU.Count) -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
 
         if ($DriversPath) {
             if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw (Get-LunqText 'Main.DriversDirNotFound' $DriversPath) }
@@ -212,7 +217,8 @@ try {
         if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
     }
 
-    $useUpdates = $foundUpdates.Count -gt 0 -and -not $SkipUpdates
+    $foundDU = @($foundSafeOS) + @($foundSetupDU)
+    $useUpdates = ($foundUpdates.Count + $foundDU.Count) -gt 0 -and -not $SkipUpdates
     $useDrivers = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
     $useApps = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
     $useScripts = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
@@ -229,16 +235,17 @@ try {
         Write-Section (Get-LunqText 'Main.SectionContents')
         Write-Info (Get-LunqText 'Main.ContentsIntro' $ConfigPath)
         Write-Info (Get-LunqText 'Main.ContentsHowTo')
-        $hasUpdates = $foundUpdates.Count -gt 0
+        $hasUpdates = ($foundUpdates.Count + $foundDU.Count) -gt 0
         $hasDrivers = $foundDrivers.Count -gt 0
         $hasApps = $foundLogon.Apps.Count -gt 0
         $hasScripts = $foundLogon.Scripts.Count -gt 0
 
         if ($hasUpdates) {
             $sum = [long]0
-            foreach ($u in $foundUpdates) { $sum += $u.Length }
-            $updatesName = Get-LunqText 'Main.UpdatesFound' $foundUpdates.Count (Format-Size $sum)
-            $updatesDetails = @($foundUpdates | ForEach-Object { $_.Name }) + (Get-LunqText 'Main.UpdatesFoundHint')
+            foreach ($u in @($foundUpdates) + $foundDU) { $sum += $u.Length }
+            $updatesName = Get-LunqText 'Main.UpdatesFound' ($foundUpdates.Count + $foundDU.Count) (Format-Size $sum)
+            $updatesDetails = @($foundUpdates | ForEach-Object { $_.Name }) + @($foundSafeOS | ForEach-Object { "SafeOS\$($_.Name)" }) +
+                @($foundSetupDU | ForEach-Object { "Setup\$($_.Name)" }) + (Get-LunqText 'Main.UpdatesFoundHint')
         }
         else {
             $updatesName = Get-LunqText 'Main.UpdatesNone'
@@ -270,15 +277,17 @@ try {
         }
         $regionDetails = Get-LunqText 'Main.RegionDetails' $hostRegion.Locale ($hostRegion.Keyboards -join ', ') $hostRegion.TimeZone
         $peDriversCount = (Select-LunqPEDrivers $foundDrivers).Count
+        $updatesToSetupDetails = @(Get-LunqText 'Main.OptUpdatesToSetupHint')
+        if ($foundDU.Count -gt 0) { $updatesToSetupDetails += Get-LunqText 'Main.OptUpdatesToSetupDU' $foundSafeOS.Count $foundSetupDU.Count }
 
         $options = @(
             (New-LunqOption -Key 'updates' -Enabled $useUpdates -Available $hasUpdates -Name $updatesName -Details $updatesDetails),
             (New-LunqOption -Key 'cleanup' -Parent 'updates' -Enabled ([bool]$CleanupComponents) -Available $hasUpdates `
                 -Name (Get-LunqText 'Main.OptCleanup') `
                 -Details (Get-LunqText 'Main.OptCleanupHint')),
-            (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ([bool]$UpdatesToSetup) -Available $hasUpdates `
+            (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ([bool]$UpdatesToSetup -or $foundDU.Count -gt 0) -Available $hasUpdates `
                 -Name (Get-LunqText 'Main.OptUpdatesToSetup') `
-                -Details (Get-LunqText 'Main.OptUpdatesToSetupHint')),
+                -Details $updatesToSetupDetails),
             (New-LunqOption -Key 'drivers' -Enabled $useDrivers -Available $hasDrivers -Name $driversName -Details $driversDetails),
             (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled ([bool]$DriversToSetup) -Available $hasDrivers `
                 -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) `
@@ -312,9 +321,17 @@ try {
     }
 
     $updates = @()
-    if ($useUpdates) { $updates = $foundUpdates }
+    $safeOSUpdates = @()
+    $setupDU = @()
+    if ($useUpdates) {
+        $updates = $foundUpdates
+        if ($UpdatesToSetup) {
+            $safeOSUpdates = $foundSafeOS
+            $setupDU = $foundSetupDU
+        }
+    }
     $updatesSize = [long]0
-    foreach ($u in $updates) { $updatesSize += $u.Length }
+    foreach ($u in @($updates) + $safeOSUpdates + $setupDU) { $updatesSize += $u.Length }
 
     $drivers = @()
     if ($useDrivers) { $drivers = $foundDrivers }
@@ -330,7 +347,8 @@ try {
         $peDrivers = Select-LunqPEDrivers $drivers
         if ($peDrivers.Count -eq 0) { Write-Warning (Get-LunqText 'Main.NoPEDrivers') }
     }
-    $servicePE = ($peUpdates.Count + $peDrivers.Count) -gt 0
+    $serviceRecovery = ($peUpdates.Count + $safeOSUpdates.Count + $peDrivers.Count) -gt 0
+    $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
 
     $firstLogon = $null
     if (-not $listMode -and ($useApps -or $useScripts)) {
@@ -484,10 +502,15 @@ try {
     if ($servicePE) {
         $what = @()
         if ($peUpdates.Count -gt 0) { $what += Get-LunqText 'Main.PlanPEUpdates' $peUpdates.Count }
+        if ($safeOSUpdates.Count -gt 0) { $what += Get-LunqText 'Main.PlanPESafeOS' $safeOSUpdates.Count }
+        if ($setupDU.Count -gt 0) { $what += Get-LunqText 'Main.PlanPESetupDU' $setupDU.Count }
         if ($peDrivers.Count -gt 0) { $what += Get-LunqText 'Main.PlanPEDrivers' $peDrivers.Count }
-        Write-Info (Get-LunqText 'Main.PlanPE' ($what -join (Get-LunqText 'Main.PlanPEJoin')))
+        $whatText = $what[-1]
+        if ($what.Count -gt 1) { $whatText = ($what[0..($what.Count - 2)] -join ', ') + (Get-LunqText 'Main.PlanPEJoin') + $what[-1] }
+        Write-Info (Get-LunqText 'Main.PlanPE' $whatText)
         if ($UpdatesToSetup -and $peUpdates.Count -lt $updates.Count) { Write-Info (Get-LunqText 'Main.PlanPESkipped') }
     }
+    if ($useUpdates -and -not $UpdatesToSetup -and $foundDU.Count -gt 0) { Write-Info (Get-LunqText 'Main.PlanDUSkipped') }
     if ($firstLogon) {
         Write-Info (Get-LunqText 'Main.PlanFirstLogon' (Format-FirstLogonSummary -FirstLogon $firstLogon))
     }
@@ -564,9 +587,12 @@ try {
             Run   = { $results += Add-LunqDrivers -MountPath $mountDir -InfFiles $drivers -Root $DriversPath }
         },
         @{
-            Title = Get-LunqText 'Main.StepRecovery'; When = $servicePE
+            Title = Get-LunqText 'Main.StepRecovery'; When = $serviceRecovery
             Hint  = Get-LunqText 'Main.StepRecoveryHint'
-            Run   = { $results += Update-LunqRecovery -MountPath $mountDir -WorkDir $WorkDir -PEMountPath $reMountDir -Updates $peUpdates -Drivers $peDrivers -DriversRoot $DriversPath }
+            Run   = {
+                $results += Update-LunqRecovery -MountPath $mountDir -WorkDir $WorkDir -PEMountPath $reMountDir -Updates $peUpdates -SafeOS $safeOSUpdates `
+                    -Drivers $peDrivers -DriversRoot $DriversPath
+            }
         },
         @{
             Title = Get-LunqText 'Main.StepFirstLogon'; When = [bool]$firstLogon
@@ -639,6 +665,8 @@ try {
                         SkippedCategories = (@($lunqProfile.Categories | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Id }) -join ', ')
                         SkippedSteps      = ($skippedSteps -join ', ')
                         Updates           = (@($updates | ForEach-Object { $_.Name }) -join ', ')
+                        SafeOSUpdates     = (@($safeOSUpdates | ForEach-Object { $_.Name }) -join ', ')
+                        SetupUpdates      = (@($setupDU | ForEach-Object { $_.Name }) -join ', ')
                         Drivers           = [string]$drivers.Count
                         SetupAndWinRE     = $(if ($servicePE) { Get-LunqText 'Main.StampYes' } else { Get-LunqText 'Main.StampNo' })
                         SetupAnswerFile   = $(if ($setupAnswers) { Format-LunqUnattendSummary -Unattend $setupAnswers } else { Get-LunqText 'Main.StampNo' })
@@ -653,7 +681,10 @@ try {
         @{
             Title = Get-LunqText 'Main.StepSetup'; When = $servicePE
             Hint  = Get-LunqText 'Main.StepSetupHint'
-            Run   = { $results += Update-LunqSetup -IsoRoot $isoDir -WorkDir $WorkDir -PEMountPath $bootMountDir -Updates $peUpdates -Drivers $peDrivers -DriversRoot $DriversPath }
+            Run   = {
+                $results += Update-LunqSetup -IsoRoot $isoDir -WorkDir $WorkDir -PEMountPath $bootMountDir -Updates $peUpdates -SetupUpdates $setupDU `
+                    -Drivers $peDrivers -DriversRoot $DriversPath
+            }
         },
         @{
             Title = Get-LunqText 'Main.StepRecompress'; When = $true

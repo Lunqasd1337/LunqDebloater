@@ -57,6 +57,9 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'Драйверы: добавлено 2, ошибок 1'
         $run.Output | Should -Match 'Обновления в установщике: установлено 2'
         $run.Output | Should -Match 'Очистка хранилища компонентов: старые версии системных файлов удалены'
+        # После обновления boot.wim setup.exe в sources берётся из него, иначе версии не совпадут.
+        $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы из boot.wim в sources'
+        Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\sources\setup.exe') | Should -Be 'from boot.wim'
 
         $native = Get-Content -LiteralPath $t.NativeLog -Encoding UTF8
         # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
@@ -66,6 +69,55 @@ Describe 'Сборка с параметрами' {
         $registry | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|CleanupComponents|String|да'
         # Категория drivers выключена по умолчанию.
         ($registry -join "`n") | Should -Not -Match 'DriverSearching'
+    }
+
+    It 'Safe OS и Setup Dynamic Update из подпапок Updates' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true } -Prepare {
+            param($t)
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path (Join-Path $updates 'SafeOS'), (Join-Path $updates 'Setup') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+            Set-Content -LiteralPath (Join-Path $updates 'SafeOS\windows11.0-kb5080100-x64.cab') -Value 'cab'
+            Set-Content -LiteralPath (Join-Path $updates 'Setup\windows11.0-kb5080200-x64.cab') -Value 'cab'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        # Обязательные шаги и профиль (11), обновления, WinRE и установщик.
+        Assert-Steps -Output $run.Output -Expected 14
+        $run.Output | Should -Match 'Установщик/WinRE: обновления \(1 шт\.\), Safe OS Dynamic Update \(1 шт\.\) и Setup Dynamic Update \(1 шт\.\)'
+        # В систему идёт только накопительное обновление из самой папки Updates.
+        $run.Output | Should -Match 'Обновления:\s+1 шт\.'
+        $run.Output | Should -Match 'Safe OS Dynamic Update в WinRE: установлено 1, ошибок 0'
+        $run.Output | Should -Match 'Setup Dynamic Update: установлено 1, ошибок 0'
+        $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы'
+        $expand = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'expand.exe|*' })
+        $expand.Count | Should -Be 1
+        $expand[0] | Should -BeLike '*windows11.0-kb5080200-x64.cab|-F:`*|*iso?sources|*'
+    }
+
+    It 'Setup Dynamic Update без других обновлений: WinRE не трогается' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true } -Prepare {
+            param($t)
+            $setup = Join-Path $t.App 'Config\Updates\Setup'
+            New-Item -ItemType Directory -Path $setup -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $setup 'windows11.0-kb5080200-x64.cab') -Value 'cab'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 12
+        $run.Output | Should -Not -Match 'Среда восстановления \(WinRE\)'
+        $run.Output | Should -Match 'Setup Dynamic Update: установлено 1'
+    }
+
+    It 'Safe OS и Setup Dynamic Update без -UpdatesToSetup не встраиваются' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
+            param($t)
+            $safeOS = Join-Path $t.App 'Config\Updates\SafeOS'
+            New-Item -ItemType Directory -Path $safeOS -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $safeOS 'windows11.0-kb5080100-x64.cab') -Value 'cab'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 11
+        $run.Output | Should -Match 'Safe OS и Setup Dynamic Update не встраиваются без -UpdatesToSetup'
+        $run.Output | Should -Not -Match 'Safe OS Dynamic Update в WinRE'
     }
 
     It 'без обновлений и драйверов: только обязательные шаги и профиль' {
@@ -213,6 +265,11 @@ Describe 'Английский интерфейс' {
             param($t)
             Copy-Item -Path (Join-Path $t.Updates '*') -Destination (Join-Path $t.App 'Config\Updates') -Force
             Copy-Item -Path (Join-Path $t.Drivers '*') -Destination (Join-Path $t.App 'Config\Drivers') -Recurse -Force
+            foreach ($folder in 'SafeOS', 'Setup') {
+                $path = Join-Path $t.App "Config\Updates\$folder"
+                New-Item -ItemType Directory -Path $path -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $path "windows11.0-kb50801$($folder.Length)-x64.cab") -Value 'cab'
+            }
         }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Not -Match '[А-Яа-яЁё]'

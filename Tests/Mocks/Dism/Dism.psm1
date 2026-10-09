@@ -31,6 +31,11 @@ function Mount-WindowsImage {
         New-Item -ItemType Directory -Path (Split-Path $winre) -Force | Out-Null
         if (-not (Test-Path -LiteralPath $winre)) { Set-Content -LiteralPath $winre -Value ('r' * 500) }
     }
+    if ($ImagePath -like '*boot.wim') {
+        # Установщик внутри boot.wim: его setup.exe и setuphost.exe копируются в sources ISO.
+        New-Item -ItemType Directory -Path (Join-Path $Path 'sources') -Force | Out-Null
+        foreach ($name in 'setup.exe', 'setuphost.exe') { Set-Content -LiteralPath (Join-Path $Path "sources\$name") -Value 'from boot.wim' }
+    }
 }
 
 function Dismount-WindowsImage { param($Path, [switch]$Save, [switch]$Discard, $LogPath, $ErrorAction) Write-Host "    [mock] dismount $Path save=$Save discard=$Discard" }

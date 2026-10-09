@@ -44,7 +44,7 @@ All settings are in one `Config` folder next to the script. There is no need to 
 | `Apps.txt` | Programs that winget installs at the first sign-in (see "After installation") |
 | `Scripts\` | Your `*.ps1` scripts that run after installation |
 | `Drivers\` | `.inf` drivers, subfolders are fine (see "Drivers") |
-| `Updates\` | `.msu`/`.cab` updates (see "Updates") |
+| `Updates\` | `.msu`/`.cab` updates, with updates for WinRE and Windows Setup in the `SafeOS\` and `Setup\` subfolders (see "Updates") |
 
 A short guide to each item is in [Config/README.en.txt](Config/README.en.txt). Drivers and updates are not stored in git.
 
@@ -83,10 +83,10 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-Index` / `-Edition` | Edition by number or name |
 | `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO |
 | `-OscdimgPath` | Path to `oscdimg.exe` if the ADK is not in its standard folder |
-| `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` |
+| `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
 | `-DriversToSetup` | Also add disk controller drivers to Windows Setup (`boot.wim`) and the recovery environment (WinRE) if they do not see the disk |
-| `-UpdatesToSetup` | Also add the Windows updates to Windows Setup and WinRE |
+| `-UpdatesToSetup` | Also add the Windows updates to Windows Setup and WinRE, plus Safe OS and Setup Dynamic Update from the `SafeOS` and `Setup` subfolders |
 | `-SkipUpdates`, `-SkipDrivers` | Do not add the updates or drivers from `Config` |
 | `-SkipApps`, `-SkipScripts` | Do not install the programs from `Apps.txt` or do not run the scripts from `Scripts` at the first sign-in |
 | `-Unattend` | Put an answer file in the ISO: no questions about the license and privacy, language, region and time zone as on this computer |
@@ -129,7 +129,12 @@ It lists the version and date of the build, the original ISO and edition, the an
 1. Download the cumulative update for your version from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), for example by searching for `Windows 11 Version 26H2 x64`. If the catalog has several files for it, download all of them.
 2. Put the files in `Config\Updates`. They appear in the summary before the build, and with parameters they are added automatically (add `-SkipUpdates` if you do not want that).
 
-Only put updates for the system itself there: the cumulative update and the .NET update. The catalog shows Safe OS and Setup Dynamic Update packages in the same search, but they are for the recovery environment and Windows Setup. They do not install into the system itself and show up in the result as errors.
+Put only updates for the system itself in the folder: the cumulative update and the .NET update. The catalog shows Safe OS and Setup Dynamic Update packages in the same search, but they are for the recovery environment and Windows Setup and do not install into the system itself. They have their own subfolders:
+
+- `Config\Updates\SafeOS`: Safe OS Dynamic Update (`.cab`), installed into WinRE after the cumulative update;
+- `Config\Updates\Setup`: Setup Dynamic Update (`.cab`), expanded into the ISO's `sources` folder to update the Windows Setup files.
+
+They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
 Updates are installed right after the image is mounted, in ascending KB number order, before apps and components are removed. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
 
@@ -150,7 +155,7 @@ Besides the system itself, the ISO contains two more images based on Windows PE:
 - **Windows Setup** (`sources\boot.wim`, image 2), which the USB drive boots from;
 - the **recovery environment** (WinRE, `Windows\System32\Recovery\Winre.wim` inside the system), which opens when Windows fails to start and from Settings > System > Recovery.
 
-By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if `Config\Updates\SafeOS` or `Config\Updates\Setup` has files, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
 
 ## After installation
 
