@@ -314,7 +314,7 @@ Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSetti
 
 То же самое GitHub Actions выполняет для каждого PR. Что поменялось в каждой версии, записано в [CHANGELOG.md](CHANGELOG.md).
 
-Как предложить изменение и сообщить об ошибке, описано в [CONTRIBUTING.md](CONTRIBUTING.md). Схема профиля лежит в `Schemas\Profile.schema.json`; `.vscode\settings.json` подключает её к профилям в папках `Config*`, так что VS Code подсказывает поля профиля и проверяет их даже без интернета.
+Подробно устройство кода, порядок шагов сборки и тесты описаны в [ARCHITECTURE.md](ARCHITECTURE.md). Как предложить изменение и сообщить об ошибке, описано в [CONTRIBUTING.md](CONTRIBUTING.md), об уязвимости в [SECURITY.md](SECURITY.md). Правила для ИИ-помощников (Claude Code, Codex, Copilot) лежат в [AGENTS.md](AGENTS.md). Схема профиля лежит в `Schemas\Profile.schema.json`; `.vscode\settings.json` подключает её к профилям в папках `Config*`, так что VS Code подсказывает поля профиля и проверяет их даже без интернета.
 
 ## Лицензия
 

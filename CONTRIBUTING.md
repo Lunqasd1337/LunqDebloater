@@ -2,6 +2,8 @@
 
 English: [see below](#contributing-in-english)
 
+Как устроен код и в каком порядке идёт сборка, описано в [ARCHITECTURE.md](ARCHITECTURE.md). Участвуя в проекте, вы соглашаетесь с [правилами общения](CODE_OF_CONDUCT.md).
+
 ## Проверка перед PR
 
 Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки. Запустите их и анализатор из корня репозитория (подробнее в разделе «Разработка» в [README.md](README.md)):
@@ -31,6 +33,8 @@ GitHub Actions выполняет то же для каждого PR: тесты
 ---
 
 ## Contributing in English
+
+The code layout and the order of the build are described in [ARCHITECTURE.en.md](ARCHITECTURE.en.md). By taking part in the project you agree to the [code of conduct](CODE_OF_CONDUCT.md#code-of-conduct).
 
 ### Checks before a PR
 

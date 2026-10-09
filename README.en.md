@@ -314,7 +314,7 @@ Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSetti
 
 GitHub Actions runs the same for every PR. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
-How to propose a change and report a bug is described in [CONTRIBUTING.md](CONTRIBUTING.md). The profile schema is in `Schemas\Profile.schema.json`; `.vscode\settings.json` maps it to the profiles in `Config*` folders, so VS Code suggests profile fields and checks them even without internet.
+The code layout, the order of build steps and the tests are described in detail in [ARCHITECTURE.en.md](ARCHITECTURE.en.md). How to propose a change and report a bug is described in [CONTRIBUTING.md](CONTRIBUTING.md), how to report a vulnerability in [SECURITY.md](SECURITY.md). Rules for AI assistants (Claude Code, Codex, Copilot) are in [AGENTS.md](AGENTS.md). The profile schema is in `Schemas\Profile.schema.json`; `.vscode\settings.json` maps it to the profiles in `Config*` folders, so VS Code suggests profile fields and checks them even without internet.
 
 ## License
 
