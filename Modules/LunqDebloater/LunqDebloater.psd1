@@ -43,6 +43,7 @@
         'Initialize-LunqSteps',
         'Install-LunqFirstLogon',
         'Install-LunqUnattend',
+        'Invoke-LunqBuild',
         'Invoke-LunqComponentCleanup',
         'Mount-IsoImage',
         'New-BootableIso',

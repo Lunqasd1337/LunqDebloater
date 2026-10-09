@@ -25,7 +25,7 @@ Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSett
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 
-Тесты не трогают систему и идут и в Linux под `pwsh`, но CI гоняет их в Windows PowerShell 5.1 и в PowerShell 7. Анализатор должен находить 0 замечаний. Новая функция или шаг получают тест: сквозной в `Tests\Build.Tests.ps1` с заглушками из `Tests\Mocks`, если это часть сборки.
+Тесты не трогают систему и идут и в Linux под `pwsh`, но CI гоняет их в Windows PowerShell 5.1 и в PowerShell 7. Анализатор должен находить 0 замечаний. Новая функция или шаг получают тест: в файле своей области (`Tests\<Область>.Tests.ps1`), шаг сборки ещё в `Tests\Steps.Tests.ps1`, а сквозной в `Tests\Build.Tests.ps1` с заглушками из `Tests\Mocks`, если это заметно в сборке.
 
 ## Чего не делать
 
