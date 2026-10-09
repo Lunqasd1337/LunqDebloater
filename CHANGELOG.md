@@ -2,6 +2,10 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.5.2
+
+- Windows больше не доустанавливает Cross Device после установки: профиль удаляет ключ `UScheduler_Oobe\CrossDeviceUpdate`, как уже делал для Outlook и Dev Home.
+
 ## 1.5.1
 
 - Профиль по умолчанию удаляет Cross Device Experience Host (`MicrosoftWindows.CrossDevice`): связь с телефоном и другими устройствами.
