@@ -22,8 +22,8 @@
       "Name": { "ru": "Встроенные приложения", "en": "Built-in apps" },
       "Enabled": true,
       "Description": {
-        "ru": "Удаляет предустановленные приложения и не даёт Windows доустановить Outlook и Dev Home после установки.",
-        "en": "Removes preinstalled apps and stops Windows from installing Outlook and Dev Home after setup."
+        "ru": "Удаляет предустановленные приложения, в том числе виджеты, Paint и Камеру, и не даёт Windows доустановить Outlook и Dev Home после установки.",
+        "en": "Removes preinstalled apps, including Widgets, Paint and Camera, and stops Windows from installing Outlook and Dev Home after setup."
       },
       "Appx": [
         "Clipchamp.Clipchamp",
@@ -35,10 +35,13 @@
         "Microsoft.MicrosoftSolitaireCollection",
         "Microsoft.MicrosoftStickyNotes",
         "Microsoft.OutlookForWindows",
+        "Microsoft.Paint",
         "Microsoft.People",
         "Microsoft.PowerAutomateDesktop",
         "Microsoft.Todos",
+        "Microsoft.WidgetsPlatformRuntime",
         "Microsoft.WindowsAlarms",
+        "Microsoft.WindowsCamera",
         "Microsoft.WindowsFeedbackHub",
         "Microsoft.WindowsMaps",
         "Microsoft.WindowsSoundRecorder",
@@ -47,11 +50,13 @@
         "MicrosoftCorporationII.MicrosoftFamily",
         "MicrosoftCorporationII.QuickAssist",
         "MicrosoftTeams",
+        "MicrosoftWindows.Client.WebExperience",
         "MSTeams"
       ],
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\DevHomeUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать Dev Home после установки", "en": "Do not install Dev Home after setup" } },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } }
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Dsh", "Name": "AllowNewsAndInterests", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить виджеты", "en": "Turn off Widgets" } }
       ]
     },
     {
