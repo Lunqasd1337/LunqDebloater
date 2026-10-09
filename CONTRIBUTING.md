@@ -23,7 +23,8 @@ GitHub Actions выполняет то же для каждого PR: тесты
 - **Тексты интерфейса.** Всё, что видит пользователь (вывод в консоль, вопросы, ошибки, строки лога, итог), не пишется в коде, а берётся через `Get-LunqText 'Область.Имя'` из таблиц `Modules\LunqDebloater\Strings\<язык>\*.psd1`. Новую строку добавляйте сразу в обе таблицы, `ru` и `en`, с одинаковыми ключами и одинаковыми `{0}`, `{1}`. Фигурные скобки в самом тексте пишутся удвоенными: `{{` и `}}`.
 - **Тексты профиля.** `Name` и `Description` в `Config\Profile.json` пишутся с переводами: `{ "ru": "...", "en": "..." }`. Профиль проверяется схемой `Schemas\Profile.schema.json` (VS Code подхватывает её сам).
 - **Кодировка.** Файлы `.ps1`, `.psm1`, `.psd1` и `Config\README*.txt` сохраняются в UTF-8 с BOM: без BOM Windows PowerShell 5.1 читает их как ANSI, и русский текст ломает скрипт. Окончания строк выставляет `.gitattributes`.
-- **CHANGELOG.** Заметное для пользователя изменение записывается в [CHANGELOG.md](CHANGELOG.md).
+- **Параметры.** Новый параметр `LunqDebloater.ps1` описывается в таблицах `README.md` и `README.en.md`: тест проверяет, что ни один не забыт.
+- **CHANGELOG и версия.** Заметное для пользователя изменение записывается в [CHANGELOG.md](CHANGELOG.md), а версия поднимается в `ModuleVersion` манифеста `Modules\LunqDebloater\LunqDebloater.psd1`. Если текущая версия уже выпущена, заводится новая.
 - Комментарии в коде пишутся по-русски, как в остальном проекте.
 
 ## Сообщить об ошибке
@@ -55,7 +56,8 @@ GitHub Actions runs the same for every PR: the tests in Windows PowerShell 5.1 a
 - **Interface texts.** Nothing the user sees (console output, prompts, errors, log lines, the result) is written in the code. It comes from `Get-LunqText 'Area.Name'` and the tables `Modules\LunqDebloater\Strings\<language>\*.psd1`. Add every new string to both tables, `ru` and `en`, with the same keys and the same `{0}`, `{1}` placeholders. Literal braces in the text are doubled: `{{` and `}}`.
 - **Profile texts.** `Name` and `Description` in `Config\Profile.json` are written with translations: `{ "ru": "...", "en": "..." }`. The profile is checked by the schema `Schemas\Profile.schema.json` (VS Code picks it up by itself).
 - **Encoding.** `.ps1`, `.psm1`, `.psd1` files and `Config\README*.txt` are saved as UTF-8 with BOM: without a BOM Windows PowerShell 5.1 reads them as ANSI, and Russian text breaks the script. Line endings are set by `.gitattributes`.
-- **CHANGELOG.** A change that users notice goes into [CHANGELOG.md](CHANGELOG.md).
+- **Parameters.** A new `LunqDebloater.ps1` parameter is documented in the tables of `README.md` and `README.en.md`: a test makes sure none is forgotten.
+- **CHANGELOG and version.** A change that users notice goes into [CHANGELOG.md](CHANGELOG.md), and the version is raised in `ModuleVersion` of the manifest `Modules\LunqDebloater\LunqDebloater.psd1`. If the current version is already released, a new one is started.
 - Code comments are written in Russian, like in the rest of the project.
 
 ### Reporting a bug

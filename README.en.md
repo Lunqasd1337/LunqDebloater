@@ -8,7 +8,7 @@ A PowerShell script that preconfigures a Windows 11 ISO image before installatio
 - removes Windows components (Capabilities and Optional Features);
 - optionally adds updates (`.msu`, `.cab`), so Windows is up to date right after installation;
 - optionally adds drivers (`.inf`), so Windows installs with the drivers for your hardware right away;
-- optionally updates Windows Setup and the recovery environment (WinRE) with the same updates and drivers;
+- optionally updates Windows Setup and the recovery environment (WinRE) with the same updates and drivers, plus Safe OS and Setup Dynamic Update;
 - optionally installs programs with winget and runs your scripts at the first sign-in to Windows;
 - optionally puts an answer file in the ISO: Windows Setup asks fewer questions, and on older computers you can bypass the TPM and Secure Boot requirements;
 - makes changes to the registry of the image (the `SOFTWARE` and `SYSTEM` hives and the `Default` profile that every new user is created from).
@@ -106,7 +106,9 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 1. The ISO is mounted and its contents are copied to the working folder.
 2. The selected edition is exported to a separate `install.wim` (an ESD is converted to WIM on the way).
 3. `install.wim` is mounted, the updates and drivers are added to it (if selected), WinRE is updated if you asked for it, and the first sign-in script is added. The answer file goes to the root of the ISO if it is turned on. Then the profile is applied: Appx, components, registry.
-4. The image is saved and recompressed. If selected, Windows Setup (`boot.wim`) is updated too. `oscdimg` builds the bootable ISO.
+4. The image is saved and recompressed. If selected, Windows Setup is updated too: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe` and `setuphost.exe` are copied out of it. `oscdimg` builds the bootable ISO.
+
+All steps in order and the conditions under which they run are described in [ARCHITECTURE.en.md](ARCHITECTURE.en.md#build-steps).
 
 If an error occurs, the image is dismounted without saving and the registry hives are unloaded.
 
@@ -122,7 +124,7 @@ The LunqDebloater version is shown in the window title, at the start of the log 
 reg query HKLM\SOFTWARE\LunqDebloater
 ```
 
-It lists the version and date of the build, the original ISO and edition, the answer file, the profile, the enabled and skipped categories, the added updates, the number of drivers, and the programs and scripts after installation. If something does not work right after installation, this data shows what built the image and with which settings.
+It lists the version and date of the build, the original ISO and edition, the answer file, the profile, the enabled and skipped categories, the added updates (including Safe OS and Setup Dynamic Update), the number of drivers, whether Windows Setup and WinRE were updated, component store cleanup, skipped steps, and the programs and scripts after installation. If something does not work right after installation, this data shows what built the image and with which settings.
 
 ## Updates
 
@@ -273,9 +275,9 @@ Registry entries:
 - `Action`: `Set` (the default), `DeleteValue` or `DeleteKey`.
 - `Type`: `REG_DWORD`, `REG_QWORD` (a number or a `"0x..."` string), `REG_SZ`, `REG_EXPAND_SZ`, `REG_MULTI_SZ` (an array of strings), `REG_BINARY` (a hex string, for example `"de ad be ef"`).
 - `Value`: the value. Strings are written as they are, with quotes and a trailing `\`.
+- `Description`: an optional note. The script does not use it; it is for people and for a future GUI.
 
 The script reports a mistake in an entry (an unknown type or action, not a number in `REG_DWORD`) right when it reads the profile, before the build.
-- `Description` is optional and is meant for a future GUI.
 
 The easiest way to find the exact names in your image is the "What is in the image" mode (see above). By hand you can do it like this (after `Mount-WindowsImage`):
 
