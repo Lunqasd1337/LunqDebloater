@@ -51,6 +51,7 @@
         "MicrosoftCorporationII.QuickAssist",
         "MicrosoftTeams",
         "MicrosoftWindows.Client.WebExperience",
+        "MicrosoftWindows.CrossDevice",
         "MSTeams"
       ],
       "Registry": [
