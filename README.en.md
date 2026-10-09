@@ -13,7 +13,7 @@ A PowerShell script that preconfigures a Windows 11 ISO image before installatio
 - optionally puts an answer file in the ISO: Windows Setup asks fewer questions, and on older computers you can bypass the TPM and Secure Boot requirements;
 - makes changes to the registry of the image (the `SOFTWARE` and `SYSTEM` hives and the `Default` profile that every new user is created from).
 
-The result is a bootable ISO (BIOS + UEFI) with one selected edition. A separate "What is in the image" mode builds nothing: it writes out the list of apps and components of an edition, so it is easier to make your own profile.
+The result is a bootable ISO (BIOS + UEFI, UEFI only for ARM64) with one selected edition. A separate "What is in the image" mode builds nothing: it writes out the list of apps and components of an edition, so it is easier to make your own profile.
 
 ## Disclaimer
 

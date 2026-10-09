@@ -9,7 +9,7 @@ English: [see below](#contributing-in-english)
 Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки. Запустите их и анализатор из корня репозитория (подробнее в разделе «Разработка» в [README.md](README.md)):
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck
 Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -Scope CurrentUser -Force
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
@@ -42,7 +42,7 @@ The code layout and the order of the build are described in [ARCHITECTURE.en.md]
 The tests do not touch the system: stubs replace DISM, reg.exe, oscdimg and winget. Run them and the analyzer from the repository root (see the "Development" section in [README.en.md](README.en.md)):
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck
 Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -Scope CurrentUser -Force
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
