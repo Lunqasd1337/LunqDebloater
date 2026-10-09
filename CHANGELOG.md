@@ -2,6 +2,10 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.5.1
+
+- Профиль по умолчанию удаляет Cross Device Experience Host (`MicrosoftWindows.CrossDevice`): связь с телефоном и другими устройствами.
+
 ## 1.5.0
 
 - Профиль по умолчанию удаляет виджеты (Windows Web Experience Pack и Widgets Platform Runtime), Paint и Камеру.
