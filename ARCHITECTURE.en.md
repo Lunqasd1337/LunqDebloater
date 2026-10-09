@@ -2,7 +2,7 @@
 
 Русский: [ARCHITECTURE.md](ARCHITECTURE.md)
 
-This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](CONTRIBUTING.md#contributing-in-english).
+This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
 
 ## Repository layout
 
@@ -28,7 +28,7 @@ Modules\
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
 Tests\                       Pester tests and stubs
-.github\                     GitHub Actions, issue and PR templates
+.github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
 ```
 
 ## The LunqDebloater module
@@ -123,10 +123,14 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 
 | File | What it checks |
 |---|---|
-| `Tests\Unit.Tests.ps1` | Single functions: profile, registry, checks, answer file, strings. It also makes sure the `ru` and `en` keys match, every key used in the code exists in the tables, and every parameter is documented in both READMEs |
+| `Tests\Module.Tests.ps1` | The module as a whole: version from the manifest, exports, help, relaunch arguments. It makes sure the `ru` and `en` keys match, every key used in the code exists in the tables, and every parameter is documented in both READMEs |
+| `Tests\Profile.Tests.ps1` | Reading the profile, entry checks, categories, sorted lists, name patterns |
+| `Tests\Checks.Tests.ps1` | Working folder, output ISO, UEFI-only ISO, image and host versions, leftovers of an earlier run |
+| `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE |
+| `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
 | `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode, in Russian and English |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
-| `Tests\Registry.Tests.ps1` | Real registry writes (Windows only) |
+| `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later |
 | `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe) and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |

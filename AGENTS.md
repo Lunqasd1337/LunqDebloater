@@ -1,6 +1,6 @@
 # Правила для ИИ-помощников
 
-Этот файл читают Claude Code, Codex, Copilot и другие помощники, которые правят репозиторий. Люди найдут то же самое в [CONTRIBUTING.md](CONTRIBUTING.md) и [ARCHITECTURE.md](ARCHITECTURE.md): там подробнее.
+Этот файл читают Claude Code, Codex, Copilot и другие помощники, которые правят репозиторий. Люди найдут то же самое в [CONTRIBUTING.md](.github/CONTRIBUTING.md) и [ARCHITECTURE.md](ARCHITECTURE.md): там подробнее.
 
 ## Что это за проект
 
