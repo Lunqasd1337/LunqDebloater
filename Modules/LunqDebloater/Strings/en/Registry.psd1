@@ -6,6 +6,7 @@
     'Registry.NotNumber'            = '''{0}'' is not a number'
     'Registry.DwordOverflow'        = '{0} does not fit in REG_DWORD'
     'Registry.NotHex'               = '''{0}'' is not a hex string (pairs of digits 0-9, A-F)'
+    'Registry.NoType'               = 'Type is missing. Allowed: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY'
     'Registry.UnknownType'          = 'unknown type ''{0}''. Allowed: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY'
     'Registry.UnknownRoot'          = 'Unknown registry root: {0}'
     'Registry.UnknownActionAllowed' = 'unknown action ''{0}''. Allowed: {1}'

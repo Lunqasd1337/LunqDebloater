@@ -43,7 +43,7 @@ param(
     [switch]$BypassRequirements,
     [switch]$LocalAccount,
     [switch]$ListContents,
-    [string]$Label = 'LUNQ_WIN11',
+    [ValidatePattern('^[A-Za-z0-9_-]{1,32}$')][string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
     [switch]$SkipComponents,
     [switch]$SkipRegistry,
@@ -118,6 +118,9 @@ if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'Config' }
 $ConfigPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ConfigPath).TrimEnd('\')
 
 $mounted = $false
+# Рабочую папку можно удалить в конце, только если этот запуск сам её пересоздал:
+# иначе проверка могла её отвергнуть, и в ней лежат чужие файлы.
+$workDirOwned = $false
 $bootMountDir = Join-Path $WorkDir 'bootmount'
 $reMountDir = Join-Path $WorkDir 'remount'
 $allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
@@ -203,7 +206,9 @@ try {
         $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
         # Safe OS и Setup Dynamic Update лежат в своих подпапках: они для WinRE и установщика, а не для системы.
         $foundSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
-        $foundSetupDU = @(Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup') | Where-Object { $_.Extension -eq '.cab' })
+        # Get-LunqUpdateFiles отдаёт список одним объектом: фильтр в конвейере увидел бы его целиком.
+        $setupFiles = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup')
+        $foundSetupDU = @($setupFiles | Where-Object { $_.Extension -eq '.cab' })
         if ($UpdatesPath -and ($foundUpdates.Count + $foundSafeOS.Count + $foundSetupDU.Count) -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
 
         if ($DriversPath) {
@@ -451,6 +456,7 @@ try {
         Initialize-LunqSteps -Total 4
         Write-Step (Get-LunqText 'Main.StepPrepare') (Get-LunqText 'Main.StepPrepareHint' $WorkDir)
         Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
+        $workDirOwned = $true
         New-Item -ItemType Directory -Path $mountDir, (Split-Path $wimPath -Parent) -Force | Out-Null
 
         Write-Step (Get-LunqText 'Main.StepCopyEdition') (Get-LunqText 'Main.StepCopyEditionHint')
@@ -551,6 +557,7 @@ try {
             Hint  = Get-LunqText 'Main.StepPrepareHint' $WorkDir
             Run   = {
                 Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
+                $script:workDirOwned = $true
                 New-Item -ItemType Directory -Path $mountDir -Force | Out-Null
             }
         },
@@ -727,7 +734,7 @@ finally {
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
     $stillMounted = $mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $allMountDirs).Count -gt 0)
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
-    elseif (-not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
+    elseif ($workDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($lunqLog) { Stop-LunqLog }

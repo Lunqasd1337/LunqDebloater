@@ -4,7 +4,8 @@
 # где их потом ищет скрипт. Поведение настраивается переменными окружения LUNQ_TEST_*.
 
 function Get-WindowsImage {
-    param($ImagePath, $Index, [switch]$Mounted, $LogPath, $ErrorAction)
+    [CmdletBinding()]
+    param($ImagePath, $Index, [switch]$Mounted, $LogPath)
     if ($Mounted) {
         if (-not $env:LUNQ_TEST_MOUNTED) { return @() }
         return @($env:LUNQ_TEST_MOUNTED -split ';' | ForEach-Object { [pscustomobject]@{ Path = $_ } })
@@ -23,6 +24,7 @@ function Get-WindowsImage {
 }
 
 function Mount-WindowsImage {
+    [CmdletBinding()]
     param($ImagePath, $Index, $Path, [switch]$ReadOnly, $LogPath)
     Write-Host "    [mock] mount $ImagePath index $Index -> $Path"
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
@@ -38,15 +40,17 @@ function Mount-WindowsImage {
     }
 }
 
-function Dismount-WindowsImage { param($Path, [switch]$Save, [switch]$Discard, $LogPath, $ErrorAction) Write-Host "    [mock] dismount $Path save=$Save discard=$Discard" }
+function Dismount-WindowsImage { [CmdletBinding()] param($Path, [switch]$Save, [switch]$Discard, $LogPath) Write-Host "    [mock] dismount $Path save=$Save discard=$Discard" }
 
 function Export-WindowsImage {
+    [CmdletBinding()]
     param($SourceImagePath, $SourceIndex, $DestinationImagePath, $CompressionType, [switch]$CheckIntegrity, [switch]$SetBootable, $LogPath)
     Write-Host "    [mock] export $SourceImagePath index $SourceIndex"
     Add-Content -LiteralPath $DestinationImagePath -Value 'wim'
 }
 
 function Get-AppxProvisionedPackage {
+    [CmdletBinding()]
     param($Path, $LogPath)
     if ($env:LUNQ_TEST_FAIL_APPX) { throw 'DISM failure to test the rollback' }
     @(
@@ -54,44 +58,48 @@ function Get-AppxProvisionedPackage {
         [pscustomobject]@{ DisplayName = 'Microsoft.WindowsCalculator'; PackageName = 'Microsoft.WindowsCalculator_1.0_x64' }
     )
 }
-function Remove-AppxProvisionedPackage { param($Path, $PackageName, $LogPath, $ErrorAction) }
+function Remove-AppxProvisionedPackage { [CmdletBinding()] param($Path, $PackageName, $LogPath) }
 
 function Get-WindowsCapability {
+    [CmdletBinding()]
     param($Path, $LogPath)
     @(
-        [pscustomobject]@{ Name = 'Browser.InternetExplorer~~~~0.0.11.0'; State = 'Installed' },
+        [pscustomobject]@{ Name = 'App.StepsRecorder~~~~0.0.1.0'; State = 'Installed' },
         [pscustomobject]@{ Name = 'Language.Basic~~~ru-RU~0.0.1.0'; State = 'Installed' }
     )
 }
-function Remove-WindowsCapability { param($Path, $Name, $LogPath, $ErrorAction) }
+function Remove-WindowsCapability { [CmdletBinding()] param($Path, $Name, $LogPath) }
 
 function Get-WindowsOptionalFeature {
+    [CmdletBinding()]
     param($Path, $LogPath)
     @(
         [pscustomobject]@{ FeatureName = 'Recall'; State = 'Enabled' },
         [pscustomobject]@{ FeatureName = 'Microsoft-Hyper-V-All'; State = 'Disabled' }
     )
 }
-function Disable-WindowsOptionalFeature { param($Path, $FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath, $ErrorAction) }
+function Disable-WindowsOptionalFeature { [CmdletBinding()] param($Path, $FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath) }
 
-function Get-WindowsPackage { param($Path, $LogPath) @() }
-function Remove-WindowsPackage { param($Path, $PackageName, [switch]$NoRestart, $LogPath, $ErrorAction) }
+function Get-WindowsPackage { [CmdletBinding()] param($Path, $LogPath) @() }
+function Remove-WindowsPackage { [CmdletBinding()] param($Path, $PackageName, [switch]$NoRestart, $LogPath) }
 
 function Add-WindowsPackage {
-    param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath, $ErrorAction)
+    [CmdletBinding()]
+    param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath)
     Write-Host "    [mock] add package $(Split-Path $PackagePath -Leaf)"
     if ($PackagePath -match 'broken') { throw 'The package does not apply to this image' }
 }
 
 function Add-WindowsDriver {
-    param($Path, $Driver, $LogPath, $ErrorAction)
+    [CmdletBinding()]
+    param($Path, $Driver, $LogPath)
     Write-Host "    [mock] add driver $(Split-Path $Driver -Leaf)"
     if ($Driver -match 'bad') { throw 'The driver does not fit this image' }
 }
 
-function Repair-WindowsImage { param($Path, [switch]$StartComponentCleanup, [switch]$ResetBase, $LogPath) throw 'Repair-WindowsImage must not be called: cleanup goes through dism.exe' }
+function Repair-WindowsImage { [CmdletBinding()] param($Path, [switch]$StartComponentCleanup, [switch]$ResetBase, $LogPath) throw 'Repair-WindowsImage must not be called: cleanup goes through dism.exe' }
 
-function Get-DiskImage { param($ImagePath, $ErrorAction) [pscustomobject]@{ ImagePath = $ImagePath; Attached = [bool]$env:LUNQ_TEST_ISO_ATTACHED } }
-function Mount-DiskImage { param($ImagePath, [switch]$PassThru) [pscustomobject]@{ ImagePath = $ImagePath; Attached = $true } }
-function Dismount-DiskImage { param($ImagePath) Write-Host "    [mock] dismount ISO $ImagePath" }
-function Get-Volume { param([Parameter(ValueFromPipeline)]$InputObject, $ErrorAction) [pscustomobject]@{ DriveLetter = 'Q' } }
+function Get-DiskImage { [CmdletBinding()] param($ImagePath) [pscustomobject]@{ ImagePath = $ImagePath; Attached = [bool]$env:LUNQ_TEST_ISO_ATTACHED } }
+function Mount-DiskImage { [CmdletBinding()] param($ImagePath, [switch]$PassThru) [pscustomobject]@{ ImagePath = $ImagePath; Attached = $true } }
+function Dismount-DiskImage { [CmdletBinding()] param($ImagePath) Write-Host "    [mock] dismount ISO $ImagePath" }
+function Get-Volume { [CmdletBinding()] param([Parameter(ValueFromPipeline)]$InputObject) [pscustomobject]@{ DriveLetter = 'Q' } }

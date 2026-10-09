@@ -86,9 +86,9 @@ function New-BootableIso {
 
     $bios = Join-Path $IsoRoot 'boot\etfsboot.com'
     $uefi = Join-Path $IsoRoot 'efi\microsoft\boot\efisys.bin'
-    foreach ($file in $bios, $uefi) {
-        if (-not (Test-Path -LiteralPath $file)) { throw (Get-LunqText 'Image.BootFileMissing' $file) }
-    }
+    if (-not (Test-Path -LiteralPath $uefi)) { throw (Get-LunqText 'Image.BootFileMissing' $uefi) }
+    # На ISO для ARM64 нет загрузчика BIOS: такой образ грузится только через UEFI.
+    $hasBios = Test-Path -LiteralPath $bios
 
     # Путь с пробелом внутри -bootdata пришлось бы брать в кавычки, а Windows PowerShell 5.1
     # передаёт такие аргументы искажёнными. Тогда oscdimg запускается из папки над IsoRoot,
@@ -102,7 +102,8 @@ function New-BootableIso {
         $bios = Join-Path $source 'boot\etfsboot.com'
         $uefi = Join-Path $source 'efi\microsoft\boot\efisys.bin'
     }
-    $bootData = '2#p0,e,b{0}#pEF,e,b{1}' -f $bios, $uefi
+    if ($hasBios) { $bootData = '2#p0,e,b{0}#pEF,e,b{1}' -f $bios, $uefi }
+    else { $bootData = '1#pEF,e,b{0}' -f $uefi }
     if ($location) { Push-Location -LiteralPath $location }
     try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $OutputPath) -ShowOutput }
     finally { if ($location) { Pop-Location } }

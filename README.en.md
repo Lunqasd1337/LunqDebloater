@@ -8,12 +8,12 @@ A PowerShell script that preconfigures a Windows 11 ISO image before installatio
 - removes Windows components (Capabilities and Optional Features);
 - optionally adds updates (`.msu`, `.cab`), so Windows is up to date right after installation;
 - optionally adds drivers (`.inf`), so Windows installs with the drivers for your hardware right away;
-- optionally updates Windows Setup and the recovery environment (WinRE) with the same updates and drivers;
+- optionally updates Windows Setup and the recovery environment (WinRE) with the same updates and drivers, plus Safe OS and Setup Dynamic Update;
 - optionally installs programs with winget and runs your scripts at the first sign-in to Windows;
 - optionally puts an answer file in the ISO: Windows Setup asks fewer questions, and on older computers you can bypass the TPM and Secure Boot requirements;
 - makes changes to the registry of the image (the `SOFTWARE` and `SYSTEM` hives and the `Default` profile that every new user is created from).
 
-The result is a bootable ISO (BIOS + UEFI) with one selected edition. A separate "What is in the image" mode builds nothing: it writes out the list of apps and components of an edition, so it is easier to make your own profile.
+The result is a bootable ISO (BIOS + UEFI, UEFI only for ARM64) with one selected edition. A separate "What is in the image" mode builds nothing: it writes out the list of apps and components of an edition, so it is easier to make your own profile.
 
 ## Disclaimer
 
@@ -81,7 +81,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-ProfilePath` | Your own JSON profile instead of `Config\Profile.json` |
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
 | `-Index` / `-Edition` | Edition by number or name |
-| `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO |
+| `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO. Only administrators can access it |
 | `-OscdimgPath` | Path to `oscdimg.exe` if the ADK is not in its standard folder |
 | `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
@@ -94,7 +94,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-LocalAccount` | Add sign-in without a Microsoft account to the answer file (turns on `-Unattend`) |
 | `-ListContents` | Do not build an ISO, save the list of apps and components of the edition to a file instead |
 | `-SkipAppx`, `-SkipComponents`, `-SkipRegistry` | Skip the step |
-| `-Label` | Volume label of the finished ISO, `LUNQ_WIN11` by default |
+| `-Label` | Volume label of the finished ISO: Latin letters, digits, `_` and `-`, up to 32 characters. `LUNQ_WIN11` by default |
 | `-SkipVersionCheck` | Do not stop if the ISO build does not match the `Requirements` of the profile |
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
@@ -106,7 +106,9 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 1. The ISO is mounted and its contents are copied to the working folder.
 2. The selected edition is exported to a separate `install.wim` (an ESD is converted to WIM on the way).
 3. `install.wim` is mounted, the updates and drivers are added to it (if selected), WinRE is updated if you asked for it, and the first sign-in script is added. The answer file goes to the root of the ISO if it is turned on. Then the profile is applied: Appx, components, registry.
-4. The image is saved and recompressed. If selected, Windows Setup (`boot.wim`) is updated too. `oscdimg` builds the bootable ISO.
+4. The image is saved and recompressed. If selected, Windows Setup is updated too: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe` and `setuphost.exe` are copied out of it. `oscdimg` builds the bootable ISO.
+
+All steps in order and the conditions under which they run are described in [ARCHITECTURE.en.md](ARCHITECTURE.en.md#build-steps).
 
 If an error occurs, the image is dismounted without saving and the registry hives are unloaded.
 
@@ -122,7 +124,7 @@ The LunqDebloater version is shown in the window title, at the start of the log 
 reg query HKLM\SOFTWARE\LunqDebloater
 ```
 
-It lists the version and date of the build, the original ISO and edition, the answer file, the profile, the enabled and skipped categories, the added updates, the number of drivers, and the programs and scripts after installation. If something does not work right after installation, this data shows what built the image and with which settings.
+It lists the version and date of the build, the original ISO and edition, the answer file, the profile, the enabled and skipped categories, the added updates (including Safe OS and Setup Dynamic Update), the number of drivers, whether Windows Setup and WinRE were updated, component store cleanup, skipped steps, and the programs and scripts after installation. If something does not work right after installation, this data shows what built the image and with which settings.
 
 ## Updates
 
@@ -165,7 +167,7 @@ You can have the programs you need installed and your scripts run at the first s
 2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
-At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). A script that failed is not run again. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
+At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
 
 You can save scripts in any editor. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as ANSI, and non-English text in quotes (for example, Russian) breaks the whole script. That is why such files are saved again as UTF-8 with BOM during the build; you can see this in the output of the step.
 
@@ -273,9 +275,9 @@ Registry entries:
 - `Action`: `Set` (the default), `DeleteValue` or `DeleteKey`.
 - `Type`: `REG_DWORD`, `REG_QWORD` (a number or a `"0x..."` string), `REG_SZ`, `REG_EXPAND_SZ`, `REG_MULTI_SZ` (an array of strings), `REG_BINARY` (a hex string, for example `"de ad be ef"`).
 - `Value`: the value. Strings are written as they are, with quotes and a trailing `\`.
+- `Description`: an optional note. The script does not use it; it is for people and for a future GUI.
 
 The script reports a mistake in an entry (an unknown type or action, not a number in `REG_DWORD`) right when it reads the profile, before the build.
-- `Description` is optional and is meant for a future GUI.
 
 The easiest way to find the exact names in your image is the "What is in the image" mode (see above). By hand you can do it like this (after `Mount-WindowsImage`):
 
@@ -314,7 +316,7 @@ Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSetti
 
 GitHub Actions runs the same for every PR. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
-How to propose a change and report a bug is described in [CONTRIBUTING.md](CONTRIBUTING.md). The profile schema is in `Schemas\Profile.schema.json`; `.vscode\settings.json` maps it to the profiles in `Config*` folders, so VS Code suggests profile fields and checks them even without internet.
+The code layout, the order of build steps and the tests are described in detail in [ARCHITECTURE.en.md](ARCHITECTURE.en.md). How to propose a change and report a bug is described in [CONTRIBUTING.md](CONTRIBUTING.md), how to report a vulnerability in [SECURITY.md](SECURITY.md). Rules for AI assistants (Claude Code, Codex, Copilot) are in [AGENTS.md](AGENTS.md). The profile schema is in `Schemas\Profile.schema.json`; `.vscode\settings.json` maps it to the profiles in `Config*` folders, so VS Code suggests profile fields and checks them even without internet.
 
 ## License
 

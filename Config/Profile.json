@@ -36,7 +36,6 @@
         "Microsoft.MicrosoftStickyNotes",
         "Microsoft.OutlookForWindows",
         "Microsoft.Paint",
-        "Microsoft.People",
         "Microsoft.PowerAutomateDesktop",
         "Microsoft.Todos",
         "Microsoft.WidgetsPlatformRuntime",
@@ -65,22 +64,17 @@
       "Name": { "ru": "Устаревшие компоненты", "en": "Legacy components" },
       "Enabled": true,
       "Description": {
-        "ru": "Удаляет старые компоненты (IE, PowerShell ISE, Steps Recorder) и отключает редко нужные функции Windows.",
-        "en": "Removes old components (IE, PowerShell ISE, Steps Recorder) and turns off rarely needed Windows features."
+        "ru": "Удаляет старые компоненты (PowerShell ISE, Steps Recorder, Windows Media Player) и отключает редко нужные функции Windows.",
+        "en": "Removes old components (PowerShell ISE, Steps Recorder, Windows Media Player) and turns off rarely needed Windows features."
       },
       "Capabilities": [
         "App.StepsRecorder*",
-        "App.Support.QuickAssist*",
-        "Browser.InternetExplorer*",
         "MathRecognizer*",
         "Media.WindowsMediaPlayer*",
         "Microsoft.Windows.PowerShell.ISE*"
       ],
       "Features": [
-        "WorkFolders-Client",
-        "Printing-XPSServices-Features",
-        "MicrosoftWindowsPowerShellV2Root",
-        "MicrosoftWindowsPowerShellV2"
+        "WorkFolders-Client"
       ]
     },
     {

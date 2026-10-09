@@ -15,7 +15,7 @@ $script:ModuleRoot = $PSScriptRoot
 
 # Версия LunqDebloater задаётся в манифесте. Она видна в заголовке окна, в логе, в итоге
 # и в реестре собранного образа.
-$script:LunqVersion = [string](Import-PowerShellDataFile -Path (Join-Path $PSScriptRoot 'LunqDebloater.psd1')).ModuleVersion
+$script:LunqVersion = [string](Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'LunqDebloater.psd1')).ModuleVersion
 
 foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Private') -Filter '*.ps1' -File | Sort-Object Name)) {
     . $file.FullName

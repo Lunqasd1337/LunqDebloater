@@ -4,7 +4,7 @@
 
 function Test-Administrator { return -not $env:LUNQ_TEST_NOT_ADMIN }
 
-function Find-Oscdimg { param([string]$Path) return 'oscdimg.exe' }
+function Find-Oscdimg { [CmdletBinding()] param([string]$Path) return 'oscdimg.exe' }
 
 function Get-LunqHostBuild {
     if ($env:LUNQ_TEST_HOST_BUILD) { return [int]$env:LUNQ_TEST_HOST_BUILD }
@@ -12,6 +12,7 @@ function Get-LunqHostBuild {
 }
 
 function Get-LunqDriveInfo {
+    [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
     return [pscustomobject]@{ Name = 'T:\'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
 }
@@ -52,15 +53,18 @@ function Invoke-Native {
 
 # Реестр образа: запись идёт в LUNQ_TEST_REG_LOG вместо настоящих кустов.
 function Set-LunqRegistryValue {
+    [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Key, [AllowEmptyString()][string]$Name = '', [Parameter(Mandatory)][string]$Kind, $Data)
     if ($env:LUNQ_TEST_REG_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_REG_LOG -Value ("set|{0}|{1}|{2}|{3}" -f $Key, $Name, $Kind, (@($Data) -join ',')) -Encoding UTF8 }
 }
 function Remove-LunqRegistryValue {
+    [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Key, [AllowEmptyString()][string]$Name = '')
     if ($env:LUNQ_TEST_REG_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_REG_LOG -Value ("deletevalue|{0}|{1}" -f $Key, $Name) -Encoding UTF8 }
     return $true
 }
 function Remove-LunqRegistryKey {
+    [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Key)
     if ($env:LUNQ_TEST_REG_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_REG_LOG -Value ("deletekey|{0}" -f $Key) -Encoding UTF8 }
     return $false

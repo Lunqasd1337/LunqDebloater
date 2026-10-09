@@ -95,6 +95,24 @@ Describe 'Read-LunqProfile' {
         { Read-LunqProfile -Path $path } | Should -Throw '*неизвестный тип*'
     }
 
+    It 'сразу отвергает запись без типа понятным текстом' {
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = 'x'; Name = 'v'; Value = 1 }) }) }
+        { Read-LunqProfile -Path $path } | Should -Throw '*не указан Type*'
+    }
+
+    It 'списки в категориях профиля по умолчанию отсортированы' {
+        $json = Get-Content -LiteralPath $script:ProfilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($category in $json.Categories) {
+            foreach ($list in 'Appx', 'Capabilities', 'Features', 'Packages') {
+                if (-not ($category.PSObject.Properties.Name -contains $list)) { continue }
+                $names = [string[]]@($category.$list)
+                $sorted = [string[]]@($names)
+                [Array]::Sort($sorted, [StringComparer]::OrdinalIgnoreCase)
+                $names | Should -Be $sorted -Because "$($category.Id).$list"
+            }
+        }
+    }
+
     It 'сразу отвергает DWORD, который не число' {
         $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = 'x'; Name = 'v'; Type = 'REG_DWORD'; Value = 'abc' }) }) }
         { Read-LunqProfile -Path $path } | Should -Throw '*не число*'
@@ -202,6 +220,19 @@ Describe 'Рабочая папка и итоговый ISO' {
         }
     }
 
+    It 'ISO без загрузчика BIOS (ARM64) собирается только для UEFI' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $isoRoot = Join-Path $Root 'arm64'
+            $efi = Join-Path $isoRoot 'efi\microsoft\boot\efisys.bin'
+            New-Item -ItemType Directory -Path (Split-Path $efi) -Force | Out-Null
+            Set-Content -LiteralPath $efi -Value 'x'
+            Mock Invoke-Native { 0 }
+            New-BootableIso -IsoRoot $isoRoot -OutputPath (Join-Path $Root 'arm64.iso') -Oscdimg 'oscdimg.exe'
+            Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter { $Arguments -contains "-bootdata:1#pEF,e,b$efi" }
+        }
+    }
+
     It 'итоговый ISO не может совпадать с исходным' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
             param($Root)
@@ -278,6 +309,8 @@ Describe 'Обновления и драйверы' {
         @(Select-LunqPEUpdates $files | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb1-x64.msu')
         Test-CumulativeUpdate $files | Should -BeTrue
         Test-CumulativeUpdate @([pscustomobject]@{ Name = 'office-kb3.cab' }) | Should -BeFalse
+        # Обновление .NET не заменяет накопительное обновление Windows.
+        Test-CumulativeUpdate @([pscustomobject]@{ Name = 'windows11.0-kb2-x64-ndp481.msu' }) | Should -BeFalse
     }
 
     It 'в установщик и WinRE идут только драйверы контроллеров дисков, в том числе .inf в UTF-16' {

@@ -33,8 +33,10 @@ $texts = @{
         ScriptsHeader  = '==> Ваши скрипты ({0})'
         ScriptExitCode = '{0} завершился с кодом {1}'
         ScriptError    = 'Ошибка в {0}: {1}'
+        ScriptsLater   = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
         AppsNextLogon  = 'Неустановленные программы будут поставлены при следующем входе в Windows.'
         AppsGaveUp     = 'Не все программы установлены за {0} попыток. Поставьте их вручную, список в {1}'
+        AppsNoRetry    = 'Не все программы установлены, а повторить попытку при следующем входе нельзя. Поставьте их вручную, список в {0}'
         Done           = '==> Готово'
         Installed      = 'Установлено программ: {0}'
         Failed         = 'С ошибками: {0}'
@@ -56,8 +58,10 @@ $texts = @{
         ScriptsHeader  = '==> Your scripts ({0})'
         ScriptExitCode = '{0} exited with code {1}'
         ScriptError    = 'Error in {0}: {1}'
+        ScriptsLater   = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
         AppsNextLogon  = 'Apps that were not installed will be installed at the next sign-in to Windows.'
         AppsGaveUp     = 'Not all apps were installed after {0} attempts. Install them manually, the list is in {1}'
+        AppsNoRetry    = 'Not all apps were installed, and they cannot be retried at the next sign-in. Install them manually, the list is in {0}'
         Done           = '==> Done'
         Installed      = 'Apps installed: {0}'
         Failed         = 'With errors: {0}'
@@ -85,7 +89,31 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 $Host.UI.RawUI.WindowTitle = Get-Text 'WindowTitle'
+
+# Рядом со скриптами могут лежать пароли и ключи, а в лог попадает вывод скриптов. Они наследуют
+# от Windows права на чтение для всех пользователей, поэтому доступ оставляется только администраторам
+# и SYSTEM. Сам FirstLogon.ps1 остаётся доступным: иначе его не запустить без повышения прав.
+function Protect-Path([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    # ErrorActionPreference здесь Continue, поэтому ошибки командлетов явно превращаются в исключения.
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($rule in @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
+        $inheritance = 'None'
+        if (Test-Path -LiteralPath $Path -PathType Container) { $inheritance = 'ContainerInherit, ObjectInherit' }
+        foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+            $identity = New-Object Security.Principal.SecurityIdentifier $sid
+            $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', $inheritance, 'None', 'Allow'))
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+    }
+    catch { }   # права не поменять: работа идёт как раньше
+}
+
 Start-Transcript -Path $log -Append | Out-Null
+Protect-Path $log
+Protect-Path $userDir
 
 function Write-Line([string]$Text, [string]$Color = 'Gray') { Write-Host "    $Text" -ForegroundColor $Color }
 
@@ -134,16 +162,24 @@ function Read-Lines([string]$Path) {
 # Задание на следующий вход ставится сразу, до работы: если окно закроют или компьютер
 # выключится на середине, недоделанное продолжится при следующем входе.
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$retryScheduled = [bool]$task
 if (-not $task -and -not $lastAttempt) {
     try {
         $user = "$env:USERDOMAIN\$env:USERNAME"
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
         $taskPrincipal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
+        # По умолчанию задание не запускается от батареи и останавливается, когда зарядку отключают:
+        # на ноутбуке программы так и не поставились бы. Ограничение в 3 дня тоже не нужно.
+        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
+        $retryScheduled = $true
     }
     catch { Write-Line (Get-Text 'TaskFailed' $_.Exception.Message) 'Yellow' }
 }
+
+# Без задания следующего входа не будет: эта попытка последняя, и откладывать ничего нельзя.
+$finalRun = $lastAttempt -or -not $retryScheduled
 
 $installed = @()
 $failed = @()
@@ -193,7 +229,13 @@ if ($todo.Count -gt 0) {
 $doneScripts = @(Read-Lines $scriptsDoneFile)
 $scripts = @(Get-ChildItem -LiteralPath $userDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -eq '.ps1' -and $doneScripts -notcontains $_.Name } | Sort-Object Name)
-if ($scripts.Count -gt 0) {
+# Скрипты идут после программ: они могут настраивать то, что ещё не поставилось. На последней
+# попытке они выполняются в любом случае.
+if ($scripts.Count -gt 0 -and $appsPending -and -not $finalRun) {
+    Write-Host ''
+    Write-Line (Get-Text 'ScriptsLater' $scripts.Count) 'Yellow'
+}
+elseif ($scripts.Count -gt 0) {
     Write-Host ''
     Write-Host (Get-Text 'ScriptsHeader' $scripts.Count) -ForegroundColor Cyan
     Push-Location $userDir
@@ -214,17 +256,26 @@ if ($scripts.Count -gt 0) {
     Pop-Location
 }
 
-if ($appsPending -and -not $lastAttempt) {
+if ($appsPending -and -not $finalRun) {
     Write-Line (Get-Text 'AppsNextLogon') 'Yellow'
 }
 else {
     # Всё сделано или попытки кончились: задание больше не нужно.
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    if ($appsPending) { Write-Line (Get-Text 'AppsGaveUp' $maxAttempts $appsFile) 'Yellow' }
+    if ($appsPending -and $lastAttempt) { Write-Line (Get-Text 'AppsGaveUp' $maxAttempts $appsFile) 'Yellow' }
+    elseif ($appsPending) { Write-Line (Get-Text 'AppsNoRetry' $appsFile) 'Yellow' }
     # В скриптах и файлах рядом с ними могут быть пароли и ключи, поэтому их копии удаляются.
     # Apps.txt и лог остаются. unattend.xml тоже удаляется, чтобы его не подхватил Sysprep.
     Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
+    # можно открыть без прав администратора.
+    try {
+        $acl = Get-Acl -LiteralPath $userDir -ErrorAction Stop
+        $acl.SetAccessRuleProtection($false, $false)
+        Set-Acl -LiteralPath $userDir -AclObject $acl -ErrorAction Stop
+    }
+    catch { }   # права не вернуть: список доступен администраторам
     $unattend = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
     if ((Test-Path -LiteralPath $unattend) -and (Select-String -LiteralPath $unattend -SimpleMatch 'Created by LunqDebloater' -Quiet)) {
         Remove-Item -LiteralPath $unattend -Force -ErrorAction SilentlyContinue
