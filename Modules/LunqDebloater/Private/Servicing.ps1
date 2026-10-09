@@ -136,8 +136,10 @@ function Update-LunqPEImage {
         [Parameter(Mandatory)][string]$Where,
         [Parameter(Mandatory)][string]$KindSuffix,
         $Updates = @(),
+        $SafeOS = @(),
         $Drivers = @(),
-        [string]$DriversRoot
+        [string]$DriversRoot,
+        [string]$ExportSetupTo
     )
 
     $results = @()
@@ -150,6 +152,12 @@ function Update-LunqPEImage {
             $updated = $r.Done.Count
             $results += $r
         }
+        # Safe OS Dynamic Update ставится после накопительного обновления, как в инструкции Microsoft.
+        if (@($SafeOS).Count -gt 0) {
+            $r = Add-LunqUpdates -MountPath $MountPath -Files $SafeOS -ScratchDir $ScratchDir -Title (Get-LunqText 'Servicing.SafeOSIn' $Where) -Kind "UpdatesSafeOS$KindSuffix"
+            $updated += $r.Done.Count
+            $results += $r
+        }
         if (@($Drivers).Count -gt 0) {
             $results += Add-LunqDrivers -MountPath $MountPath -InfFiles $Drivers -Root $DriversRoot -Title (Get-LunqText 'Servicing.DriversIn' $Where) -Kind "Drivers$KindSuffix"
         }
@@ -157,6 +165,7 @@ function Update-LunqPEImage {
             Write-Info (Get-LunqText 'Servicing.Cleanup')
             $null = Invoke-LunqComponentCleanup -MountPath $MountPath -ScratchDir $ScratchDir
         }
+        if ($ExportSetupTo) { $results += Copy-LunqSetupFiles -MountPath $MountPath -Destination $ExportSetupTo }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
     }
     catch {
@@ -164,6 +173,48 @@ function Update-LunqPEImage {
         throw
     }
     return $results
+}
+
+function Copy-LunqSetupFiles {
+    # setup.exe и setuphost.exe в sources ISO должны совпадать с теми, что внутри boot.wim,
+    # иначе установка может не запуститься. Главными считаются версии из boot.wim.
+    param([Parameter(Mandatory)][string]$MountPath, [Parameter(Mandatory)][string]$Destination)
+
+    $result = New-LunqResult (Get-LunqText 'Servicing.SetupFilesTitle') 'SetupFiles'
+    foreach ($name in 'setup.exe', 'setuphost.exe') {
+        $source = Join-Path $MountPath "sources\$name"
+        if (-not (Test-Path -LiteralPath $source)) { continue }   # setuphost.exe есть только в сборках 26100 и новее
+        try {
+            Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $name) -Force -ErrorAction Stop
+            $result.Done.Add($name)
+        }
+        catch {
+            Write-Warning (Get-LunqText 'Servicing.SetupFileFailed' $name $_.Exception.Message)
+            $result.Failed.Add($name)
+        }
+    }
+    if ($result.Done.Count -gt 0 -and $result.Failed.Count -eq 0) { $result.Summary = Get-LunqText 'Servicing.SetupFilesDone' ($result.Done -join ', ') }
+    return $result
+}
+
+function Add-LunqSetupDynamicUpdate {
+    # Setup Dynamic Update: .cab, который распаковывается в sources ISO поверх файлов установщика.
+    param([Parameter(Mandatory)][string]$IsoRoot, [Parameter(Mandatory)]$Files)
+
+    $result = New-LunqResult (Get-LunqText 'Servicing.SetupDUTitle') 'UpdatesSetupDU'
+    $sources = Join-Path $IsoRoot 'sources'
+    $i = 0
+    foreach ($file in $Files) {
+        $i++
+        Write-Info (Get-LunqText 'Servicing.Expanding' $i $Files.Count $file.Name (Format-Size $file.Length))
+        $code = Invoke-Native expand.exe @($file.FullName, '-F:*', $sources)
+        if ($code -eq 0) { $result.Done.Add($file.Name) }
+        else {
+            Write-Warning (Get-LunqText 'Servicing.ExpandFailed' $file.Name $code)
+            $result.Failed.Add($file.Name)
+        }
+    }
+    return $result
 }
 
 function Update-LunqRecovery {
@@ -174,6 +225,7 @@ function Update-LunqRecovery {
         [Parameter(Mandatory)][string]$WorkDir,
         [Parameter(Mandatory)][string]$PEMountPath,
         $Updates = @(),
+        $SafeOS = @(),
         $Drivers = @(),
         [string]$DriversRoot
     )
@@ -190,7 +242,7 @@ function Update-LunqRecovery {
     (Get-Item -LiteralPath $work -Force).Attributes = 'Normal'
 
     $results = Update-LunqPEImage -ImagePath $work -Index 1 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
-        -Where 'WinRE' -KindSuffix 'Recovery' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
+        -Where 'WinRE' -KindSuffix 'Recovery' -Updates $Updates -SafeOS $SafeOS -Drivers $Drivers -DriversRoot $DriversRoot
     Write-Info (Get-LunqText 'Servicing.Recompressing' 'Winre.wim')
     Optimize-LunqWim -Path $work
     Write-Info (Get-LunqText 'Servicing.SizeChange' 'Winre.wim' (Format-Size $original.Length) (Format-Size (Get-Item -LiteralPath $work).Length))
@@ -204,20 +256,26 @@ function Update-LunqRecovery {
 
 function Update-LunqSetup {
     # Установщик: boot.wim, образ 2 («Установка Windows»), с которого загружается флешка.
+    # Setup Dynamic Update распаковывается в sources, затем setup.exe и setuphost.exe
+    # копируются туда же из обновлённого boot.wim, чтобы версии совпадали.
     param(
         [Parameter(Mandatory)][string]$IsoRoot,
         [Parameter(Mandatory)][string]$WorkDir,
         [Parameter(Mandatory)][string]$PEMountPath,
         $Updates = @(),
+        $SetupUpdates = @(),
         $Drivers = @(),
         [string]$DriversRoot
     )
 
     $bootWim = Join-Path $IsoRoot 'sources\boot.wim'
     if (-not (Test-Path -LiteralPath $bootWim)) { throw (Get-LunqText 'Servicing.NoBootWim') }
+    $results = @()
+    if (@($SetupUpdates).Count -gt 0) { $results += Add-LunqSetupDynamicUpdate -IsoRoot $IsoRoot -Files $SetupUpdates }
     $before = (Get-Item -LiteralPath $bootWim).Length
-    $results = Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
-        -Where (Get-LunqText 'Servicing.WhereSetup') -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot
+    $results += Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
+        -Where (Get-LunqText 'Servicing.WhereSetup') -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot `
+        -ExportSetupTo (Join-Path $IsoRoot 'sources')
     Write-Info (Get-LunqText 'Servicing.Recompressing' 'boot.wim')
     Optimize-LunqWim -Path $bootWim -BootIndex 2
     Write-Info (Get-LunqText 'Servicing.SizeChange' 'boot.wim' (Format-Size $before) (Format-Size (Get-Item -LiteralPath $bootWim).Length))

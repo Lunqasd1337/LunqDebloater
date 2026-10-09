@@ -30,9 +30,11 @@ without deleting it from here.
                  (search, for example, for "Windows 11 Version 26H2 x64" and take the
                  latest cumulative update). If the catalog has several files for an
                  update, download all of them: they are installed in ascending KB order.
-                 Do not put Safe OS and Setup Dynamic Update packages here: they are for
-                 Windows Setup and the recovery environment and do not install into
-                 the system.
+                 Put Safe OS and Setup Dynamic Update packages in the subfolders:
+                     Updates\SafeOS   Safe OS Dynamic Update (.cab) for WinRE;
+                     Updates\Setup    Setup Dynamic Update (.cab) for Windows Setup.
+                 They are added together with the Windows Setup and WinRE update
+                 (-UpdatesToSetup, or the item under the updates in the step-by-step mode).
 
 Drivers and updates are not stored in git, everything else is.
 
