@@ -81,7 +81,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-ProfilePath` | Your own JSON profile instead of `Config\Profile.json` |
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
 | `-Index` / `-Edition` | Edition by number or name |
-| `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO |
+| `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO. Only administrators can access it |
 | `-OscdimgPath` | Path to `oscdimg.exe` if the ADK is not in its standard folder |
 | `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
@@ -94,7 +94,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-LocalAccount` | Add sign-in without a Microsoft account to the answer file (turns on `-Unattend`) |
 | `-ListContents` | Do not build an ISO, save the list of apps and components of the edition to a file instead |
 | `-SkipAppx`, `-SkipComponents`, `-SkipRegistry` | Skip the step |
-| `-Label` | Volume label of the finished ISO, `LUNQ_WIN11` by default |
+| `-Label` | Volume label of the finished ISO: Latin letters, digits, `_` and `-`, up to 32 characters. `LUNQ_WIN11` by default |
 | `-SkipVersionCheck` | Do not stop if the ISO build does not match the `Requirements` of the profile |
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
@@ -167,7 +167,7 @@ You can have the programs you need installed and your scripts run at the first s
 2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
-At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). A script that failed is not run again. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
+At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
 
 You can save scripts in any editor. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as ANSI, and non-English text in quotes (for example, Russian) breaks the whole script. That is why such files are saved again as UTF-8 with BOM during the build; you can see this in the output of the step.
 

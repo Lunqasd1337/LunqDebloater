@@ -166,6 +166,33 @@ Describe 'Ошибки и предупреждения' {
         Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
     }
 
+    It 'чужая папка с подпапкой iso: проверка её отвергает, и она не удаляется' {
+        $run = Start-TestBuild -Parameters @{ KeepWorkDir = $false } -Prepare {
+            param($t)
+            New-Item -ItemType Directory -Path (Join-Path $t.WorkDir 'iso') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $t.WorkDir 'mine.txt') -Value 'x'
+        }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'папка не пустая и создана не этим скриптом'
+        Test-Path -LiteralPath (Join-Path $script:Test.WorkDir 'mine.txt') | Should -BeTrue
+    }
+
+    It 'несколько Setup Dynamic Update: в sources распаковывается каждый .cab и только они' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true } -Prepare {
+            param($t)
+            $setup = Join-Path $t.App 'Config\Updates\Setup'
+            New-Item -ItemType Directory -Path $setup -Force | Out-Null
+            foreach ($name in 'windows11.0-kb5080200-x64.cab', 'windows11.0-kb5080201-x64.cab', 'windows11.0-kb5080202-x64.msu') {
+                Set-Content -LiteralPath (Join-Path $setup $name) -Value 'x'
+            }
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Setup Dynamic Update: установлено 2'
+        $expand = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'expand.exe|*' })
+        $expand.Count | Should -Be 2
+        ($expand -join "`n") | Should -Not -Match '\.msu'
+    }
+
     It 'сбой посреди сборки: образ отключается без сохранения, ISO не создаётся' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
         $run.Error | Should -Not -BeNullOrEmpty
@@ -215,6 +242,7 @@ Describe 'Ошибки и предупреждения' {
         $oscdimg.Count | Should -Be 1
         $parts = $oscdimg[0] -split '\|'
         $bootData = $parts | Where-Object { $_ -like '-bootdata:*' }
+        $bootData | Should -Not -BeNullOrEmpty
         $bootData | Should -Not -Match '\s'
         $parts[-1] | Should -BeLike '*my work'
     }

@@ -33,6 +33,7 @@ $texts = @{
         ScriptsHeader  = '==> Ваши скрипты ({0})'
         ScriptExitCode = '{0} завершился с кодом {1}'
         ScriptError    = 'Ошибка в {0}: {1}'
+        ScriptsLater   = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
         AppsNextLogon  = 'Неустановленные программы будут поставлены при следующем входе в Windows.'
         AppsGaveUp     = 'Не все программы установлены за {0} попыток. Поставьте их вручную, список в {1}'
         Done           = '==> Готово'
@@ -56,6 +57,7 @@ $texts = @{
         ScriptsHeader  = '==> Your scripts ({0})'
         ScriptExitCode = '{0} exited with code {1}'
         ScriptError    = 'Error in {0}: {1}'
+        ScriptsLater   = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
         AppsNextLogon  = 'Apps that were not installed will be installed at the next sign-in to Windows.'
         AppsGaveUp     = 'Not all apps were installed after {0} attempts. Install them manually, the list is in {1}'
         Done           = '==> Done'
@@ -85,7 +87,29 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 $Host.UI.RawUI.WindowTitle = Get-Text 'WindowTitle'
+
+# Рядом со скриптами могут лежать пароли и ключи, а в лог попадает вывод скриптов. Они наследуют
+# от Windows права на чтение для всех пользователей, поэтому доступ оставляется только администраторам
+# и SYSTEM. Сам FirstLogon.ps1 остаётся доступным: иначе его не запустить без повышения прав.
+function Protect-Path([string]$Path) {
+    try {
+        $acl = Get-Acl -LiteralPath $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($rule in @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
+        $inheritance = 'None'
+        if (Test-Path -LiteralPath $Path -PathType Container) { $inheritance = 'ContainerInherit, ObjectInherit' }
+        foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+            $identity = New-Object Security.Principal.SecurityIdentifier $sid
+            $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', $inheritance, 'None', 'Allow'))
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    }
+    catch { }   # права не поменять: работа идёт как раньше
+}
+
 Start-Transcript -Path $log -Append | Out-Null
+Protect-Path $log
+if (Test-Path -LiteralPath $userDir) { Protect-Path $userDir }
 
 function Write-Line([string]$Text, [string]$Color = 'Gray') { Write-Host "    $Text" -ForegroundColor $Color }
 
@@ -140,7 +164,10 @@ if (-not $task -and -not $lastAttempt) {
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
         $taskPrincipal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
+        # По умолчанию задание не запускается от батареи и останавливается, когда зарядку отключают:
+        # на ноутбуке программы так и не поставились бы. Ограничение в 3 дня тоже не нужно.
+        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
     }
     catch { Write-Line (Get-Text 'TaskFailed' $_.Exception.Message) 'Yellow' }
 }
@@ -193,7 +220,13 @@ if ($todo.Count -gt 0) {
 $doneScripts = @(Read-Lines $scriptsDoneFile)
 $scripts = @(Get-ChildItem -LiteralPath $userDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -eq '.ps1' -and $doneScripts -notcontains $_.Name } | Sort-Object Name)
-if ($scripts.Count -gt 0) {
+# Скрипты идут после программ: они могут настраивать то, что ещё не поставилось. На последней
+# попытке они выполняются в любом случае.
+if ($scripts.Count -gt 0 -and $appsPending -and -not $lastAttempt) {
+    Write-Host ''
+    Write-Line (Get-Text 'ScriptsLater' $scripts.Count) 'Yellow'
+}
+elseif ($scripts.Count -gt 0) {
     Write-Host ''
     Write-Host (Get-Text 'ScriptsHeader' $scripts.Count) -ForegroundColor Cyan
     Push-Location $userDir

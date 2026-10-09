@@ -1,4 +1,5 @@
-﻿# Имя файла обновления самой Windows (windows11.0-kb...), а не, например, .NET или Office.
+﻿# Имя файла обновления Windows (windows11.0-kb...), а не, например, Office. Обновления .NET
+# называются так же, только с ndp в имени, их отсекают отдельно.
 $script:WindowsUpdatePattern = '(?i)^windows1[01]\.0-kb'
 
 function Get-LunqUpdateFiles {
@@ -18,7 +19,7 @@ function Get-LunqUpdateFiles {
 function Test-CumulativeUpdate {
     # Похоже ли хотя бы одно обновление на накопительное для самой Windows (а не, например, для .NET).
     param($Files)
-    return [bool](@($Files) | Where-Object { $_.Name -match $script:WindowsUpdatePattern })
+    return [bool](@($Files) | Where-Object { $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' })
 }
 
 function Write-UpdateList {

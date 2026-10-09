@@ -64,7 +64,7 @@ Tests\                       Pester tests and stubs
 7. **"What is in the image" mode** (`-ListContents`) ends here: the edition is mounted read-only, `Write-LunqInventory` saves the list and the image is unmounted without saving.
 8. **Plan.** The script shows what will be done and asks for confirmation in step-by-step mode.
 9. **Build** by the list of steps (below), then the result from `Write-LunqReport`.
-10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if nothing is mounted in it, otherwise DISM would lose the image.
+10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.
 
 ## Build steps
 

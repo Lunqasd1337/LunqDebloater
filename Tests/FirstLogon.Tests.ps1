@@ -74,11 +74,12 @@ function global:Get-Date { $global:Now }
 function global:Start-Sleep { param($Seconds = 0, $Milliseconds = 0) $global:Now = $global:Now.AddSeconds($Seconds).AddMilliseconds($Milliseconds) }
 function global:Invoke-WebRequest { param($Uri, [switch]$UseBasicParsing, $TimeoutSec) if ($global:Offline) { throw 'нет сети' }; [pscustomobject]@{ Content = 'Microsoft Connect Test' } }
 function global:Get-ScheduledTask { param($TaskName, $ErrorAction) if (Test-Path -LiteralPath $global:TaskFile) { 'task' } }
-function global:Register-ScheduledTask { Set-Content -LiteralPath $global:TaskFile -Value 'task' }
+function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) Set-Content -LiteralPath $global:TaskFile -Value $Settings }
 function global:Unregister-ScheduledTask { Remove-Item -LiteralPath $global:TaskFile -ErrorAction SilentlyContinue }
 function global:New-ScheduledTaskAction { 'action' }
 function global:New-ScheduledTaskTrigger { 'trigger' }
 function global:New-ScheduledTaskPrincipal { 'principal' }
+function global:New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, $ExecutionTimeLimit) 'battery={0},{1} limit={2}' -f $AllowStartIfOnBatteries, $DontStopIfGoingOnBatteries, $ExecutionTimeLimit }
 function global:Start-Transcript { }
 function global:Stop-Transcript { }
 function global:Add-AppxPackage { }
@@ -129,6 +130,8 @@ Describe 'Скрипт первого входа' {
         $out = Invoke-FirstLogon -Test $t
         $out | Should -Match 'Не удалось установить Broken.App'
         Test-Path -LiteralPath $t.Task | Should -BeTrue
+        # Задание запускается и от батареи, без ограничения по времени.
+        Get-Content -LiteralPath $t.Task | Should -Be 'battery=True,True limit=00:00:00'
         Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeTrue
 
         Remove-Item -LiteralPath $t.Failing
@@ -136,6 +139,18 @@ Describe 'Скрипт первого входа' {
         Get-Lines $t.WingetLog | Should -Be @('7zip.7zip', 'Broken.App', 'Broken.App')
         Test-Path -LiteralPath $t.Task | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
+    }
+
+    It 'пока программы не поставились, скрипты ждут; на последней попытке выполняются' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip') -Scripts @{ '10-hello.ps1' = "Write-Host 'привет'" }
+        for ($i = 1; $i -le 4; $i++) {
+            $out = Invoke-FirstLogon -Test $t -Offline
+            $out | Should -Match 'Ваши скрипты \(1\) выполнятся после установки программ'
+            Test-Path -LiteralPath (Join-Path $t.Lunq 'scripts.done') | Should -BeFalse
+        }
+        $out = Invoke-FirstLogon -Test $t -Offline
+        $out | Should -Match 'привет'
+        Get-Lines (Join-Path $t.Lunq 'scripts.done') | Should -Be @('10-hello.ps1')
     }
 
     It 'скрипт с exit 1 считается неудачным, но повторно не запускается' {

@@ -35,7 +35,10 @@ function Dismount-OfflineHives {
 function ConvertTo-LunqRegValue {
     # Приводит значение из профиля к типу, который пишется в реестр. Возвращает Kind (имя
     # RegistryValueKind) и Data. Неверное значение даёт исключение с понятным текстом.
-    param([Parameter(Mandatory)][string]$Type, $Value)
+    # Пустой Type пропускается сюда, чтобы ошибка была понятной, а не ошибкой привязки параметра.
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Type, $Value)
+
+    if (-not $Type) { throw (Get-LunqText 'Registry.NoType') }
 
     # Число из JSON или строка "0x...". DWORD и QWORD записываются как беззнаковые: 4294967295 это 0xFFFFFFFF.
     $toNumber = {

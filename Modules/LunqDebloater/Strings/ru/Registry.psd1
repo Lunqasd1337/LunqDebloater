@@ -6,6 +6,7 @@
     'Registry.NotNumber'            = '''{0}'' не число'
     'Registry.DwordOverflow'        = '{0} не помещается в REG_DWORD'
     'Registry.NotHex'               = '''{0}'' не hex-строка (пары цифр 0-9, A-F)'
+    'Registry.NoType'               = 'не указан Type. Допустимо: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY'
     'Registry.UnknownType'          = 'неизвестный тип ''{0}''. Допустимо: REG_SZ, REG_EXPAND_SZ, REG_MULTI_SZ, REG_DWORD, REG_QWORD, REG_BINARY'
     'Registry.UnknownRoot'          = 'Неизвестный корень реестра: {0}'
     'Registry.UnknownActionAllowed' = 'неизвестное действие ''{0}''. Допустимо: {1}'

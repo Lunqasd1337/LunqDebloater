@@ -39,6 +39,20 @@ function Initialize-LunqWorkDir {
     # Создаёт рабочую папку с файлом-меткой, по которой скрипт узнаёт свою папку.
     param([Parameter(Mandatory)][string]$WorkDir)
     New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+    # Папка в корне диска наследует права, с которыми обычный пользователь может менять файлы.
+    # Тогда он подменил бы install.wim или скрипты первого входа, пока идёт сборка, поэтому
+    # доступ к папке и всему в ней остаётся только у администраторов и SYSTEM.
+    # Права NTFS есть только в Windows; тесты в Linux подменяют $env:OS, поэтому проверяется сама платформа.
+    if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
+        $acl = Get-Acl -LiteralPath $WorkDir
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($rule in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
+        foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+            $identity = New-Object System.Security.Principal.SecurityIdentifier $sid
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+        }
+        Set-Acl -LiteralPath $WorkDir -AclObject $acl
+    }
     Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value (Get-LunqText 'Checks.WorkDirMarker') -Encoding UTF8
 }
 

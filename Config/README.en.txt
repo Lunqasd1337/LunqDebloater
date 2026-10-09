@@ -50,9 +50,11 @@ At the first sign-in a window with the progress opens. The script waits for the 
 scripts and closes the window.
 If there is no internet, a program did not install, or the window was closed halfway, the
 unfinished work is repeated at the next sign-in (the LunqFirstLogon scheduled task, up to
-5 attempts). A script that failed is not run again. When everything is done, the copies of
-the scripts and the files next to them are deleted from the disk (they may contain
-passwords); Apps.txt and the log remain:
+5 attempts). While the programs are not installed, the scripts wait: they run after the
+programs or on the last attempt. A script that failed is not run again. Your scripts and
+the log are accessible to administrators only. When everything is
+done, the copies of the scripts and the files next to them are deleted from the disk (they
+may contain passwords); Apps.txt and the log remain:
 C:\Windows\Setup\Scripts\Lunq\FirstLogon.log
 
 Scripts in UTF-8 without a BOM are saved again with a BOM during the build: otherwise
