@@ -55,8 +55,7 @@
       ],
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\DevHomeUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать Dev Home после установки", "en": "Do not install Dev Home after setup" } },
-        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } },
-        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Dsh", "Name": "AllowNewsAndInterests", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Отключить виджеты", "en": "Turn off Widgets" } }
+        { "Hive": "SOFTWARE", "Path": "Microsoft\\WindowsUpdate\\Orchestrator\\UScheduler_Oobe\\OutlookUpdate", "Action": "DeleteKey", "Description": { "ru": "Не доустанавливать новый Outlook после установки", "en": "Do not install the new Outlook after setup" } }
       ]
     },
     {

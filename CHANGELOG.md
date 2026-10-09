@@ -4,7 +4,7 @@
 
 ## 1.5.0
 
-- Профиль по умолчанию удаляет виджеты (Windows Web Experience Pack и Widgets Platform Runtime), Paint и Камеру. Политика `AllowNewsAndInterests` выключает виджеты, даже если Windows поставит их снова.
+- Профиль по умолчанию удаляет виджеты (Windows Web Experience Pack и Widgets Platform Runtime), Paint и Камеру.
 
 ## 1.4.0
 
