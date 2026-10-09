@@ -287,7 +287,7 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 
 The `drivers` category turns off driver downloads from Windows Update and is off by default. If the system has no built-in driver for the network card or Wi-Fi, there is no internet after installation and you have to install the driver by hand. Turn it on (`"Enabled": true` in the profile or by number in step-by-step mode) only if you add the drivers you need to the image yourself (see "Drivers").
 
-The default profile does not touch Microsoft Store, App Installer (winget), Terminal, Photos, Calculator, Notepad, Paint and Windows Security. The `Packages` lists are empty on purpose: removing CBS packages can break the installation of updates.
+The default profile does not touch Microsoft Store, App Installer (winget), Terminal, Photos, Calculator, Notepad and Windows Security. The `Packages` lists are empty on purpose: removing CBS packages can break the installation of updates.
 
 ## Development
 

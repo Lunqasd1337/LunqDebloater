@@ -2,6 +2,10 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.5.0
+
+- Профиль по умолчанию удаляет виджеты (Windows Web Experience Pack и Widgets Platform Runtime), Paint и Камеру.
+
 ## 1.4.0
 
 - Safe OS Dynamic Update и Setup Dynamic Update: их можно положить в подпапки `Config\Updates\SafeOS` и `Config\Updates\Setup`. Вместе с `-UpdatesToSetup` Safe OS ставится в WinRE после накопительного обновления, а Setup Dynamic Update распаковывается в `sources` ISO, как в инструкции Microsoft.

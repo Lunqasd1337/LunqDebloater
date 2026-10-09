@@ -22,8 +22,8 @@
       "Name": { "ru": "Встроенные приложения", "en": "Built-in apps" },
       "Enabled": true,
       "Description": {
-        "ru": "Удаляет предустановленные приложения и не даёт Windows доустановить Outlook и Dev Home после установки.",
-        "en": "Removes preinstalled apps and stops Windows from installing Outlook and Dev Home after setup."
+        "ru": "Удаляет предустановленные приложения, в том числе виджеты, Paint и Камеру, и не даёт Windows доустановить Outlook и Dev Home после установки.",
+        "en": "Removes preinstalled apps, including Widgets, Paint and Camera, and stops Windows from installing Outlook and Dev Home after setup."
       },
       "Appx": [
         "Clipchamp.Clipchamp",
@@ -35,10 +35,13 @@
         "Microsoft.MicrosoftSolitaireCollection",
         "Microsoft.MicrosoftStickyNotes",
         "Microsoft.OutlookForWindows",
+        "Microsoft.Paint",
         "Microsoft.People",
         "Microsoft.PowerAutomateDesktop",
         "Microsoft.Todos",
+        "Microsoft.WidgetsPlatformRuntime",
         "Microsoft.WindowsAlarms",
+        "Microsoft.WindowsCamera",
         "Microsoft.WindowsFeedbackHub",
         "Microsoft.WindowsMaps",
         "Microsoft.WindowsSoundRecorder",
@@ -47,6 +50,7 @@
         "MicrosoftCorporationII.MicrosoftFamily",
         "MicrosoftCorporationII.QuickAssist",
         "MicrosoftTeams",
+        "MicrosoftWindows.Client.WebExperience",
         "MSTeams"
       ],
       "Registry": [
