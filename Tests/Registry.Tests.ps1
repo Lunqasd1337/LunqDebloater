@@ -1,5 +1,6 @@
 ﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
-# Запись в настоящий реестр через .NET: только на Windows, во временный ключ HKCU\Software.
+# Реестр (Private\Registry.ps1): разбор значений из профиля, на любой системе, и запись
+# в настоящий реестр через .NET, только на Windows, во временный ключ HKCU\Software.
 # На сборке те же функции пишут в загруженные кусты образа (HKLM\LUNQ_*).
 
 BeforeDiscovery {
@@ -9,6 +10,8 @@ BeforeDiscovery {
 BeforeAll {
     $repo = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
+    # Проверки сверяют русский текст.
+    Set-LunqLanguage -Language ru
     $script:TestKey = 'Software\LunqDebloaterTests_' + [guid]::NewGuid().ToString('N')
     $script:Root = "HKCU\$script:TestKey"
     function Invoke-InModule([scriptblock]$Block, [object[]]$Arguments) { & (Get-Module LunqDebloater) $Block @Arguments }
@@ -17,6 +20,49 @@ BeforeAll {
 AfterAll {
     if ($env:OS -eq 'Windows_NT') { Remove-Item -LiteralPath "HKCU:\$script:TestKey" -Recurse -Force -ErrorAction SilentlyContinue }
     Remove-Module LunqDebloater -Force -ErrorAction SilentlyContinue
+}
+
+Describe 'ConvertTo-LunqRegValue' {
+    BeforeAll {
+        $convert = { param($Type, $Value) & (Get-Module LunqDebloater) { param($t, $v) ConvertTo-LunqRegValue -Type $t -Value $v } $Type $Value }
+    }
+
+    It 'DWORD 0xFFFFFFFF и 4294967295 записываются как одно и то же значение' {
+        (& $convert 'REG_DWORD' '0xFFFFFFFF').Data | Should -Be -1
+        (& $convert 'REG_DWORD' 4294967295).Data | Should -Be -1
+        (& $convert 'REG_DWORD' 1).Data | Should -Be 1
+        (& $convert 'REG_DWORD' 1).Kind | Should -Be 'DWord'
+    }
+
+    It 'DWORD больше 32 бит не принимается' {
+        { & $convert 'REG_DWORD' 4294967296 } | Should -Throw '*не помещается*'
+    }
+
+    It 'QWORD' {
+        (& $convert 'REG_QWORD' '0x10').Data | Should -Be 16
+        (& $convert 'REG_QWORD' '0x10').Kind | Should -Be 'QWord'
+    }
+
+    It 'строка с кавычками и обратной косой чертой в конце остаётся как есть' {
+        $value = & $convert 'REG_SZ' '"C:\Program Files\App\app.exe" /min C:\Temp\'
+        $value.Data | Should -BeExactly '"C:\Program Files\App\app.exe" /min C:\Temp\'
+        $value.Kind | Should -Be 'String'
+    }
+
+    It 'REG_MULTI_SZ из массива' {
+        $value = & $convert 'REG_MULTI_SZ' @('a', 'b')
+        $value.Data | Should -Be @('a', 'b')
+        $value.Kind | Should -Be 'MultiString'
+    }
+
+    It 'REG_BINARY из hex-строки с пробелами и запятыми' {
+        $value = & $convert 'REG_BINARY' 'de ad,BE ef'
+        $value.Data | Should -Be ([byte[]](0xDE, 0xAD, 0xBE, 0xEF))
+    }
+
+    It 'REG_BINARY с нечётным числом цифр не принимается' {
+        { & $convert 'REG_BINARY' 'abc' } | Should -Throw '*hex*'
+    }
 }
 
 Describe 'Запись в реестр' -Skip:(-not $script:OnWindows) {

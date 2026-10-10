@@ -117,10 +117,10 @@ $WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPa
 if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'Config' }
 $ConfigPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ConfigPath).TrimEnd('\')
 
-$mounted = $false
-# Рабочую папку можно удалить в конце, только если этот запуск сам её пересоздал:
-# иначе проверка могла её отвергнуть, и в ней лежат чужие файлы.
-$workDirOwned = $false
+# Что нужно знать при ошибке. Mounted: смонтирован ли образ. WorkDirOwned: рабочую папку можно
+# удалить в конце, только если этот запуск сам её пересоздал, иначе проверка могла её отвергнуть
+# и в ней лежат чужие файлы. Шаги сборки меняют эту же таблицу через контекст.
+$state = @{ Mounted = $false; WorkDirOwned = $false; ImageInfo = $null }
 $bootMountDir = Join-Path $WorkDir 'bootmount'
 $reMountDir = Join-Path $WorkDir 'remount'
 $allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
@@ -456,7 +456,7 @@ try {
         Initialize-LunqSteps -Total 4
         Write-Step (Get-LunqText 'Main.StepPrepare') (Get-LunqText 'Main.StepPrepareHint' $WorkDir)
         Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
-        $workDirOwned = $true
+        $state.WorkDirOwned = $true
         New-Item -ItemType Directory -Path $mountDir, (Split-Path $wimPath -Parent) -Force | Out-Null
 
         Write-Step (Get-LunqText 'Main.StepCopyEdition') (Get-LunqText 'Main.StepCopyEditionHint')
@@ -469,7 +469,7 @@ try {
 
         Write-Step (Get-LunqText 'Main.StepOpenImage') (Get-LunqText 'Main.StepOpenImageHint')
         Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir -ReadOnly | Out-Null
-        $mounted = $true
+        $state.Mounted = $true
 
         Write-Step (Get-LunqText 'Main.StepReadInventory') (Get-LunqText 'Main.StepReadInventoryHint')
         $inventory = Write-LunqInventory -MountPath $mountDir -LunqProfile $lunqProfile -Path $contentsPath -Header @(
@@ -478,7 +478,7 @@ try {
             (Get-LunqText 'Main.InventoryCreated' (Get-LunqVersion) (Get-Date -Format 'yyyy-MM-dd HH:mm')),
             '')
         Dismount-WindowsImage -Path $mountDir -Discard | Out-Null
-        $mounted = $false
+        $state.Mounted = $false
 
         Write-Section (Get-LunqText 'Main.SectionSummary')
         Write-Info (Get-LunqText 'Main.InventoryCounts' $inventory.Appx $inventory.Capabilities $inventory.Enabled $inventory.Disabled)
@@ -547,171 +547,45 @@ try {
     }
 
     # ---------- Сборка ----------
-    # Шаги описаны списком. When решает, выполняется ли шаг, и по нему же считается «Шаг N из M».
-    # Run выполняется через точку, в области видимости скрипта: так шаги дописывают $results
-    # и меняют $mounted (через $script:, чтобы это было видно и анализатору).
-    $results = @()
-    $buildSteps = @(
-        @{
-            Title = Get-LunqText 'Main.StepPrepare'; When = $true
-            Hint  = Get-LunqText 'Main.StepPrepareHint' $WorkDir
-            Run   = {
-                Reset-LunqWorkDir -WorkDir $WorkDir -MountPaths $allMountDirs
-                $script:workDirOwned = $true
-                New-Item -ItemType Directory -Path $mountDir -Force | Out-Null
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepCopyIso'; When = $true
-            Hint  = Get-LunqText 'Main.StepCopyIsoHint'
-            Run   = { Copy-IsoContent -IsoPath $IsoPath -Destination $isoDir }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepExport'; When = $true
-            Hint  = Get-LunqText 'Main.StepExportHint'
-            Run   = {
-                Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $isoDir) -SourceIndex $selected -DestinationImage $wimPath
-                $info = Get-WindowsImage -ImagePath $wimPath -Index 1
-                Write-Info (Get-LunqText 'Main.ExportedInfo' $info.ImageName $info.Version)
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepMount'; When = $true
-            Hint  = Get-LunqText 'Main.StepMountHint'
-            Run   = {
-                Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir | Out-Null
-                $script:mounted = $true
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepUpdates'; When = $updates.Count -gt 0
-            Hint  = Get-LunqText 'Main.StepUpdatesHint'
-            Run   = { $results += Add-LunqUpdates -MountPath $mountDir -Files $updates -ScratchDir (Join-Path $WorkDir 'scratch') }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepDrivers'; When = $drivers.Count -gt 0
-            Hint  = Get-LunqText 'Main.StepDriversHint'
-            Run   = { $results += Add-LunqDrivers -MountPath $mountDir -InfFiles $drivers -Root $DriversPath }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepRecovery'; When = $serviceRecovery
-            Hint  = Get-LunqText 'Main.StepRecoveryHint'
-            Run   = {
-                $results += Update-LunqRecovery -MountPath $mountDir -WorkDir $WorkDir -PEMountPath $reMountDir -Updates $peUpdates -SafeOS $safeOSUpdates `
-                    -Drivers $peDrivers -DriversRoot $DriversPath
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepFirstLogon'; When = [bool]$firstLogon
-            Hint  = Get-LunqText 'Main.StepFirstLogonHint'
-            Run   = { $results += Install-LunqFirstLogon -MountPath $mountDir -FirstLogon $firstLogon -Architecture $imageInfo.Architecture }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepUnattend'; When = [bool]$setupAnswers
-            Hint  = Get-LunqText 'Main.StepUnattendHint'
-            Run   = {
-                $results += Install-LunqUnattend -IsoRoot $isoDir -Unattend $setupAnswers -Architecture $imageInfo.Architecture `
-                    -ImageLanguage (Get-LunqImageLanguage -Image $info) -WithFirstLogon:([bool]$firstLogon)
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepAppx'; When = -not $SkipAppx
-            Hint  = Get-LunqText 'Main.StepAppxHint'
-            Run   = { $results += Remove-LunqAppx -MountPath $mountDir -Config $config }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepCapabilities'; When = -not $SkipComponents
-            Hint  = Get-LunqText 'Main.StepCapabilitiesHint'
-            Run   = { $results += Remove-LunqCapabilities -MountPath $mountDir -Config $config }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepFeatures'; When = -not $SkipComponents
-            Hint  = Get-LunqText 'Main.StepFeaturesHint'
-            Run   = {
-                $results += Disable-LunqFeatures -MountPath $mountDir -Config $config
-                $packages = Remove-LunqPackages -MountPath $mountDir -Config $config
-                if ($packages) { $results += $packages }
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepRegistry'; When = -not $SkipRegistry
-            Hint  = Get-LunqText 'Main.StepRegistryHint'
-            Run   = { $results += Set-LunqRegistry -MountPath $mountDir -Config $config }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepCleanup'; When = [bool]$CleanupComponents
-            Hint  = Get-LunqText 'Main.StepCleanupHint'
-            Run   = {
-                $cleanup = New-LunqResult (Get-LunqText 'Main.CleanupResult') 'Cleanup'
-                if (Invoke-LunqComponentCleanup -MountPath $mountDir -ScratchDir (Join-Path $WorkDir 'scratch')) {
-                    $cleanup.Summary = Get-LunqText 'Main.CleanupDone'
-                }
-                else {
-                    $cleanup.Summary = Get-LunqText 'Main.CleanupFailed'
-                    $cleanup.Failed.Add('StartComponentCleanup')
-                }
-                $results += $cleanup
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepSave'; When = $true
-            Hint  = Get-LunqText 'Main.StepSaveHint'
-            Run   = {
-                $skippedSteps = @()
-                if ($SkipAppx) { $skippedSteps += 'Appx' }
-                if ($SkipComponents) { $skippedSteps += 'Components' }
-                if ($SkipRegistry) { $skippedSteps += 'Registry' }
-                Set-LunqBuildStamp -MountPath $mountDir -Values ([ordered]@{
-                        Version           = Get-LunqVersion
-                        BuildDate         = Get-Date -Format 'yyyy-MM-dd HH:mm'
-                        SourceIso         = Split-Path $IsoPath -Leaf
-                        Edition           = $editionName
-                        SourceBuild       = $buildText
-                        Profile           = "$($lunqProfile.Name) ($(Split-Path $ProfilePath -Leaf))"
-                        Categories        = (@($lunqProfile.Categories | Where-Object { $_.Enabled } | ForEach-Object { $_.Id }) -join ', ')
-                        SkippedCategories = (@($lunqProfile.Categories | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Id }) -join ', ')
-                        SkippedSteps      = ($skippedSteps -join ', ')
-                        Updates           = (@($updates | ForEach-Object { $_.Name }) -join ', ')
-                        SafeOSUpdates     = (@($safeOSUpdates | ForEach-Object { $_.Name }) -join ', ')
-                        SetupUpdates      = (@($setupDU | ForEach-Object { $_.Name }) -join ', ')
-                        Drivers           = [string]$drivers.Count
-                        SetupAndWinRE     = $(if ($servicePE) { Get-LunqText 'Main.StampYes' } else { Get-LunqText 'Main.StampNo' })
-                        SetupAnswerFile   = $(if ($setupAnswers) { Format-LunqUnattendSummary -Unattend $setupAnswers } else { Get-LunqText 'Main.StampNo' })
-                        CleanupComponents = $(if ($CleanupComponents) { Get-LunqText 'Main.StampYes' } else { Get-LunqText 'Main.StampNo' })
-                        Apps              = $(if ($firstLogon) { $firstLogon.Apps -join ', ' } else { '' })
-                        Scripts           = $(if ($firstLogon) { @($firstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { '' })
-                    })
-                Dismount-WindowsImage -Path $mountDir -Save | Out-Null
-                $script:mounted = $false
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepSetup'; When = $servicePE
-            Hint  = Get-LunqText 'Main.StepSetupHint'
-            Run   = {
-                $results += Update-LunqSetup -IsoRoot $isoDir -WorkDir $WorkDir -PEMountPath $bootMountDir -Updates $peUpdates -SetupUpdates $setupDU `
-                    -Drivers $peDrivers -DriversRoot $DriversPath
-            }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepRecompress'; When = $true
-            Hint  = Get-LunqText 'Main.StepRecompressHint'
-            Run   = { Export-SingleEdition -SourceImage $wimPath -SourceIndex 1 -DestinationImage $wimPath }
-        },
-        @{
-            Title = Get-LunqText 'Main.StepIso'; When = $true
-            Hint  = Get-LunqText 'Main.StepIsoHint'
-            Run   = { New-BootableIso -IsoRoot $isoDir -OutputPath $OutputIso -Oscdimg $check.Oscdimg -Label $Label }
-        }
-    )
-
-    $activeSteps = @($buildSteps | Where-Object { $_.When })
-    Initialize-LunqSteps -Total $activeSteps.Count
-    $started = Get-Date
-    foreach ($step in $activeSteps) {
-        Write-Step $step.Title $step.Hint
-        . $step.Run
+    # Шаги описаны в модуле (Private\Build.ps1) и получают всё, что им нужно, через этот контекст.
+    $build = @{
+        State             = $state
+        WorkDir           = $WorkDir
+        MountPaths        = $allMountDirs
+        MountDir          = $mountDir
+        BootMountDir      = $bootMountDir
+        ReMountDir        = $reMountDir
+        IsoPath           = $IsoPath
+        IsoDir            = $isoDir
+        WimPath           = $wimPath
+        Index             = $selected
+        OutputIso         = $OutputIso
+        Oscdimg           = $check.Oscdimg
+        Label             = $Label
+        Updates           = $updates
+        SafeOSUpdates     = $safeOSUpdates
+        SetupUpdates      = $setupDU
+        PEUpdates         = $peUpdates
+        Drivers           = $drivers
+        PEDrivers         = $peDrivers
+        DriversPath       = $DriversPath
+        ServiceRecovery   = $serviceRecovery
+        ServicePE         = $servicePE
+        FirstLogon        = $firstLogon
+        SetupAnswers      = $setupAnswers
+        Architecture      = $imageInfo.Architecture
+        Config            = $config
+        SkipAppx          = [bool]$SkipAppx
+        SkipComponents    = [bool]$SkipComponents
+        SkipRegistry      = [bool]$SkipRegistry
+        CleanupComponents = [bool]$CleanupComponents
+        Profile           = $lunqProfile
+        ProfilePath       = $ProfilePath
+        EditionName       = $editionName
+        BuildText         = $buildText
     }
+    $started = Get-Date
+    $results = Invoke-LunqBuild -Context $build
 
     Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
 }
@@ -719,10 +593,10 @@ catch {
     Write-Host ''
     Write-Host (Get-LunqText 'Main.Error' $_.Exception.Message) -ForegroundColor Red
     Dismount-OfflineHives
-    if ($mounted) {
+    if ($state.Mounted) {
         Write-Info (Get-LunqText 'Main.DiscardImage')
         Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
-        $mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
+        $state.Mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
     }
     if ($lunqLog) {
         Write-Info (Get-LunqText 'Main.LogDetails' $lunqLog.Path)
@@ -732,9 +606,9 @@ catch {
 }
 finally {
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
-    $stillMounted = $mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $allMountDirs).Count -gt 0)
+    $stillMounted = $state.Mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $allMountDirs).Count -gt 0)
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
-    elseif ($workDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
+    elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($lunqLog) { Stop-LunqLog }

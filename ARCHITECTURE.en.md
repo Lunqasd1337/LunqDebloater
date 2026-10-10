@@ -2,12 +2,12 @@
 
 Русский: [ARCHITECTURE.md](ARCHITECTURE.md)
 
-This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](CONTRIBUTING.md#contributing-in-english).
+This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
 
 ## Repository layout
 
 ```text
-LunqDebloater.ps1            Entry point: parameters, step-by-step mode, plan and the list of build steps
+LunqDebloater.ps1            Entry point: parameters, step-by-step mode, checks, plan and the build context
 Start.cmd                    Double-click launcher (step-by-step mode)
 Config\                      Everything the user adjusts
   Profile.json               Profile: what to remove and what to write to the registry
@@ -28,7 +28,7 @@ Modules\
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
 Tests\                       Pester tests and stubs
-.github\                     GitHub Actions, issue and PR templates
+.github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
 ```
 
 ## The LunqDebloater module
@@ -51,6 +51,7 @@ Tests\                       Pester tests and stubs
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
 | `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
+| `Build.ps1` | Build steps (`Get-LunqBuildSteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
 
 ## How a run goes
@@ -68,7 +69,9 @@ Tests\                       Pester tests and stubs
 
 ## Build steps
 
-The steps are the `$buildSteps` list in `LunqDebloater.ps1`. Each one has `Title`, `Hint`, `When` (whether to run it) and `Run` (what to do). "Step N of M" is counted from `When`, so the numbers always go in a row. `Run` executes in the script scope and appends its result to `$results`.
+The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`. Each one has `Name`, `Title`, `Hint`, `When` (whether to run it) and `Run` (what to do). "Step N of M" is counted from `When`, so the numbers always go in a row.
+
+`LunqDebloater.ps1` puts everything the steps need into one hashtable, the build context, and passes it to `Invoke-LunqBuild`. Each `Run` gets the context as a parameter and returns its results; `Invoke-LunqBuild` collects them for the summary. In `Context.State` the steps record what matters on error: whether the image is mounted (`Mounted`) and whether this run created the working folder (`WorkDirOwned`). The script reads the same table in `catch` and `finally`. The module runs under `StrictMode`, so the context must contain every key, even empty ones.
 
 | Step | What it does | When |
 |---|---|---|
@@ -123,10 +126,15 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 
 | File | What it checks |
 |---|---|
-| `Tests\Unit.Tests.ps1` | Single functions: profile, registry, checks, answer file, strings. It also makes sure the `ru` and `en` keys match, every key used in the code exists in the tables, and every parameter is documented in both READMEs |
+| `Tests\Module.Tests.ps1` | The module as a whole: version from the manifest, exports, help, relaunch arguments. It makes sure the `ru` and `en` keys match, every key used in the code exists in the tables, and every parameter is documented in both READMEs |
+| `Tests\Profile.Tests.ps1` | Reading the profile, entry checks, categories, sorted lists, name patterns |
+| `Tests\Checks.Tests.ps1` | Working folder, output ISO, UEFI-only ISO, image and host versions, leftovers of an earlier run |
+| `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE |
+| `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
 | `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode, in Russian and English |
+| `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
-| `Tests\Registry.Tests.ps1` | Real registry writes (Windows only) |
+| `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later |
 | `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe) and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
@@ -137,7 +145,7 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch.
 
-**A build step.** Add an entry to `$buildSteps` in the right place, the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables, and let `Run` append a `New-LunqResult` to `$results`. Update the expected step counts in `Tests\Build.Tests.ps1`.
+**A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
 
 **An interface string.** Add the key to `Strings\ru\<Area>.psd1` and `Strings\en\<Area>.psd1` with the same `{0}`, `{1}`. Keys in a table are aligned to the longest one.
 
