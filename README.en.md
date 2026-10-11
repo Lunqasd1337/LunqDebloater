@@ -87,6 +87,16 @@ To use another folder:
 
 The loader puts nothing into a non-empty folder that has no LunqDebloater in it.
 
+### Desktop shortcut
+
+A shortcut with this command checks for updates and starts the latest version every time. Right-click the desktop, choose New > Shortcut and paste into "Type the location of the item":
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1 | iex"
+```
+
+Name the shortcut, for example "LunqDebloater". The window does not close by itself: at the end the script waits for Enter.
+
 ## Running with parameters
 
 All parameters are described in the table below. `Get-Help .\LunqDebloater.ps1` lists them with links to this description. For repeated builds and automation you can set everything with parameters. Then the script asks nothing and takes everything that is in `Config`:
