@@ -9,7 +9,7 @@ LunqDebloater офлайн-преднастраивает ISO Windows 11: уда
 ## Обязательно
 
 - **Windows PowerShell 5.1.** Скрипт по-настоящему работает только в 5.1 (часть командлетов DISM в PowerShell 7 падает). Не используйте синтаксис и командлеты, которых нет в 5.1: `??`, `?.`, тернарный оператор, `ForEach-Object -Parallel`, `Join-Path` с тремя аргументами, `-AsHashtable` у `ConvertFrom-Json`.
-- **Кодировка.** `.ps1`, `.psm1`, `.psd1` и `Config\README*.txt` сохраняются в UTF-8 с BOM, иначе 5.1 читает русский текст как ANSI. Окончания строк задаёт `.gitattributes`, не меняйте их вручную.
+- **Кодировка.** `.ps1`, `.psm1`, `.psd1` и `Config\README*.txt` сохраняются в UTF-8 с BOM, иначе 5.1 читает русский текст как ANSI. Исключение: загрузчик `Install.ps1` хранится только в ASCII и без BOM, потому что его выполняют через `irm | iex`, поэтому сообщения и комментарии в нём английские. Окончания строк задаёт `.gitattributes`, не меняйте их вручную.
 - **Тексты.** Всё, что видит пользователь, идёт через `Get-LunqText 'Область.Имя'`. Новый ключ добавляется сразу в `Strings\ru` и `Strings\en` с одинаковыми `{0}`, `{1}`. Фигурные скобки в тексте удваиваются. Русский вывод существующих строк не меняйте без причины: тесты сравнивают его дословно.
 - **Профиль.** `Name` и `Description` пишутся на двух языках: `{ "ru": "...", "en": "..." }`. Списки в категориях отсортированы.
 - **Параметры.** Каждый параметр `LunqDebloater.ps1` описывается в таблицах `README.md` и `README.en.md`, тест это проверяет.
@@ -22,6 +22,7 @@ LunqDebloater офлайн-преднастраивает ISO Windows 11: уда
 ```powershell
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 

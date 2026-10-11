@@ -22,6 +22,7 @@ jobs:
         run: |
           $settings = '.\PSScriptAnalyzerSettings.psd1'
           $results = @(Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings $settings) +
+            @(Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings $settings) +
             @(Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings $settings)
           $results | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 250
           if ($results.Count -gt 0) { throw "PSScriptAnalyzer found $($results.Count) issue(s)" }
