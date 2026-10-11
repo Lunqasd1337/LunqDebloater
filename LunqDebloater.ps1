@@ -190,53 +190,62 @@ try {
 
     # ---------- Что лежит в Config ----------
     # Обновления, драйверы, программы и скрипты берутся из Config. -UpdatesPath и -DriversPath
-    # заменяют свои подпапки и должны указывать на непустую папку.
+    # заменяют свои подпапки и должны указывать на непустую папку. В пошаговом режиме папку
+    # с обновлениями и драйверами можно выбрать прямо в сводке, а драйверы взять с этого компьютера.
     $updatesDir = Join-Path $ConfigPath 'Updates'
     $driversDir = Join-Path $ConfigPath 'Drivers'
-    $foundUpdates = @()
-    $foundSafeOS = @()
-    $foundSetupDU = @()
-    $foundDrivers = @()
-    $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
     if (-not $listMode) {
         if ($UpdatesPath) {
             if (-not (Test-Path -LiteralPath $UpdatesPath -PathType Container)) { throw (Get-LunqText 'Main.UpdatesDirNotFound' $UpdatesPath) }
             $updatesDir = (Resolve-Path -LiteralPath $UpdatesPath).Path
         }
-        $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
-        # Safe OS и Setup Dynamic Update лежат в своих подпапках: они для WinRE и установщика, а не для системы.
-        $foundSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
-        # Get-LunqUpdateFiles отдаёт список одним объектом: фильтр в конвейере увидел бы его целиком.
-        $setupFiles = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup')
-        $foundSetupDU = @($setupFiles | Where-Object { $_.Extension -eq '.cab' })
-        if ($UpdatesPath -and ($foundUpdates.Count + $foundSafeOS.Count + $foundSetupDU.Count) -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
-
         if ($DriversPath) {
             if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw (Get-LunqText 'Main.DriversDirNotFound' $DriversPath) }
             $driversDir = (Resolve-Path -LiteralPath $DriversPath).Path
         }
-        $foundDrivers = Get-LunqDriverFiles -Path $driversDir
-        if ($DriversPath -and $foundDrivers.Count -eq 0) {
-            throw (Get-LunqText 'Main.DriversDirEmpty' $DriversPath)
-        }
-        if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
     }
-
-    $foundDU = @($foundSafeOS) + @($foundSetupDU)
-    $useUpdates = ($foundUpdates.Count + $foundDU.Count) -gt 0 -and -not $SkipUpdates
-    $useDrivers = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
-    $useApps = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
-    $useScripts = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
-    # Файл ответов: в пошаговом режиме включён по умолчанию, с параметрами только по ключам.
-    $useUnattend = $interactive -or $Unattend -or $BypassRequirements -or $LocalAccount
-    $useOobe = $useUnattend
-    $useRegion = $useUnattend
-    $useBypass = [bool]$BypassRequirements
-    $useLocalAccount = [bool]$LocalAccount
+    $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
     $hostRegion = $null
     if (-not $listMode) { $hostRegion = Get-LunqHostRegion }
+    # Драйверы этого компьютера выгружаются во временную папку: в Config они остались бы и для следующих сборок.
+    $hostDriversDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
+    # Что пользователь включил и выключил в сводке (Key пункта и Enabled). Когда сводка
+    # показывается снова после выбора папки, его выбор сохраняется.
+    $choices = @{}
 
-    if ($interactive -and -not $listMode) {
+    while ($true) {
+        $foundUpdates = @()
+        $foundSafeOS = @()
+        $foundSetupDU = @()
+        $foundDrivers = @()
+        if (-not $listMode) {
+            $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
+            # Safe OS и Setup Dynamic Update лежат в своих подпапках: они для WinRE и установщика, а не для системы.
+            $foundSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
+            # Get-LunqUpdateFiles отдаёт список одним объектом: фильтр в конвейере увидел бы его целиком.
+            $setupFiles = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup')
+            $foundSetupDU = @($setupFiles | Where-Object { $_.Extension -eq '.cab' })
+            if ($UpdatesPath -and ($foundUpdates.Count + $foundSafeOS.Count + $foundSetupDU.Count) -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
+
+            $foundDrivers = Get-LunqDriverFiles -Path $driversDir
+            if ($DriversPath -and $foundDrivers.Count -eq 0) {
+                throw (Get-LunqText 'Main.DriversDirEmpty' $DriversPath)
+            }
+        }
+
+        $foundDU = @($foundSafeOS) + @($foundSetupDU)
+        $useUpdates = ($foundUpdates.Count + $foundDU.Count) -gt 0 -and -not $SkipUpdates
+        $useDrivers = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
+        $useApps = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
+        $useScripts = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
+        # Файл ответов: в пошаговом режиме включён по умолчанию, с параметрами только по ключам.
+        $useUnattend = $interactive -or $Unattend -or $BypassRequirements -or $LocalAccount
+        $useOobe = $useUnattend
+        $useRegion = $useUnattend
+        $useBypass = [bool]$BypassRequirements
+        $useLocalAccount = [bool]$LocalAccount
+        if (-not $interactive -or $listMode) { break }
+
         Write-Section (Get-LunqText 'Main.SectionContents')
         Write-Info (Get-LunqText 'Main.ContentsIntro' $ConfigPath)
         Write-Info (Get-LunqText 'Main.ContentsHowTo')
@@ -250,7 +259,7 @@ try {
             foreach ($u in @($foundUpdates) + $foundDU) { $sum += $u.Length }
             $updatesName = Get-LunqText 'Main.UpdatesFound' ($foundUpdates.Count + $foundDU.Count) (Format-Size $sum)
             $updatesDetails = @($foundUpdates | ForEach-Object { $_.Name }) + @($foundSafeOS | ForEach-Object { "SafeOS\$($_.Name)" }) +
-                @($foundSetupDU | ForEach-Object { "Setup\$($_.Name)" }) + (Get-LunqText 'Main.UpdatesFoundHint')
+                @($foundSetupDU | ForEach-Object { "Setup\$($_.Name)" }) + (Get-LunqText 'Main.FoundIn' $updatesDir) + (Get-LunqText 'Main.UpdatesFoundHint')
         }
         else {
             $updatesName = Get-LunqText 'Main.UpdatesNone'
@@ -258,7 +267,7 @@ try {
         }
         if ($hasDrivers) {
             $driversName = Get-LunqText 'Main.DriversFound' $foundDrivers.Count (Format-Size (Get-FolderSize $driversDir))
-            $driversDetails = Get-LunqText 'Main.DriversFoundHint'
+            $driversDetails = @((Get-LunqText 'Main.FoundIn' $driversDir), (Get-LunqText 'Main.DriversFoundHint'))
         }
         else {
             $driversName = Get-LunqText 'Main.DriversNone'
@@ -293,10 +302,13 @@ try {
             (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ([bool]$UpdatesToSetup -or $foundDU.Count -gt 0) -Available $hasUpdates `
                 -Name (Get-LunqText 'Main.OptUpdatesToSetup') `
                 -Details $updatesToSetupDetails),
+            (New-LunqOption -Key 'pickUpdates' -Action -Name (Get-LunqText 'Main.OptPickUpdates') -Details (Get-LunqText 'Main.OptPickUpdatesHint')),
             (New-LunqOption -Key 'drivers' -Enabled $useDrivers -Available $hasDrivers -Name $driversName -Details $driversDetails),
             (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled ([bool]$DriversToSetup) -Available $hasDrivers `
                 -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) `
                 -Details (Get-LunqText 'Main.OptDriversToSetupHint')),
+            (New-LunqOption -Key 'pickDrivers' -Action -Name (Get-LunqText 'Main.OptPickDrivers') -Details (Get-LunqText 'Main.OptPickDriversHint')),
+            (New-LunqOption -Key 'hostDrivers' -Action -Name (Get-LunqText 'Main.OptHostDrivers') -Details (Get-LunqText 'Main.OptHostDriversHint')),
             (New-LunqOption -Key 'apps' -Enabled $useApps -Available $hasApps -Name $appsName -Details $appsDetails),
             (New-LunqOption -Key 'scripts' -Enabled $useScripts -Available $hasScripts -Name $scriptsName -Details $scriptsDetails),
             (New-LunqOption -Key 'unattend' -Enabled $useUnattend -Name (Get-LunqText 'Main.OptUnattend') `
@@ -310,7 +322,13 @@ try {
             (New-LunqOption -Key 'localAccount' -Parent 'unattend' -Enabled $useLocalAccount -Name (Get-LunqText 'Main.OptLocalAccount') `
                 -Details (Get-LunqText 'Main.OptLocalAccountHint'))
         )
-        Select-LunqBuildOptions -Options $options
+        foreach ($option in $options) {
+            if ($choices.ContainsKey($option.Key)) { $option.Enabled = $choices[$option.Key] }
+        }
+        $action = Select-LunqBuildOptions -Options $options
+        foreach ($option in $options) {
+            if (-not $option.Action) { $choices[$option.Key] = $option.Enabled }
+        }
         $useUpdates = Test-LunqOption -Options $options -Key 'updates'
         $useDrivers = Test-LunqOption -Options $options -Key 'drivers'
         $useApps = Test-LunqOption -Options $options -Key 'apps'
@@ -323,7 +341,48 @@ try {
         $UpdatesToSetup = [switch](Test-LunqOption -Options $options -Key 'updatesToSetup')
         $DriversToSetup = [switch](Test-LunqOption -Options $options -Key 'driversToSetup')
         if ($hasUpdates) { $CleanupComponents = [switch](Test-LunqOption -Options $options -Key 'cleanup') }
+        if (-not $action) { break }
+
+        # Новая папка заменяет прежнюю, а пункты обновлений или драйверов снова получают
+        # значения по умолчанию: выбрав папку, пользователь хочет её содержимое в образе.
+        if ($action -eq 'pickUpdates') {
+            $picked = Select-LunqFolder -Description (Get-LunqText 'Main.PickUpdatesTitle')
+            if ($picked) {
+                $pickedCount = @(Get-LunqUpdateFiles -Path $picked).Count + @(Get-LunqUpdateFiles -Path (Join-Path $picked 'SafeOS')).Count +
+                    @(Get-LunqUpdateFiles -Path (Join-Path $picked 'Setup')).Count
+                if ($pickedCount -eq 0) { Write-Warning (Get-LunqText 'Main.UpdatesDirEmpty' $picked) }
+                else {
+                    $updatesDir = $picked
+                    $UpdatesPath = $picked
+                    foreach ($key in 'updates', 'updatesToSetup') { $choices.Remove($key) }
+                }
+            }
+        }
+        else {
+            $pickedDrivers = $null
+            if ($action -eq 'pickDrivers') {
+                $pickedDrivers = Select-LunqFolder -Description (Get-LunqText 'Main.PickDriversTitle')
+                if ($pickedDrivers -and @(Get-LunqDriverFiles -Path $pickedDrivers).Count -eq 0) {
+                    Write-Warning (Get-LunqText 'Main.DriversDirEmpty' $pickedDrivers)
+                    $pickedDrivers = $null
+                }
+            }
+            else {
+                Write-Info (Get-LunqText 'Main.HostDriversExporting')
+                try {
+                    if (@(Export-LunqHostDrivers -Destination $hostDriversDir).Count -gt 0) { $pickedDrivers = $hostDriversDir }
+                    else { Write-Warning (Get-LunqText 'Main.HostDriversNone') }
+                }
+                catch { Write-Warning (Get-LunqText 'Main.HostDriversFailed' $_.Exception.Message) }
+            }
+            if ($pickedDrivers) {
+                $driversDir = $pickedDrivers
+                $DriversPath = $pickedDrivers
+                foreach ($key in 'drivers', 'driversToSetup') { $choices.Remove($key) }
+            }
+        }
     }
+    if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
 
     $updates = @()
     $safeOSUpdates = @()

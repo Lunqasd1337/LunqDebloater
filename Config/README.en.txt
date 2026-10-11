@@ -3,7 +3,9 @@
 
 Everything in this folder goes into the image. Before the build the script shows the
 "What goes into the image" summary, and you can turn off anything by its number
-without deleting it from here.
+without deleting it from here. Drivers and updates do not have to be put here:
+in step-by-step mode their folder can be chosen right in the summary, and the drivers
+can be taken from this computer.
 
   Profile.json   What to remove from Windows and which registry settings to change. The
                  profile is split into categories that can be turned on and off before

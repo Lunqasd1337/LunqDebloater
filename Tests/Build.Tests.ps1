@@ -282,6 +282,47 @@ Describe 'Пошаговый режим' {
         $run.Output | Should -Match 'Сборка отменена'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
     }
+
+    # В сводке без обновлений и драйверов в Config пункты со стрелкой идут первыми:
+    # [1] папка с обновлениями, [2] папка с драйверами, [3] драйверы этого компьютера,
+    # дальше [4] программы и [5] файл ответов.
+    It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
+        # «5 2»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '5 2', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Драйверы: 3 шт\.'
+        $run.Output | Should -Match 'add driver net\.inf'
+        $run.Output | Should -Match 'Установка:\s+без файла ответов'
+    }
+
+    It 'папка с обновлениями выбирается в сводке' {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Обновления: 3 шт\.'
+        $run.Output | Should -Match 'add package windows11\.0-kb5080000-x64\.msu'
+    }
+
+    It 'драйверы этого компьютера выгружаются и встраиваются' {
+        $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
+        try {
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '', '5', 'y')
+            $run.Error | Should -BeNullOrEmpty
+            $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
+            $run.Output | Should -Match 'add driver hostnet\.inf'
+        }
+        finally { Remove-Item -LiteralPath $hostDrivers -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '2', '', '5', 'y') -Prepare {
+            param($t)
+            $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
+            $env:LUNQ_TEST_FOLDER = $empty.FullName
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'нет файлов \.inf'
+        $run.Output | Should -Not -Match 'add driver'
+    }
 }
 
 Describe 'Английский интерфейс' {
