@@ -9,6 +9,7 @@ This file is for people who change the code: where things are, in which order a 
 ```text
 LunqDebloater.ps1            Entry point: parameters, step-by-step mode, checks, plan and the build context
 Start.cmd                    Double-click launcher (step-by-step mode)
+Install.ps1                  Loader for the one-command start (irm | iex)
 Config\                      Everything the user adjusts
   Profile.json               Profile: what to remove and what to write to the registry
   Apps.txt                   winget programs for the first sign-in
@@ -133,6 +134,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
 | `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode, in Russian and English |
 | `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
+| `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
@@ -152,6 +154,14 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
 
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
+
+## The Install.ps1 loader
+
+`Install.ps1` does not depend on the module. The user gets it with `irm <raw link to main> | iex`, and the loader then downloads the archive of the latest release. So the loader itself comes from `main`, while the program comes only from a released version.
+
+Unlike the other scripts it is stored as ASCII without a BOM, which is why its messages and comments are in English. `irm` hands the file to `iex` as a string, and how Windows PowerShell 5.1 decodes it depends on the response headers. A BOM could end up at the start of the code, and Russian letters decoded with the wrong encoding can turn into "smart" quotes and break parsing. `Tests\Install.Tests.ps1` checks that the file is ASCII only.
+
+Next to the program the loader keeps `.lunq-install.json` with the installed release tag and the hashes of the `Config` files it put there. A `Config` file whose hash has changed since then counts as the user's edit and is not replaced on update.
 
 ## Versions and releases
 

@@ -54,11 +54,38 @@ LunqDebloater меняет установочный образ Windows так, �
 
 ## Быстрый старт
 
+Проще всего одной командой. Откройте PowerShell и выполните:
+
+```powershell
+irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1 | iex
+```
+
+Команда скачает последний релиз в папку `LunqDebloater` вашего профиля (`C:\Users\<имя>\LunqDebloater`) и запустит скрипт в пошаговом режиме, дальше пункты 3-5. Подробнее в разделе «Запуск одной командой».
+
+Или вручную:
+
 1. Скачайте репозиторий (Code → Download ZIP) и распакуйте его.
 2. Дважды щёлкните `Start.cmd`. Скрипт попросит права администратора.
 3. Дальше он всё спросит сам: выберите ISO в окне, затем категории твиков, проверьте сводку «Что войдёт в образ» и выберите редакцию (у каждой редакции есть короткое пояснение).
 4. Проверьте план сборки и подтвердите. Сборка обычно занимает 15-40 минут, в окне видно «Шаг N из M» с пояснением, что происходит.
 5. В конце скрипт покажет итог: что удалено, чего не нашлось в образе, где лежит готовый ISO.
+
+## Запуск одной командой
+
+`irm ... | iex` скачивает и выполняет [Install.ps1](Install.ps1). Его можно прочитать до запуска. Загрузчик делает вот что:
+
+- узнаёт на GitHub последний релиз (не текущий `main`) и раскладывает его в `C:\Users\<имя>\LunqDebloater`. Папка в профиле выбрана потому, что скрипт работает из неё с правами администратора, а файлы в корне диска C: могут менять и другие пользователи компьютера;
+- запускает `LunqDebloater.ps1` в Windows PowerShell 5.1, даже если команду ввели в PowerShell 7. Права администратора скрипт попросит сам.
+
+Та же команда обновляет программу. Если версия уже последняя, скрипт сразу запускается. При обновлении папки программы заменяются целиком. Файлы в `Config`, которые вы изменили, остаются, и загрузчик их перечислит. Ваши файлы рядом (ISO, `Logs`) не трогаются. Без интернета запускается уже скачанная версия.
+
+Другая папка задаётся так:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1))) -Path D:\LunqDebloater
+```
+
+В непустую папку, где нет LunqDebloater, загрузчик ничего не кладёт.
 
 ## Запуск с параметрами
 
@@ -297,9 +324,10 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 
 | Путь | Что там |
 |---|---|
-| `LunqDebloater.ps1` | Сам скрипт: параметры, пошаговый режим, план и список шагов сборки |
+| `LunqDebloater.ps1` | Сам скрипт: параметры, пошаговый режим, проверки и план сборки |
+| `Install.ps1` | Загрузчик для запуска одной командой (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | Модуль с функциями. Версия задаётся в манифесте `LunqDebloater.psd1` |
-| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Build` (шаги сборки), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Тексты интерфейса: `ru\*.psd1` и `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | Скрипт первого входа, который кладётся в образ |
 | `Schemas\Profile.schema.json` | JSON-схема профиля |
@@ -311,6 +339,7 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 

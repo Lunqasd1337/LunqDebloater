@@ -54,11 +54,38 @@ To keep several sets of settings, copy the folder (for example, to `Config-Offic
 
 ## Quick start
 
+The easiest way is one command. Open PowerShell and run:
+
+```powershell
+irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1 | iex
+```
+
+The command downloads the latest release into the `LunqDebloater` folder in your profile (`C:\Users\<name>\LunqDebloater`) and starts the script in step-by-step mode, then continue from step 3. See "One-command start" for details.
+
+Or by hand:
+
 1. Download the repository (Code > Download ZIP) and extract it.
 2. Double-click `Start.cmd`. The script asks for administrator rights.
 3. Then it asks for everything itself: pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary and choose the edition (each edition has a short explanation).
 4. Check the build plan and confirm. A build usually takes 15-40 minutes. The window shows "Step N of M" with an explanation of what is happening.
 5. At the end the script shows the result: what was removed, what was not found in the image, and where the finished ISO is.
+
+## One-command start
+
+`irm ... | iex` downloads and runs [Install.ps1](Install.ps1), which you can read before running it. The loader:
+
+- finds the latest release on GitHub (not the current `main`) and puts it into `C:\Users\<name>\LunqDebloater`. A folder in the profile is used because the script runs from it as administrator, and files in the root of drive C: can be changed by other users of the computer too;
+- starts `LunqDebloater.ps1` in Windows PowerShell 5.1, even if the command was typed in PowerShell 7. The script asks for administrator rights itself.
+
+The same command updates the program. If the version is already the latest, the script just starts. On update the program folders are replaced as a whole. Files in `Config` that you changed stay, and the loader lists them. Your own files next to it (an ISO, `Logs`) are not touched. Without internet the version already downloaded starts.
+
+To use another folder:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1))) -Path D:\LunqDebloater
+```
+
+The loader puts nothing into a non-empty folder that has no LunqDebloater in it.
 
 ## Running with parameters
 
@@ -297,9 +324,10 @@ The code is laid out like this:
 
 | Path | What is there |
 |---|---|
-| `LunqDebloater.ps1` | The script itself: parameters, step-by-step mode, the plan and the list of build steps |
+| `LunqDebloater.ps1` | The script itself: parameters, step-by-step mode, checks and the build plan |
+| `Install.ps1` | Loader for the one-command start (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | The module with the functions. The version is set in the `LunqDebloater.psd1` manifest |
-| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Build` (build steps), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |
@@ -311,6 +339,7 @@ The tests do not touch the system: stubs replace DISM, reg.exe, oscdimg and wing
 Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
+Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 
