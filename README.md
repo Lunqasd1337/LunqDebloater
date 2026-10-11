@@ -87,6 +87,16 @@ irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1
 
 В непустую папку, где нет LunqDebloater, загрузчик ничего не кладёт.
 
+### Ярлык на рабочем столе
+
+Ярлык с этой командой при каждом запуске проверяет обновления и запускает последнюю версию. Щёлкните правой кнопкой по рабочему столу, выберите «Создать» → «Ярлык» и вставьте в поле «Укажите расположение объекта»:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1 | iex"
+```
+
+Назовите ярлык, например, «LunqDebloater». Окно не закроется само: в конце скрипт ждёт Enter.
+
 ## Запуск с параметрами
 
 Все параметры описаны в таблице ниже. `Get-Help .\LunqDebloater.ps1` показывает их список и ссылки на это описание, а `Get-Help .\LunqDebloater.ps1 -Online` открывает его на GitHub. Для повторных сборок и автоматизации всё можно задать параметрами, тогда скрипт ничего не спрашивает и берёт всё, что есть в `Config`:
