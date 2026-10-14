@@ -7,6 +7,7 @@
     'Report.RemovedOrDisabled' = 'removed or turned off: {0}'
     'Report.RegistryPart'      = 'registry: {0} of {1}'
     'Report.RegistryFailed'    = 'registry entries: {0}'
+    'Report.NotApplicable'     = 'Do not apply to this image: {0}'
     'Report.Missing'           = 'Not in the image or already removed: {0}'
     'Report.SkippedCategories' = 'Skipped categories: {0}'
     'Report.OutputIso'         = 'Final ISO: {0} ({1})'

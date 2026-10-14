@@ -29,6 +29,14 @@ function Write-UpdateList {
     }
 }
 
+function Test-LunqNotApplicable {
+    # DISM отвечает 0x800f081e (CBS_E_NOT_APPLICABLE), когда пакет предназначен для другого образа.
+    # Это не сбой: например, Safe OS Dynamic Update подходит только к WinRE.
+    param([Parameter(Mandatory)]$ErrorRecord)
+    $exception = $ErrorRecord.Exception
+    return ('{0:x8}' -f $exception.HResult) -eq '800f081e' -or $exception.Message -match '(?i)0x800f081e'
+}
+
 function Add-LunqUpdates {
     # Встраивает обновления в смонтированный образ. Временные файлы DISM кладёт
     # в рабочую папку, а не в %TEMP%, чтобы не забить системный диск.
@@ -47,13 +55,25 @@ function Add-LunqUpdates {
         $i++
         Write-Info (Get-LunqText 'Servicing.Installing' $i $Files.Count $file.Name (Format-Size $file.Length))
         try {
-            Add-WindowsPackage -Path $MountPath -PackagePath $file.FullName -ScratchDirectory $ScratchDir -NoRestart -ErrorAction Stop | Out-Null
+            # Свои предупреждения командлет повторяет в тексте ошибки, поэтому они не выводятся дважды.
+            Add-WindowsPackage -Path $MountPath -PackagePath $file.FullName -ScratchDirectory $ScratchDir -NoRestart -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
             $result.Done.Add($file.Name)
         }
         catch {
-            Write-Warning (Get-LunqText 'Servicing.UpdateFailed' $file.Name $_.Exception.Message)
-            $result.Failed.Add($file.Name)
+            if (Test-LunqNotApplicable $_) {
+                Write-Info (Get-LunqText 'Servicing.UpdateNotApplicable' $file.Name)
+                $result.Skipped.Add($file.Name)
+            }
+            else {
+                Write-Warning (Get-LunqText 'Servicing.UpdateFailed' $file.Name $_.Exception.Message)
+                $result.Failed.Add($file.Name)
+            }
         }
+    }
+    # Dynamic Update из Каталога выглядит как обычное обновление (.cab с номером KB), но ставится
+    # не в сам образ: Safe OS только в WinRE, Setup распаковывается в установщик.
+    if ($Kind -eq 'Updates' -and @($result.Skipped | Where-Object { $_ -match '(?i)\.cab$' }).Count -gt 0) {
+        Write-Info (Get-LunqText 'Servicing.DynamicUpdateHint')
     }
     return $result
 }

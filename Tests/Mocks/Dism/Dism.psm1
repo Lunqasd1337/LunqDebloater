@@ -88,6 +88,11 @@ function Add-WindowsPackage {
     param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath)
     Write-Host "    [mock] add package $(Split-Path $PackagePath -Leaf)"
     if ($PackagePath -match 'broken') { throw 'The package does not apply to this image' }
+    # Так DISM отвечает на пакет для другого образа, например Safe OS Dynamic Update вне WinRE.
+    if ((Split-Path $PackagePath -Leaf) -match 'notapplicable') {
+        Write-Warning "Не удалось добавить пакет $PackagePath"
+        throw 'Сбой Add-WindowsPackage. Код ошибки: 0x800f081e'
+    }
 }
 
 function Add-WindowsDriver {
