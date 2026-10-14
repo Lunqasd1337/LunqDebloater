@@ -19,6 +19,15 @@ function Get-LunqDriveInfo {
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
 
+# Окно выбора папки: папку задаёт тест, пустое значение означает «Отмена».
+function Select-LunqFolder {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Description)
+    Write-Host "    [mock] folder dialog: $Description"
+    if ($env:LUNQ_TEST_FOLDER) { return $env:LUNQ_TEST_FOLDER }
+    return $null
+}
+
 function Mount-IsoImage {
     # Подключённый ISO изображает папка с sources\install.esd.
     param([Parameter(Mandatory)][string]$IsoPath)

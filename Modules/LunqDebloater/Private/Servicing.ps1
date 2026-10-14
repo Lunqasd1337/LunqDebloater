@@ -69,6 +69,16 @@ function Get-LunqDriverFiles {
             Sort-Object FullName)
 }
 
+function Export-LunqHostDrivers {
+    # Выгружает сторонние драйверы этой Windows (то же, что pnputil /export-driver) в пустую папку.
+    # Удобно, когда ISO собирают для этого же компьютера: драйверы не нужно искать у производителя.
+    param([Parameter(Mandatory)][string]$Destination)
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Export-WindowsDriver -Online -Destination $Destination | Out-Null
+    return , @(Get-LunqDriverFiles -Path $Destination)
+}
+
 function Get-FolderSize {
     param([Parameter(Mandatory)][string]$Path)
     $sum = [long]0

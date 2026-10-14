@@ -97,6 +97,18 @@ function Add-WindowsDriver {
     if ($Driver -match 'bad') { throw 'The driver does not fit this image' }
 }
 
+function Export-WindowsDriver {
+    # Драйверы этого компьютера: один сетевой драйвер, если тест не попросил пустой результат.
+    [CmdletBinding()]
+    param([switch]$Online, $Destination, $LogPath)
+    if (-not $Online) { throw 'Export-WindowsDriver: only -Online is expected' }
+    if ($env:LUNQ_TEST_NO_HOST_DRIVERS) { return }
+    $folder = Join-Path $Destination 'oem1.inf_amd64'
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $folder 'hostnet.inf') -Value "[Version]`r`nClass=Net"
+    [pscustomobject]@{ Driver = 'oem1.inf'; OriginalFileName = (Join-Path $folder 'hostnet.inf') }
+}
+
 function Repair-WindowsImage { [CmdletBinding()] param($Path, [switch]$StartComponentCleanup, [switch]$ResetBase, $LogPath) throw 'Repair-WindowsImage must not be called: cleanup goes through dism.exe' }
 
 function Get-DiskImage { [CmdletBinding()] param($ImagePath) [pscustomobject]@{ ImagePath = $ImagePath; Attached = [bool]$env:LUNQ_TEST_ISO_ATTACHED } }

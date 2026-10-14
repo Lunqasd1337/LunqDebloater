@@ -48,7 +48,7 @@ All settings are in one `Config` folder next to the script. There is no need to 
 
 A short guide to each item is in [Config/README.en.txt](Config/README.en.txt). Drivers and updates are not stored in git.
 
-Before the build the script shows the "What goes into the image" summary: what it found in `Config`, with numbers. You can turn off anything you do not need by its number without deleting it from the folder. The same summary turns on component store cleanup, adding updates and drivers to Windows Setup and the recovery environment, and the answer file (see "Answer file"). If something is missing, the summary says where to put it.
+Before the build the script shows the "What goes into the image" summary: what it found in `Config`, with numbers. You can turn off anything you do not need by its number without deleting it from the folder. The same summary turns on component store cleanup, adding updates and drivers to Windows Setup and the recovery environment, and the answer file (see "Answer file"). Drivers and updates do not have to be put in `Config`: the items marked with an arrow in the summary open a folder picker (for example, Downloads or a USB stick with the vendor's drivers), and the "Take this computer's drivers" item exports the drivers of the current Windows. After that the summary is shown again and keeps the rest of your choices.
 
 To keep several sets of settings, copy the folder (for example, to `Config-Office`) and run with `-ConfigPath .\Config-Office`.
 
@@ -166,20 +166,20 @@ It lists the version and date of the build, the original ISO and edition, the an
 ## Updates
 
 1. Download the cumulative update for your version from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), for example by searching for `Windows 11 Version 26H2 x64`. If the catalog has several files for it, download all of them.
-2. Put the files in `Config\Updates`. They appear in the summary before the build, and with parameters they are added automatically (add `-SkipUpdates` if you do not want that).
+2. In step-by-step mode choose their folder in the summary with "Choose a folder with updates", for example Downloads. Or put the files in `Config\Updates`: then they appear in the summary right away, and with parameters they are added automatically (add `-SkipUpdates` if you do not want that). With parameters, `-UpdatesPath` sets another folder.
 
 Put only updates for the system itself in the folder: the cumulative update and the .NET update. The catalog shows Safe OS and Setup Dynamic Update packages in the same search, but they are for the recovery environment and Windows Setup and do not install into the system itself. They have their own subfolders:
 
 - `Config\Updates\SafeOS`: Safe OS Dynamic Update (`.cab`), installed into WinRE after the cumulative update;
 - `Config\Updates\Setup`: Setup Dynamic Update (`.cab`), expanded into the ISO's `sources` folder to update the Windows Setup files.
 
-They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
+The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
 Updates are installed right after the image is mounted, in ascending KB number order, before apps and components are removed. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
 
 ## Drivers
 
-1. Put extracted drivers (`.inf` files together with `.sys`, `.cat` and the rest) in `Config\Drivers`. Any subfolders are fine. The easiest way is to export all drivers from the computer that Windows will be installed on: `Export-WindowsDriver -Online -Destination .\Config\Drivers`. Other ways are described in [Config/README.en.txt](Config/README.en.txt).
+1. If the ISO is built for this same computer, choose "Take this computer's drivers" in the summary: the script exports the third-party drivers of the current Windows. For another computer choose a folder with extracted drivers (`.inf` files together with `.sys`, `.cat` and the rest, any subfolders) with "Choose a folder with drivers", for example a USB stick with the vendor's drivers. You can also put them in `Config\Drivers`, and with parameters set the folder with `-DriversPath`. How to extract drivers is described in [Config/README.en.txt](Config/README.en.txt).
 2. The drivers appear in the summary before the build, and with parameters they are added automatically (add `-SkipDrivers` if you do not want that).
 3. If Windows Setup does not see the disk (Intel RST/VMD controllers, RAID), add the drivers to it as well: in the summary it is the item under the drivers, with parameters you need the `-DriversToSetup` switch. The drivers then also go into the recovery environment (WinRE), so it sees the disk too. Only disk controller drivers are added there (class `SCSIAdapter` or `HDC` in the `.inf`): Windows Setup is loaded into memory completely at boot, and all drivers would slow it down a lot.
 
