@@ -16,6 +16,65 @@ function Get-LunqUpdateFiles {
     return , @($sorted)
 }
 
+function Get-LunqCabKind {
+    # Что за .cab лежит рядом с обычными обновлениями, если папку выбрали целиком (например,
+    # «Загрузки») и подпапок SafeOS и Setup в ней нет. Обновления Windows Каталог отдаёт в .msu,
+    # а .cab с номером KB обычно оказывается Dynamic Update:
+    #   Setup: просто файлы установщика, пакета DISM (.mum) в нём нет;
+    #   SafeOS: пакет Package_for_SafeOSDU, он ставится только в WinRE.
+    # Возвращает 'Setup', 'SafeOS' или 'Update': обычный пакет и всё, что распознать не удалось.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$TempDir)
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $magic = New-Object byte[] 4
+        $read = $stream.Read($magic, 0, 4)
+    }
+    finally { $stream.Dispose() }
+    if ($read -ne 4 -or [Text.Encoding]::ASCII.GetString($magic) -ne 'MSCF') { return 'Update' }
+
+    $dir = Join-Path $TempDir ([guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    try {
+        # Распаковываются только манифесты пакета, остальное содержимое не нужно.
+        $code = Invoke-Native expand.exe @($Path, '-F:*.mum', $dir)
+        if ($code -ne 0) { return 'Update' }
+        $manifests = @(Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*.mum')
+        if ($manifests.Count -eq 0) { return 'Setup' }
+        foreach ($manifest in $manifests) {
+            if (Select-String -LiteralPath $manifest.FullName -Pattern 'Package_for_SafeOSDU' -SimpleMatch -Quiet) { return 'SafeOS' }
+        }
+        return 'Update'
+    }
+    finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+function Split-LunqDynamicUpdates {
+    # Делит обновления из одной папки на обычные, Safe OS и Setup Dynamic Update.
+    # Проверяются только .cab. Cache (путь, размер и время файла) избавляет от повторной
+    # распаковки, когда сводка показывается снова.
+    param($Files, [Parameter(Mandatory)][string]$TempDir, [hashtable]$Cache = @{})
+    $result = [pscustomobject]@{ Updates = @(); SafeOS = @(); Setup = @() }
+    foreach ($file in @($Files)) {
+        $kind = 'Update'
+        if ($file.Extension -eq '.cab') {
+            $key = '{0}|{1}|{2}' -f $file.FullName, $file.Length, $file.LastWriteTimeUtc.Ticks
+            if (-not $Cache.ContainsKey($key)) {
+                # Большой .cab проверяется несколько секунд, без строки это выглядело бы как зависание.
+                Write-Info (Get-LunqText 'Servicing.CheckingCab' $file.Name)
+                $Cache[$key] = Get-LunqCabKind -Path $file.FullName -TempDir $TempDir
+            }
+            $kind = $Cache[$key]
+        }
+        switch ($kind) {
+            'SafeOS' { $result.SafeOS += $file }
+            'Setup' { $result.Setup += $file }
+            default { $result.Updates += $file }
+        }
+    }
+    return $result
+}
+
 function Test-CumulativeUpdate {
     # Похоже ли хотя бы одно обновление на накопительное для самой Windows (а не, например, для .NET).
     param($Files)

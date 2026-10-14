@@ -212,19 +212,30 @@ try {
     # Что пользователь включил и выключил в сводке (Key пункта и Enabled). Когда сводка
     # показывается снова после выбора папки, его выбор сохраняется.
     $choices = @{}
+    # Какого вида .cab в корне папки обновлений: распознаётся один раз, а не при каждом показе сводки.
+    $cabKinds = @{}
+    $cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
 
     while ($true) {
         $foundUpdates = @()
         $foundSafeOS = @()
         $foundSetupDU = @()
+        $duNames = @()
         $foundDrivers = @()
         if (-not $listMode) {
-            $foundUpdates = Get-LunqUpdateFiles -Path $updatesDir
             # Safe OS и Setup Dynamic Update лежат в своих подпапках: они для WinRE и установщика, а не для системы.
-            $foundSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
+            # В папке, выбранной целиком (например, «Загрузки»), подпапок нет, поэтому .cab в корне
+            # распознаются по содержимому.
+            $split = Split-LunqDynamicUpdates -Files (Get-LunqUpdateFiles -Path $updatesDir) -TempDir $cabCheckDir -Cache $cabKinds
+            $subSafeOS = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'SafeOS')
             # Get-LunqUpdateFiles отдаёт список одним объектом: фильтр в конвейере увидел бы его целиком.
             $setupFiles = Get-LunqUpdateFiles -Path (Join-Path $updatesDir 'Setup')
-            $foundSetupDU = @($setupFiles | Where-Object { $_.Extension -eq '.cab' })
+            $subSetupDU = @($setupFiles | Where-Object { $_.Extension -eq '.cab' })
+            $foundUpdates = @($split.Updates)
+            $foundSafeOS = @($split.SafeOS) + @($subSafeOS)
+            $foundSetupDU = @($split.Setup) + @($subSetupDU)
+            $duNames = @($split.SafeOS | ForEach-Object { Get-LunqText 'Main.SafeOSItem' $_.Name }) + @($subSafeOS | ForEach-Object { "SafeOS\$($_.Name)" }) +
+                @($split.Setup | ForEach-Object { Get-LunqText 'Main.SetupDUItem' $_.Name }) + @($subSetupDU | ForEach-Object { "Setup\$($_.Name)" })
             if ($UpdatesPath -and ($foundUpdates.Count + $foundSafeOS.Count + $foundSetupDU.Count) -eq 0) { throw (Get-LunqText 'Main.UpdatesDirEmpty' $UpdatesPath) }
 
             $foundDrivers = Get-LunqDriverFiles -Path $driversDir
@@ -258,8 +269,7 @@ try {
             $sum = [long]0
             foreach ($u in @($foundUpdates) + $foundDU) { $sum += $u.Length }
             $updatesName = Get-LunqText 'Main.UpdatesFound' ($foundUpdates.Count + $foundDU.Count) (Format-Size $sum)
-            $updatesDetails = @($foundUpdates | ForEach-Object { $_.Name }) + @($foundSafeOS | ForEach-Object { "SafeOS\$($_.Name)" }) +
-                @($foundSetupDU | ForEach-Object { "Setup\$($_.Name)" }) + (Get-LunqText 'Main.FoundIn' $updatesDir) + (Get-LunqText 'Main.UpdatesFoundHint')
+            $updatesDetails = @($foundUpdates | ForEach-Object { $_.Name }) + $duNames + (Get-LunqText 'Main.FoundIn' $updatesDir) + (Get-LunqText 'Main.UpdatesFoundHint')
         }
         else {
             $updatesName = Get-LunqText 'Main.UpdatesNone'

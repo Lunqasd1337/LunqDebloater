@@ -9,6 +9,7 @@
     'Servicing.UpdateFailed'        = 'Could not install {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} does not apply to this image, skipping.'
     'Servicing.DynamicUpdateHint'   = 'If it is a Safe OS or Setup Dynamic Update, put it in the SafeOS or Setup subfolder of the updates folder.'
+    'Servicing.CheckingCab'         = 'Checking what kind of update {0} is...'
     'Servicing.DriverFailed'        = 'Could not add {0}: {1}'
     'Servicing.Cleanup'             = 'Removing old file versions left after the updates...'
     'Servicing.NoWinre'             = 'The image has no Windows\System32\Recovery\Winre.wim, skipping the recovery environment.'

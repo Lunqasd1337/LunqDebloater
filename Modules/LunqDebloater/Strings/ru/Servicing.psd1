@@ -9,6 +9,7 @@
     'Servicing.UpdateFailed'        = 'Не удалось установить {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} не подходит к этому образу, пропускаю.'
     'Servicing.DynamicUpdateHint'   = 'Если это Safe OS или Setup Dynamic Update, положите его в подпапку SafeOS или Setup папки с обновлениями.'
+    'Servicing.CheckingCab'         = 'Проверяю, что за обновление {0}...'
     'Servicing.DriverFailed'        = 'Не удалось добавить {0}: {1}'
     'Servicing.Cleanup'             = 'Удаляю старые версии файлов после обновлений...'
     'Servicing.NoWinre'             = 'В образе нет Windows\System32\Recovery\Winre.wim, среда восстановления пропущена.'
