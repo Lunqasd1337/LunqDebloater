@@ -43,6 +43,18 @@ Describe 'Read-LunqProfile' {
         { Read-LunqProfile -Path $path } | Should -Throw '*повторяется*'
     }
 
+    It 'флаги в кавычках отвергаются, а не считаются включёнными' {
+        # [bool]"false" в PowerShell равно $true: такая категория раньше молча включалась.
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'drivers'; Enabled = 'false' }) }
+        { Read-LunqProfile -Path $path } | Should -Throw "*Categories[[]drivers].Enabled*true или false*'false'*"
+        $path = New-TestProfile @{ Options = @{ RemoveFeaturePayload = 'false' }; Categories = @(@{ Id = 'a' }) }
+        { Read-LunqProfile -Path $path } | Should -Throw '*Options.RemoveFeaturePayload*'
+        $path = New-TestProfile @{ Options = @{ RemoveFeaturePayload = $true }; Categories = @(@{ Id = 'a'; Enabled = $false }) }
+        $p = Read-LunqProfile -Path $path
+        $p.RemoveFeaturePayload | Should -BeTrue
+        $p.Categories[0].Enabled | Should -BeFalse
+    }
+
     It 'не принимает неизвестный куст' {
         $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'HKCU'; Path = 'x' }) }) }
         { Read-LunqProfile -Path $path } | Should -Throw '*Неизвестный куст*'

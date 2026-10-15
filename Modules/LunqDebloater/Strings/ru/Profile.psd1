@@ -3,6 +3,7 @@
     'Profile.NotFound'             = 'Профиль не найден: {0}'
     'Profile.CategoryNoId'         = 'В профиле {0} у одной из категорий не указан Id.'
     'Profile.CategoryIdRepeated'   = 'В профиле {0} Id категории ''{1}'' повторяется.'
+    'Profile.NotBoolean'           = 'В профиле {0} поле {1} должно быть true или false без кавычек, а сейчас там ''{2}''.'
     'Profile.DefaultCategoryName'  = 'Профиль'
     'Profile.UnknownHive'          = 'Неизвестный куст ''{0}'' в категории ''{1}''. Допустимо: {2}'
     'Profile.RegistryNoPath'       = 'У записи реестра для куста {0} в категории ''{1}'' не указан Path.'

@@ -6,4 +6,5 @@
     'Image.BootFileMissing'    = 'Не найден загрузочный файл {0}'
     'Image.FolderNameHasSpace' = 'В имени папки {0} есть пробел, oscdimg не сможет собрать ISO.'
     'Image.OscdimgFailed'      = 'oscdimg завершился с кодом {0}'
+    'Image.IsoReplaceFailed'   = 'Образ собран, но заменить {0} не удалось: {1} Готовый образ лежит в {2}.'
 }

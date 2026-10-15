@@ -32,6 +32,11 @@ function Mount-WindowsImage {
         $winre = Join-Path $Path 'Windows\System32\Recovery\Winre.wim'
         New-Item -ItemType Directory -Path (Split-Path $winre) -Force | Out-Null
         if (-not (Test-Path -LiteralPath $winre)) { Set-Content -LiteralPath $winre -Value ('r' * 500) }
+        # Образ, в который кто-то уже положил свой Sysprep\unattend.xml.
+        if ($env:LUNQ_TEST_SYSPREP_UNATTEND) {
+            New-Item -ItemType Directory -Path (Join-Path $Path 'Windows\System32\Sysprep') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $Path 'Windows\System32\Sysprep\unattend.xml') -Value '<unattend />'
+        }
     }
     if ($ImagePath -like '*boot.wim') {
         # Установщик внутри boot.wim: его setup.exe и setuphost.exe копируются в sources ISO.

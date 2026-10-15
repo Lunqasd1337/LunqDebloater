@@ -75,12 +75,13 @@ public static class FakeWinget {
         # Обёртка: заглушки и запуск скрипта. Часы идут вперёд на каждый Start-Sleep, так что
         # ожидание интернета «до 5 минут» проходит мгновенно.
         $wrapper = @'
-param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask)
+param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails)
 $env:PATH = $Bin + [IO.Path]::PathSeparator + $env:PATH
 $env:WINDIR = $Windows
 $global:Now = [datetime]'2026-01-01'
 $global:Offline = [bool]$Offline
 $global:NoTask = [bool]$NoTask
+$global:AclFails = [bool]$AclFails
 $global:TaskFile = Join-Path $State 'task'
 function global:Get-Date { $global:Now }
 function global:Start-Sleep { param($Seconds = 0, $Milliseconds = 0) $global:Now = $global:Now.AddSeconds($Seconds).AddMilliseconds($Milliseconds) }
@@ -92,6 +93,7 @@ function global:New-ScheduledTaskAction { 'action' }
 function global:New-ScheduledTaskTrigger { 'trigger' }
 function global:New-ScheduledTaskPrincipal { 'principal' }
 function global:New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, $ExecutionTimeLimit) 'battery={0},{1} limit={2}' -f $AllowStartIfOnBatteries, $DontStopIfGoingOnBatteries, $ExecutionTimeLimit }
+function global:Set-Acl { param($LiteralPath, $AclObject, $ErrorAction) if ($global:AclFails) { throw 'доступ запрещён' }; Microsoft.PowerShell.Security\Set-Acl -LiteralPath $LiteralPath -AclObject $AclObject -ErrorAction Stop }
 function global:Start-Transcript { }
 function global:Stop-Transcript { }
 function global:Add-AppxPackage { }
@@ -103,10 +105,11 @@ function global:Add-AppxPackage { }
 
     function Invoke-FirstLogon {
         # Один вход в Windows: запуск скрипта в отдельном процессе. Возвращает вывод.
-        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask)
+        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask, [switch]$AclFails)
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Test.Root 'wrapper.ps1'), '-Lunq', $Test.Lunq, '-Windows', $Test.Windows, '-Bin', $Test.Bin, '-State', $Test.Root)
         if ($Offline) { $arguments += '-Offline' }
         if ($NoTask) { $arguments += '-NoTask' }
+        if ($AclFails) { $arguments += '-AclFails' }
         $output = & $script:PowerShell @arguments 2>&1 | Out-String
         return $output
     }
@@ -130,6 +133,15 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath (Join-Path $t.Windows 'System32\Sysprep\unattend.xml') | Should -BeFalse
         Test-Path -LiteralPath $t.Task | Should -BeFalse
         $out | Should -Match 'Установлено программ: 2'
+    }
+
+    It 'права на скрипты не поставились: об этом написано, а работа идёт дальше' {
+        # В Linux Get-Acl нет вовсе, в Windows отказывает заглушка Set-Acl: итог один.
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $out = Invoke-FirstLogon -Test $t -AclFails
+        $out | Should -Match ('Не удалось закрыть .*' + [regex]::Escape((Split-Path $t.User -Leaf)) + ' от других пользователей')
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+        $out | Should -Match 'Установлено программ: 1'
     }
 
     It 'по-английски, если в Language.txt записано en' {

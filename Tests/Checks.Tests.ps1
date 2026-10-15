@@ -48,9 +48,43 @@ Describe 'Рабочая папка и итоговый ISO' {
             $efi = Join-Path $isoRoot 'efi\microsoft\boot\efisys.bin'
             New-Item -ItemType Directory -Path (Split-Path $efi) -Force | Out-Null
             Set-Content -LiteralPath $efi -Value 'x'
-            Mock Invoke-Native { 0 }
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'iso'; 0 }
             New-BootableIso -IsoRoot $isoRoot -OutputPath (Join-Path $Root 'arm64.iso') -Oscdimg 'oscdimg.exe'
             Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter { $Arguments -contains "-bootdata:1#pEF,e,b$efi" }
+            Test-Path -LiteralPath (Join-Path $Root 'arm64.iso') | Should -BeTrue
+        }
+    }
+
+    It 'занятый прошлый ISO обнаруживается до сборки' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $out = Join-Path $Root 'locked_Lunq.iso'
+            Set-Content -LiteralPath $out -Value 'old'
+            Test-LunqOutputPath -OutputIso $out -IsoPath (Join-Path $Root 'Win11.iso') | Should -BeNullOrEmpty
+            # Так держит файл подключённый в Проводнике ISO.
+            $lock = [IO.File]::Open($out, 'Open', 'Read', 'None')
+            try { Test-LunqOutputPath -OutputIso $out -IsoPath (Join-Path $Root 'Win11.iso') | Should -BeLike '*занят другой программой*' }
+            finally { $lock.Dispose() }
+        }
+    }
+
+    It 'oscdimg с ошибкой не портит прошлый ISO и не оставляет недописанный файл' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $isoRoot = Join-Path $Root 'failiso'
+            $efi = Join-Path $isoRoot 'efi\microsoft\boot\efisys.bin'
+            New-Item -ItemType Directory -Path (Split-Path $efi) -Force | Out-Null
+            Set-Content -LiteralPath $efi -Value 'x'
+            $out = Join-Path $Root 'fail_Lunq.iso'
+            Set-Content -LiteralPath $out -Value 'old'
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'half'; 5 }
+            { New-BootableIso -IsoRoot $isoRoot -OutputPath $out -Oscdimg 'oscdimg.exe' } | Should -Throw '*кодом 5*'
+            Get-Content -LiteralPath $out | Should -Be 'old'
+            Test-Path -LiteralPath (Join-Path $Root 'fail_Lunq.partial.iso') | Should -BeFalse
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'new'; 0 }
+            New-BootableIso -IsoRoot $isoRoot -OutputPath $out -Oscdimg 'oscdimg.exe'
+            Get-Content -LiteralPath $out | Should -Be 'new'
+            Test-Path -LiteralPath (Join-Path $Root 'fail_Lunq.partial.iso') | Should -BeFalse
         }
     }
 

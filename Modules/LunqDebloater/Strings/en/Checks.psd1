@@ -11,6 +11,7 @@
     'Checks.OutputIsFolder'      = 'it is a folder, but a path to an .iso file is needed'
     'Checks.OutputNoFolder'      = 'the folder {0} does not exist, create it'
     'Checks.OutputNotWritable'   = 'files cannot be written to the folder {0}'
+    'Checks.OutputLocked'        = 'the file {0} is in use by another program (for example, the ISO is mounted as a drive in Explorer): eject it or close the program'
     'Checks.HostOlder'           = 'Windows on this computer (build {0}{1}) is older than the image ({2}). The DISM of this system may fail on some steps, most often when adding updates.'
     'Checks.WorkDirProblem'      = 'Working folder {0}: {1}'
     'Checks.WorkDirProblemHint'  = 'The script deletes everything in the working folder. Use -WorkDir to choose a new or empty folder, for example D:\LunqWork.'

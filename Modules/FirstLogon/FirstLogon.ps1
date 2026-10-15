@@ -24,6 +24,7 @@ $texts = @{
         Header         = 'LunqDebloater: первичная настройка Windows'
         DoNotClose     = 'Не закрывайте это окно, оно закроется само.'
         TaskFailed     = 'Не удалось создать задание для повторной попытки: {0}'
+        ProtectFailed  = 'Не удалось закрыть {0} от других пользователей: {1}'
         AppsHeader     = '==> Установка программ ({0})'
         WaitInternet   = 'Жду подключения к интернету (до 5 минут)...'
         WaitWinget     = 'Жду, пока Windows зарегистрирует winget (до 10 минут)...'
@@ -49,6 +50,7 @@ $texts = @{
         Header         = 'LunqDebloater: initial Windows setup'
         DoNotClose     = 'Do not close this window, it will close by itself.'
         TaskFailed     = 'Could not create the task for another attempt: {0}'
+        ProtectFailed  = 'Could not hide {0} from other users: {1}'
         AppsHeader     = '==> Installing apps ({0})'
         WaitInternet   = 'Waiting for an internet connection (up to 5 minutes)...'
         WaitWinget     = 'Waiting for Windows to register winget (up to 10 minutes)...'
@@ -108,7 +110,8 @@ function Protect-Path([string]$Path) {
         }
         Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
     }
-    catch { }   # права не поменять: работа идёт как раньше
+    # Работа идёт дальше, но в логе видно, что пароли и ключи рядом со скриптами остались доступны.
+    catch { Write-Host ('    ' + (Get-Text 'ProtectFailed' $Path $_.Exception.Message)) -ForegroundColor Yellow }
 }
 
 Start-Transcript -Path $log -Append | Out-Null

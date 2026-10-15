@@ -46,6 +46,11 @@ function Get-LunqBuildSteps {
                 param($c)
                 Mount-WindowsImage -ImagePath $c.WimPath -Index 1 -Path $c.MountDir | Out-Null
                 $c.State.Mounted = $true
+                # Sysprep\unattend.xml в образе помешал бы первому входу: лучше узнать об этом сразу,
+                # а не после обновлений, драйверов и WinRE.
+                if ($c.FirstLogon -and (Test-Path -LiteralPath (Join-Path $c.MountDir 'Windows\System32\Sysprep\unattend.xml'))) {
+                    throw (Get-LunqText 'PostInstall.UnattendExists')
+                }
             }
         },
         @{

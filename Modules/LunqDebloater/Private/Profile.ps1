@@ -30,6 +30,15 @@ function Get-ConfigList {
     return , @($value)
 }
 
+function ConvertTo-LunqProfileBool {
+    # Флаг профиля должен быть настоящим true или false: [bool]"false" в PowerShell равно $true,
+    # и "Enabled": "false" молча включал бы категорию.
+    param($Value, [bool]$Default, [Parameter(Mandatory)][string]$Field, [Parameter(Mandatory)][string]$Path)
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [bool]) { return $Value }
+    throw (Get-LunqText 'Profile.NotBoolean' $Path $Field $Value)
+}
+
 function Read-LunqProfile {
     # Читает профиль и приводит его к списку категорий. Профиль старого формата
     # (без Categories) превращается в одну категорию «Профиль».
@@ -50,13 +59,12 @@ function Read-LunqProfile {
             if ($categories | Where-Object { $_.Id -eq $id }) { throw (Get-LunqText 'Profile.CategoryIdRepeated' $Path $id) }
             $name = Get-LunqLocalized (Get-ConfigValue $raw 'Name')
             if (-not $name) { $name = $id }
-            $enabled = Get-ConfigValue $raw 'Enabled'
-            if ($null -eq $enabled) { $enabled = $true }
+            $enabled = ConvertTo-LunqProfileBool (Get-ConfigValue $raw 'Enabled') -Default $true -Field "Categories[$id].Enabled" -Path $Path
             $categories.Add([pscustomobject]@{
                     Id           = $id
                     Name         = [string]$name
                     Description  = Get-LunqLocalized (Get-ConfigValue $raw 'Description')
-                    Enabled      = [bool]$enabled
+                    Enabled      = $enabled
                     Appx         = Get-ConfigList $raw 'Appx'
                     Capabilities = Get-ConfigList $raw 'Capabilities'
                     Features     = Get-ConfigList $raw 'Features'
@@ -98,7 +106,12 @@ function Read-LunqProfile {
 
     # RemoveFeaturePayload в Options; в старом формате он лежал в Features.RemovePayload.
     $removePayload = Get-ConfigValue $config 'Options', 'RemoveFeaturePayload'
-    if ($null -eq $removePayload) { $removePayload = Get-ConfigValue $config 'Features', 'RemovePayload' }
+    $payloadField = 'Options.RemoveFeaturePayload'
+    if ($null -eq $removePayload) {
+        $removePayload = Get-ConfigValue $config 'Features', 'RemovePayload'
+        $payloadField = 'Features.RemovePayload'
+    }
+    $removePayload = ConvertTo-LunqProfileBool $removePayload -Default $false -Field $payloadField -Path $Path
 
     $profileName = Get-LunqLocalized (Get-ConfigValue $config 'Name')
     if (-not $profileName) { $profileName = [IO.Path]::GetFileNameWithoutExtension($Path) }
@@ -115,7 +128,7 @@ function Read-LunqProfile {
         Requirements         = $requirements
         Description          = Get-LunqLocalized (Get-ConfigValue $config 'Description')
         Path                 = $Path
-        RemoveFeaturePayload = [bool]$removePayload
+        RemoveFeaturePayload = $removePayload
         Categories           = $categories.ToArray()
     }
 }

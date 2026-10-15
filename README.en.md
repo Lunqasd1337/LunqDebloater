@@ -85,7 +85,7 @@ To use another folder:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1))) -Path D:\LunqDebloater
 ```
 
-The loader puts nothing into a non-empty folder that has no LunqDebloater in it.
+The loader puts nothing into a non-empty folder that has no LunqDebloater in it. Only you, administrators and SYSTEM can change the files in the program folder: the loader sets these rights itself, so a folder in the root of a drive is safe too. A FAT32 or exFAT flash drive has no access rights, and the loader warns about it.
 
 ### Desktop shortcut
 
@@ -177,7 +177,7 @@ The catalog shows Safe OS and Setup Dynamic Update packages in the same search a
 
 The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. If there are none, for example in Downloads, the Dynamic Updates can stay next to the other updates: the script recognizes them by the contents of the `.cab`. A Setup Dynamic Update has no DISM package (`.mum` file) in it, and a Safe OS Dynamic Update is named `Package_for_SafeOSDU`. The summary marks such files. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
-Updates are installed right after the image is mounted, in ascending KB number order, before apps and components are removed. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
+Updates are installed right after the image is mounted, before apps and components are removed. The order follows Microsoft: first packages without a KB number (language packs and features on demand), then Windows updates in ascending KB order, and .NET updates (`ndp` in the name) last. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
 
 ## Drivers
 
@@ -206,7 +206,7 @@ You can have the programs you need installed and your scripts run at the first s
 2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
-At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
+At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only, and if setting these rights failed, the log says so. In the ISO itself and on the flash drive they are not protected inside `install.wim`: anyone who gets the ISO can read them, so do not give others an ISO with passwords in its scripts. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
 
 You can save scripts in any editor. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as ANSI, and non-English text in quotes (for example, Russian) breaks the whole script. That is why such files are saved again as UTF-8 with BOM during the build; you can see this in the output of the step.
 

@@ -109,8 +109,17 @@ function New-BootableIso {
     }
     if ($hasBios) { $bootData = '2#p0,e,b{0}#pEF,e,b{1}' -f $bios, $uefi }
     else { $bootData = '1#pEF,e,b{0}' -f $uefi }
+    # oscdimg пишет во временный файл рядом: при сбое прошлый ISO остаётся целым, а недописанный
+    # файл не выглядит готовым образом.
+    $partial = [IO.Path]::ChangeExtension($OutputPath, '.partial.iso')
+    if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
     if ($location) { Push-Location -LiteralPath $location }
-    try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $OutputPath) -ShowOutput }
+    try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $partial) -ShowOutput }
     finally { if ($location) { Pop-Location } }
-    if ($code -ne 0) { throw (Get-LunqText 'Image.OscdimgFailed' $code) }
+    if ($code -ne 0 -or -not (Test-Path -LiteralPath $partial -PathType Leaf)) {
+        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+        throw (Get-LunqText 'Image.OscdimgFailed' $code)
+    }
+    try { Move-Item -LiteralPath $partial -Destination $OutputPath -Force -ErrorAction Stop }
+    catch { throw (Get-LunqText 'Image.IsoReplaceFailed' $OutputPath $_.Exception.Message $partial) }
 }

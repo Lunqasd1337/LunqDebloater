@@ -22,6 +22,18 @@ Describe 'Обновления и драйверы' {
         @($files | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb5079999-x64.msu', 'windows11.0-kb5080000-x64.msu')
     }
 
+    It 'языковые пакеты идут до накопительных обновлений, а .NET после них' {
+        $dir = Join-Path $TestDrive 'order'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $names = 'windows11.0-kb5080002-x64-ndp481.msu', 'windows11.0-kb5080000-x64.msu', 'Microsoft-Windows-Client-Language-Pack_x64_ru-ru.cab',
+        'windows11.0-kb5079999-x64-ndp481.msu', 'Microsoft-Windows-LanguageFeatures-Basic-ru-ru-Package~31bf3856ad364e35~amd64~~.cab', 'windows11.0-kb5080001-x64.msu'
+        foreach ($name in $names) { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        @(Get-LunqUpdateFiles -Path $dir | ForEach-Object { $_.Name }) | Should -Be @(
+            'Microsoft-Windows-Client-Language-Pack_x64_ru-ru.cab', 'Microsoft-Windows-LanguageFeatures-Basic-ru-ru-Package~31bf3856ad364e35~amd64~~.cab',
+            'windows11.0-kb5080000-x64.msu', 'windows11.0-kb5080001-x64.msu',
+            'windows11.0-kb5079999-x64-ndp481.msu', 'windows11.0-kb5080002-x64-ndp481.msu')
+    }
+
     It 'пакет для другого образа (0x800f081e) пропускается, а не считается ошибкой' {
         $dir = Join-Path $TestDrive 'na'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null

@@ -25,6 +25,30 @@ function Test-LunqInstallFolder {
     return -not (Get-ChildItem -LiteralPath $Path -Force | Select-Object -First 1)
 }
 
+function Protect-LunqInstallFolder {
+    # LunqDebloater runs as administrator from this folder, so only its owner, administrators and
+    # SYSTEM may change the files. A new folder in the root of a drive (D:\LunqDebloater) inherits
+    # a rule that lets every signed-in user change it, and their code would then run as administrator.
+    param([Parameter(Mandatory)][string]$Path)
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    # NTFS rights exist only on Windows; the tests on Linux set $env:OS, so the platform itself is checked.
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
+    try {
+        # A new security object changes only the access rules, not the owner of the folder.
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        foreach ($sid in @($owner, (New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'), (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    }
+    catch {
+        # FAT32 and exFAT drives have no access rules at all.
+        Write-Warning "Could not limit access to $Path to you and administrators: $($_.Exception.Message)"
+    }
+}
+
 function Get-LunqInstallState {
     # What the previous run installed: the release tag and the hashes of the Config files.
     param([Parameter(Mandatory)][string]$Path)
@@ -130,6 +154,8 @@ function Invoke-LunqInstall {
         Write-Warning "Could not check for a new version ($($_.Exception.Message)). Starting the installed one."
         $release = $null
     }
+    # Earlier installs get the same rights too: before 1.9.2 they kept the rights of the parent folder.
+    Protect-LunqInstallFolder -Path $Path
 
     if ($release -and $installed -and $state -and $state.Tag -eq $release.Tag) {
         Write-Host "LunqDebloater $($release.Tag) is up to date: $Path" -ForegroundColor Green

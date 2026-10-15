@@ -3,14 +3,20 @@
 $script:WindowsUpdatePattern = '(?i)^windows1[01]\.0-kb'
 
 function Get-LunqUpdateFiles {
-    # Находит .msu и .cab в папке и упорядочивает их по номеру KB: более старые
-    # (например, контрольные накопительные обновления) устанавливаются раньше.
+    # Находит .msu и .cab в папке и упорядочивает их, как в инструкции Microsoft по обновлению
+    # образа: сначала пакеты без номера KB (языковые пакеты и компоненты по запросу), потом
+    # обновления Windows, последними обновления .NET. Языковой пакет, поставленный после
+    # накопительного обновления, остаётся в исходной версии. Внутри группы порядок по номеру KB:
+    # более старые (например, контрольные накопительные обновления) устанавливаются раньше.
     param([Parameter(Mandatory)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
     $files = @(Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in '.msu', '.cab' })
     $sorted = $files | Sort-Object @{ Expression = {
-            if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]::MaxValue }
+            if ($_.Name -notmatch '(?i)kb\d+') { 0 } elseif ($_.Name -match '(?i)ndp') { 2 } else { 1 }
+        }
+    }, @{ Expression = {
+            if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]0 }
         }
     }, Name
     return , @($sorted)

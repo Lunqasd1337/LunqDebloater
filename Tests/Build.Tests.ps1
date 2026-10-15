@@ -194,6 +194,28 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
     }
 
+    It 'чужой autounattend.xml в ISO останавливает сборку до её начала' {
+        $run = Start-TestBuild -Parameters @{ LocalAccount = $true } -Prepare {
+            param($t)
+            # Подключённый ISO изображает папка isoroot (заглушка Mount-IsoImage).
+            New-Item -ItemType Directory -Path (Join-Path $t.Root 'isoroot') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $t.Root 'isoroot\autounattend.xml') -Value '<unattend />'
+        }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'В ISO уже есть autounattend\.xml'
+        $run.Output | Should -Not -Match 'Шаг 1 из'
+    }
+
+    It 'чужой Sysprep\unattend.xml в образе останавливает сборку сразу после монтирования' {
+        $run = Start-TestBuild -Prepare { $env:LUNQ_TEST_SYSPREP_UNATTEND = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'В образе уже есть Windows\\System32\\Sysprep\\unattend\.xml'
+        # Монтирование образа это шаг 4, дальше сборка не идёт.
+        $run.Output | Should -Match 'Шаг 4 из'
+        $run.Output | Should -Not -Match 'Шаг 5 из'
+        $run.Output | Should -Match 'discard=True'
+    }
+
     It 'режим «Что в образе» сохраняет список и ничего не собирает' {
         $run = Start-TestBuild -Parameters @{ ListContents = $true }
         $run.Error | Should -BeNullOrEmpty
@@ -392,6 +414,8 @@ Describe 'Пошаговый режим' {
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
+            # Выгруженные драйверы не остаются в TEMP после сборки.
+            Test-Path -LiteralPath $hostDrivers | Should -BeFalse
         }
         finally { Remove-Item -LiteralPath $hostDrivers -Recurse -Force -ErrorAction SilentlyContinue }
     }

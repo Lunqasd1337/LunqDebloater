@@ -123,6 +123,16 @@ Describe 'Invoke-LunqInstall' {
         Mock Invoke-WebRequest { Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $OutFile }
     }
 
+    It 'папку установки могут менять только владелец, администраторы и SYSTEM' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        $target = Join-Path $TestDrive 'Protected'
+        Protect-LunqInstallFolder -Path $target
+        $acl = Get-Acl -LiteralPath $target
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+        $expected = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-32-544', 'S-1-5-18') | Sort-Object -Unique
+        $sids | Should -Be $expected
+    }
+
     It 'скачивает релиз, раскладывает его и запускает LunqDebloater' {
         $target = Join-Path $TestDrive 'Fresh'
         Invoke-LunqInstall -Path $target

@@ -130,6 +130,10 @@ $failed = $false
 $isoDir = Join-Path $WorkDir 'iso'
 $mountDir = Join-Path $WorkDir 'mount'
 $wimPath = Join-Path $isoDir 'sources\install.wim'
+# Драйверы этого компьютера выгружаются во временную папку: в Config они остались бы и для следующих сборок.
+# Обе папки удаляются в конце запуска: драйверы видеокарты занимают на системном диске 1-3 ГБ.
+$hostDriversDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
+$cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
 
 # Заголовок окна не меняется в некоторых консолях (например, при перенаправленном выводе), это не ошибка.
 try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
@@ -216,15 +220,12 @@ try {
     $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
     $hostRegion = $null
     if (-not $listMode) { $hostRegion = Get-LunqHostRegion }
-    # Драйверы этого компьютера выгружаются во временную папку: в Config они остались бы и для следующих сборок.
-    $hostDriversDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
     # Что пользователь включил и выключил в сводке (Key пункта и Enabled). Когда сводка
     # показывается снова после выбора папки, его выбор сохраняется.
     $choices = @{}
     # Какого вида .cab в корне папки обновлений: распознаётся один раз, а не при каждом показе сводки.
     $cabKinds = @{}
     $peDriverKinds = @{}
-    $cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
 
     while ($true) {
         $foundUpdates = @()
@@ -488,6 +489,9 @@ try {
         $selected = Select-LunqEdition -Images $images -Index $Index -Edition $Edition
         $editionName = ($images | Where-Object ImageIndex -eq $selected).ImageName
         $imageInfo = Get-IsoImageInfo -IsoRoot $iso.Root -Index $selected
+        # Чужой autounattend.xml в ISO иначе обнаружился бы только на шаге файла ответов,
+        # после обновлений и драйверов.
+        if ($setupAnswers -and (Test-Path -LiteralPath (Join-Path $iso.Root 'autounattend.xml'))) { throw (Get-LunqText 'Unattend.Exists') }
     }
     finally { Dismount-IsoImage -Iso $iso }
 
@@ -692,6 +696,10 @@ finally {
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
     elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # Сборка уже встроила драйверы в образ, а следующий запуск выгрузит их заново.
+    foreach ($tempDir in @($hostDriversDir, $cabCheckDir)) {
+        if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
     if ($lunqLog) {
         Stop-LunqLog

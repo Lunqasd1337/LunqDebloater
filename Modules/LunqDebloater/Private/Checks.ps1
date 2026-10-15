@@ -111,6 +111,12 @@ function Test-LunqOutputPath {
         Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
     }
     catch { return (Get-LunqText 'Checks.OutputNotWritable' $folder) }
+    # Прошлый ISO, подключённый в Проводнике как диск, не даст его заменить. Без этой проверки
+    # сборка узнала бы об этом только на последнем шаге, через час работы.
+    if (Test-Path -LiteralPath $OutputIso -PathType Leaf) {
+        try { [IO.File]::Open($OutputIso, 'Open', 'ReadWrite', 'None').Dispose() }
+        catch { return (Get-LunqText 'Checks.OutputLocked' $OutputIso) }
+    }
     return $null
 }
 
