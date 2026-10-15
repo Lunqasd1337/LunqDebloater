@@ -118,7 +118,7 @@ function Copy-IsoContent {
 
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
         # robocopy возвращает коды < 8 при успехе.
-        $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1')
+        $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') -SuccessCodes (0..7)
         if ($code -ge 8) { throw (Get-LunqText 'Iso.RobocopyFailed' $code) }
     }
     finally {

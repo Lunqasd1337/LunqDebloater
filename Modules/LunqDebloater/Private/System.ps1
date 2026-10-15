@@ -23,6 +23,7 @@ function Start-LunqLog {
     foreach ($file in $old) {
         Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_dism.log') -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_report.zip') -Force -ErrorAction SilentlyContinue
     }
     $oldDism = @(Get-ChildItem -LiteralPath $Dir -Filter 'LunqDebloater_*_dism.log' -File |
             Sort-Object Name -Descending | Select-Object -Skip ([Math]::Max($KeepDism - 1, 0)))
@@ -57,6 +58,78 @@ function Stop-LunqLog {
     $script:DismLogPath = $null
     # Транскрипта может не быть, если лог не удалось начать: тогда и останавливать нечего.
     try { Stop-Transcript | Out-Null } catch { }
+}
+
+function Write-LunqDismMarker {
+    # Метка в логе DISM перед шагом сборки: лог большой, и по ней видно, где начинается нужный шаг.
+    # Между шагами DISM файл не держит, но если запись не удалась, сборке это не мешает.
+    param([Parameter(Mandatory)][string]$Text)
+    if (-not $script:DismLogPath) { return }
+    $line = '===== LunqDebloater {0}: {1} =====' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Text
+    try { Add-Content -LiteralPath $script:DismLogPath -Value @('', $line) -Encoding ASCII -ErrorAction Stop }
+    catch { }
+}
+
+function Get-LunqPrivateNames {
+    # Что заменить в отчёте об ошибке: путь к профилю, имя пользователя и имя компьютера.
+    # Порядок важен: сначала путь целиком, затем имена отдельно.
+    $names = [ordered]@{}
+    if ($env:USERPROFILE) { $names[$env:USERPROFILE] = '%USERPROFILE%' }
+    # Короткое имя могло бы совпасть с обычным словом, поэтому оно заменяется только целиком.
+    if ($env:USERNAME -and $env:USERNAME.Length -ge 3) { $names[$env:USERNAME] = '<user>' }
+    if ($env:COMPUTERNAME -and $env:COMPUTERNAME.Length -ge 3) { $names[$env:COMPUTERNAME] = '<computer>' }
+    return $names
+}
+
+function Copy-LunqAnonymized {
+    # Копирует текстовый файл построчно с заменами. Лог DISM бывает большим, поэтому целиком он
+    # в память не читается. Кодировка сохраняется: лог DISM записан не в UTF-8.
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][Collections.IDictionary]$Replace
+    )
+    $patterns = @(foreach ($key in $Replace.Keys) {
+            # Путь заменяется как есть, имена только целым словом: «User» не трогает «Users».
+            $pattern = [regex]::Escape($key)
+            if ($key -notmatch '[\\/]') { $pattern = '(?<![\w-])' + $pattern + '(?![\w-])' }
+            [pscustomobject]@{ Regex = New-Object regex($pattern, 'IgnoreCase'); Value = $Replace[$key] }
+        })
+    $reader = New-Object IO.StreamReader($Source, [Text.Encoding]::Default, $true)
+    try {
+        $null = $reader.Peek()
+        $writer = New-Object IO.StreamWriter($Destination, $false, $reader.CurrentEncoding)
+        try {
+            while ($null -ne ($line = $reader.ReadLine())) {
+                foreach ($p in $patterns) { $line = $p.Regex.Replace($line, $p.Value.Replace('$', '$$')) }
+                $writer.WriteLine($line)
+            }
+        }
+        finally { $writer.Dispose() }
+    }
+    finally { $reader.Dispose() }
+}
+
+function New-LunqBugReport {
+    # Архив для отчёта об ошибке рядом с логом: лог запуска, лог DISM и профиль. Путь к профилю
+    # пользователя и имена заменены, чтобы их не приходилось вычищать вручную перед отправкой.
+    # Вызывается после Stop-LunqLog: пока идёт транскрипт, лог ещё не дописан.
+    param(
+        [Parameter(Mandatory)]$Log,
+        [string]$ProfilePath,
+        [Collections.IDictionary]$Replace = (Get-LunqPrivateNames)
+    )
+    $files = @(@($Log.Path, $Log.DismPath, $ProfilePath) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+    if ($files.Count -eq 0) { return $null }
+    $zip = $Log.Path -replace '\.log$', '_report.zip'
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ('LunqDebloater-report-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temp -Force | Out-Null
+    try {
+        foreach ($file in $files) { Copy-LunqAnonymized -Source $file -Destination (Join-Path $temp (Split-Path $file -Leaf)) -Replace $Replace }
+        Compress-Archive -Path (Join-Path $temp '*') -DestinationPath $zip -Force
+    }
+    finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
+    return $zip
 }
 
 function Write-LunqRunInfo {
@@ -127,17 +200,27 @@ function ConvertTo-LunqArgumentList {
 function Invoke-Native {
     # Запускает внешнюю программу и возвращает код выхода. Вывод stderr не превращается
     # в исключение (в Windows PowerShell 5.1 это происходит при ErrorActionPreference = Stop).
+    # -SuccessCodes: коды выхода, которые для этой программы значат успех (robocopy возвращает 1-7).
+    # При другом коде скрытый вывод программы попадает в лог: без него по коду не понять причину.
     param(
         [Parameter(Mandatory)][string]$FilePath,
         [string[]]$Arguments = @(),
-        [switch]$ShowOutput
+        [switch]$ShowOutput,
+        [int[]]$SuccessCodes = @(0)
     )
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
+        $output = @()
         if ($ShowOutput) { & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host "    $_" } }
-        else { & $FilePath @Arguments 2>&1 | Out-Null }
-        return $LASTEXITCODE
+        else { $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { "$_" }) }
+        $code = $LASTEXITCODE
+        $lines = @($output | Where-Object { $_.Trim() } | Select-Object -Last 30)
+        if ($SuccessCodes -notcontains $code -and $lines.Count -gt 0) {
+            Write-Host ('    ' + (Get-LunqText 'System.NativeOutput' (Split-Path $FilePath -Leaf) $code)) -ForegroundColor DarkGray
+            foreach ($line in $lines) { Write-Host "      $line" -ForegroundColor DarkGray }
+        }
+        return $code
     }
     finally { $ErrorActionPreference = $old }
 }

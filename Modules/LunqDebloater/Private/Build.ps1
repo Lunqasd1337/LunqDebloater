@@ -186,10 +186,19 @@ function Invoke-LunqBuild {
     $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When })
     Initialize-LunqSteps -Total $steps.Count
     $results = @()
+    # Сколько шёл каждый шаг: итог показывает самые долгие.
+    $Context.State.StepTimes = New-Object System.Collections.Generic.List[object]
+    $number = 0
     foreach ($step in $steps) {
+        $number++
         Write-Step $step.Title $step.Hint
-        # В итог идут только результаты шагов: всё прочее, что вернули команды, отбрасывается.
-        $results += @(& $step.Run $Context | Where-Object { $_ -and $_.PSObject.Properties['Kind'] })
+        Write-LunqDismMarker ('step {0}/{1}: {2}' -f $number, $steps.Count, $step.Name)
+        $started = Get-Date
+        try {
+            # В итог идут только результаты шагов: всё прочее, что вернули команды, отбрасывается.
+            $results += @(& $step.Run $Context | Where-Object { $_ -and $_.PSObject.Properties['Kind'] })
+        }
+        finally { $Context.State.StepTimes.Add([pscustomobject]@{ Title = $step.Title; Elapsed = (Get-Date) - $started }) }
     }
     return , $results
 }

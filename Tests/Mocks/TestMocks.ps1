@@ -41,7 +41,7 @@ function Mount-IsoImage {
 function Invoke-Native {
     # Внешние программы не запускаются. Вызов записывается в LUNQ_TEST_NATIVE_LOG, а там,
     # где скрипт потом ищет результат, создаются файлы-пустышки.
-    param([Parameter(Mandatory)][string]$FilePath, [string[]]$Arguments = @(), [switch]$ShowOutput)
+    param([Parameter(Mandatory)][string]$FilePath, [string[]]$Arguments = @(), [switch]$ShowOutput, [int[]]$SuccessCodes = @(0))
     if ($env:LUNQ_TEST_NATIVE_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_NATIVE_LOG -Value ("{0}|{1}|{2}" -f $FilePath, ($Arguments -join '|'), (Get-Location).Path) -Encoding UTF8 }
     switch -Wildcard ($FilePath) {
         'robocopy.exe' {

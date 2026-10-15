@@ -126,6 +126,7 @@ $reMountDir = Join-Path $WorkDir 'remount'
 $allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
 $listMode = [bool]$ListContents
 $lunqLog = $null
+$failed = $false
 $isoDir = Join-Path $WorkDir 'iso'
 $mountDir = Join-Path $WorkDir 'mount'
 $wimPath = Join-Path $isoDir 'sources\install.wim'
@@ -656,11 +657,17 @@ try {
     $started = Get-Date
     $results = Invoke-LunqBuild -Context $build
 
-    Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
+    Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
 }
 catch {
+    $failed = $true
     Write-Host ''
     Write-Host (Get-LunqText 'Main.Error' $_.Exception.Message) -ForegroundColor Red
+    # Где именно случилась ошибка: по присланному логу сразу видно, какую функцию смотреть.
+    if ($_.ScriptStackTrace) {
+        Write-Host ('    ' + (Get-LunqText 'Main.ErrorWhere')) -ForegroundColor DarkGray
+        foreach ($line in ($_.ScriptStackTrace -split '\r?\n')) { Write-Host "      $line" -ForegroundColor DarkGray }
+    }
     Dismount-OfflineHives
     if ($state.Mounted) {
         Write-Info (Get-LunqText 'Main.DiscardImage')
@@ -680,7 +687,17 @@ finally {
     elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if ($lunqLog) { Stop-LunqLog }
+    if ($lunqLog) {
+        Stop-LunqLog
+        # Архив собирается после остановки лога: пока идёт транскрипт, лог ещё не дописан.
+        if ($failed) {
+            try {
+                $bugReport = New-LunqBugReport -Log $lunqLog -ProfilePath $ProfilePath
+                if ($bugReport) { Write-Info (Get-LunqText 'Main.BugReport' $bugReport) }
+            }
+            catch { Write-Warning $_.Exception.Message }
+        }
+    }
     if ($interactive) {
         Write-Host ''
         Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null

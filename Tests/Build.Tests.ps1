@@ -148,6 +148,11 @@ Describe 'Сборка с параметрами' {
         $run.Error | Should -BeNullOrEmpty
         Assert-Steps -Output $run.Output -Expected 11
         $run.Output | Should -Match 'Установка:\s+без файла ответов'
+        # Время начала у заголовка шага, самые долгие шаги в итоге и метки шагов в логе DISM.
+        $run.Output | Should -Match '==> Шаг 1 из \d+\. .+\s+\d\d:\d\d:\d\d'
+        $run.Output | Should -Match 'Дольше всего: .+ \d\d:\d\d:\d\d'
+        $dismLog = Get-ChildItem -LiteralPath (Join-Path $script:Test.App 'Logs') -Filter '*_dism.log' | Sort-Object LastWriteTime | Select-Object -Last 1
+        Get-Content -LiteralPath $dismLog.FullName -Raw | Should -Match 'LunqDebloater .+: step 1/\d+: Prepare'
     }
 
     It 'с -SkipAppx -SkipComponents -SkipRegistry шагов профиля нет' {
@@ -223,6 +228,11 @@ Describe 'Ошибки и предупреждения' {
         $run.Output | Should -Match 'Отключаю образ без сохранения'
         $run.Output | Should -Match 'dismount .*mount save=False discard=True'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+        # Место ошибки и архив для отчёта.
+        $run.Output | Should -Match 'Где произошла ошибка:'
+        $run.Output | Should -Match 'Remove-LunqAppx'
+        $run.Output | Should -Match 'Для отчёта об ошибке приложите этот архив'
+        @(Get-ChildItem -LiteralPath (Join-Path $script:Test.App 'Logs') -Filter '*_report.zip').Count | Should -Be 1
     }
 
     It 'неудачная очистка хранилища не срывает сборку' {
