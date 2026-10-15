@@ -42,11 +42,11 @@ Tests\                       Pester tests and stubs
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
 | `System.ps1` | Administrator rights, the log (`Start-LunqLog`), version, `Invoke-Native` for external programs, passing parameters on relaunch |
 | `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
-| `Options.ps1` | The "What goes into the image" summary in step-by-step mode: items, their dependencies and toggling by number |
+| `Options.ps1` | The "What goes into the image" summary in step-by-step mode: items, their dependencies, toggling by number, action items and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
 | `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
-| `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update |
+| `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
 | `Registry.ps1` | Offline registry hives, setting and deleting values and keys, the build stamp in `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
@@ -60,7 +60,7 @@ Tests\                       Pester tests and stubs
 1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder.
 2. **Log.** `Start-LunqLog` starts the log in `Logs` next to the script and a separate DISM log. Everything after that, including errors while choosing the ISO, goes into the log.
 3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters.
-4. **Config contents.** Updates (`Get-LunqUpdateFiles`, with the `SafeOS` and `Setup` subfolders separately), drivers, programs and scripts are found. In step-by-step mode the `Select-LunqBuildOptions` summary lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, the script performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
+4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, the script performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
 5. **Checks** (`Test-LunqPrerequisites`): working folder, output ISO, space, `oscdimg`. An error stops the run before the long work starts.
 6. **Edition and version.** The ISO is mounted once: list of editions, choice, version of the chosen one. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
 7. **"What is in the image" mode** (`-ListContents`) ends here: the edition is mounted read-only, `Write-LunqInventory` saves the list and the image is unmounted without saving.
@@ -99,7 +99,7 @@ The order matters: updates go in before components are removed, the answer file 
 
 ## Step results and the summary
 
-Every step function returns a `New-LunqResult` object: `Title`, `Kind`, the lists `Done`, `Failed`, `Skipped`, `NotMatched`, a `Summary` line and `ByCategory` counters. `Write-LunqReport` prints them the same way for all steps: removals and the registry by profile category, everything else as "installed/added N, errors M". A failure of one package or driver goes into `Failed` and does not stop the build. A failure that makes it impossible to continue is thrown as an exception.
+Every step function returns a `New-LunqResult` object: `Title`, `Kind`, the lists `Done`, `Failed`, `Skipped`, `NotMatched`, a `Summary` line and `ByCategory` counters. `Write-LunqReport` prints them the same way for all steps: removals and the registry by profile category, everything else as "installed/added N, errors M". A failure of one package or driver goes into `Failed` and does not stop the build. A package that DISM rejects as not applicable to the image (`0x800f081e`, `Test-LunqNotApplicable`) goes into `Skipped`, and the result shows it on a separate line. A failure that makes it impossible to continue is thrown as an exception.
 
 ## Profile
 
@@ -130,18 +130,18 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Module.Tests.ps1` | The module as a whole: version from the manifest, exports, help, relaunch arguments. It makes sure the `ru` and `en` keys match, every key used in the code exists in the tables, and every parameter is documented in both READMEs |
 | `Tests\Profile.Tests.ps1` | Reading the profile, entry checks, categories, sorted lists, name patterns |
 | `Tests\Checks.Tests.ps1` | Working folder, output ISO, UEFI-only ISO, image and host versions, leftovers of an earlier run |
-| `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE |
+| `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE, recognizing Dynamic Updates by their `.cab`, skipping packages that do not apply |
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
-| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode, in Russian and English |
+| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders and this computer's drivers), in Russian and English |
 | `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
-| `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later |
-| `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe) and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
+| `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later, including drivers for `Export-WindowsDriver` |
+| `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), the folder picker and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
 
-The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DISM_EXIT` (dism.exe exit code), `LUNQ_TEST_FAIL_APPX` (a failure in the middle of the build), `LUNQ_TEST_IMAGE_VERSION`, `LUNQ_TEST_HOST_BUILD`, `LUNQ_TEST_NOT_ADMIN`. Calls to external programs are written to `LUNQ_TEST_NATIVE_LOG`, registry writes to `LUNQ_TEST_REG_LOG`, and the tests check them. End-to-end tests run in Russian by default and compare the Russian output; the English tests check that the output has no Cyrillic.
+The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DISM_EXIT` (dism.exe exit code), `LUNQ_TEST_FAIL_APPX` (a failure in the middle of the build), `LUNQ_TEST_IMAGE_VERSION`, `LUNQ_TEST_HOST_BUILD`, `LUNQ_TEST_NOT_ADMIN`, `LUNQ_TEST_FOLDER` (what is "chosen" in the folder picker), `LUNQ_TEST_NO_HOST_DRIVERS`. Calls to external programs are written to `LUNQ_TEST_NATIVE_LOG`, registry writes to `LUNQ_TEST_REG_LOG`, and the tests check them. End-to-end tests run in Russian by default and compare the Russian output; the English tests check that the output has no Cyrillic.
 
 ## How to add
 

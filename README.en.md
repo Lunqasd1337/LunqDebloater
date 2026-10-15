@@ -29,7 +29,7 @@ The program is provided "as is", without any warranty (see [LICENSE](LICENSE)).
 - Windows 11 and Windows PowerShell 5.1 (built into Windows). If you start the script from PowerShell 7, it restarts itself in 5.1: in PowerShell 7 the DISM cmdlets for Appx fail with "Class not registered".
 - Build on Windows 11 of the same version as the ISO or newer. The DISM module comes from the system, and DISM of an older system, especially Windows 10, may not cope with the latest updates of a newer image. The script warns you if the system is older than the image.
 - [Windows ADK](https://learn.microsoft.com/windows-hardware/get-started/adk-install), the **Deployment Tools** component (only `oscdimg.exe` is needed).
-- About 25 GB of free space on an NTFS drive for the working folder (`C:\LunqWork` by default).
+- About 25 GB of free space on an NTFS drive for the working folder (`C:\LunqWork` by default), more with updates and drivers: three times the size of the updates and twice the size of the drivers on top. The check before the build shows the exact number.
 - An original Windows 11 ISO.
 
 Before the build starts, the script checks administrator rights, the ADK and free space, and tells you what to fix.
@@ -66,7 +66,7 @@ Or by hand:
 
 1. Download the repository (Code > Download ZIP) and extract it.
 2. Double-click `Start.cmd`. The script asks for administrator rights.
-3. Then it asks for everything itself: pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary and choose the edition (each edition has a short explanation).
+3. Then it asks for everything itself: choose whether to build an ISO or look at what is in the image, then pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary and choose the edition (each edition has a short explanation).
 4. Check the build plan and confirm. A build usually takes 15-40 minutes. The window shows "Step N of M" with an explanation of what is happening.
 5. At the end the script shows the result: what was removed, what was not found in the image, and where the finished ISO is.
 
@@ -123,7 +123,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
 | `-DriversToSetup` | Also add disk controller drivers to Windows Setup (`boot.wim`) and the recovery environment (WinRE) if they do not see the disk |
-| `-UpdatesToSetup` | Also add the Windows updates to Windows Setup and WinRE, plus Safe OS and Setup Dynamic Update from the `SafeOS` and `Setup` subfolders |
+| `-UpdatesToSetup` | Also add the Windows updates to Windows Setup and WinRE, plus Safe OS and Setup Dynamic Update (from the `SafeOS` and `Setup` subfolders or recognized in the folder itself) |
 | `-SkipUpdates`, `-SkipDrivers` | Do not add the updates or drivers from `Config` |
 | `-SkipApps`, `-SkipScripts` | Do not install the programs from `Apps.txt` or do not run the scripts from `Scripts` at the first sign-in |
 | `-Unattend` | Put an answer file in the ISO: no questions about the license and privacy, language, region and time zone as on this computer |
@@ -143,7 +143,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 1. The ISO is mounted and its contents are copied to the working folder.
 2. The selected edition is exported to a separate `install.wim` (an ESD is converted to WIM on the way).
 3. `install.wim` is mounted, the updates and drivers are added to it (if selected), WinRE is updated if you asked for it, and the first sign-in script is added. The answer file goes to the root of the ISO if it is turned on. Then the profile is applied: Appx, components, registry.
-4. The image is saved and recompressed. If selected, Windows Setup is updated too: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe` and `setuphost.exe` are copied out of it. `oscdimg` builds the bootable ISO.
+4. The image is saved. If selected, Windows Setup is updated: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe` and `setuphost.exe` are copied out of it. Then `install.wim` is recompressed and `oscdimg` builds the bootable ISO.
 
 All steps in order and the conditions under which they run are described in [ARCHITECTURE.en.md](ARCHITECTURE.en.md#build-steps).
 
@@ -168,7 +168,7 @@ It lists the version and date of the build, the original ISO and edition, the an
 1. Download the cumulative update for your version from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), for example by searching for `Windows 11 Version 26H2 x64`. If the catalog has several files for it, download all of them.
 2. In step-by-step mode choose their folder in the summary with "Choose a folder with updates", for example Downloads. Or put the files in `Config\Updates`: then they appear in the summary right away, and with parameters they are added automatically (add `-SkipUpdates` if you do not want that). With parameters, `-UpdatesPath` sets another folder.
 
-Put only updates for the system itself in the folder: the cumulative update and the .NET update. The catalog shows Safe OS and Setup Dynamic Update packages in the same search, but they are for the recovery environment and Windows Setup and do not install into the system itself. They have their own subfolders:
+The catalog shows Safe OS and Setup Dynamic Update packages in the same search as the cumulative update, but they are for the recovery environment and Windows Setup and do not install into the system itself. `Config\Updates` has subfolders for them:
 
 - `Config\Updates\SafeOS`: Safe OS Dynamic Update (`.cab`), installed into WinRE after the cumulative update;
 - `Config\Updates\Setup`: Setup Dynamic Update (`.cab`), expanded into the ISO's `sources` folder to update the Windows Setup files.
@@ -194,7 +194,7 @@ Besides the system itself, the ISO contains two more images based on Windows PE:
 - **Windows Setup** (`sources\boot.wim`, image 2), which the USB drive boots from;
 - the **recovery environment** (WinRE, `Windows\System32\Recovery\Winre.wim` inside the system), which opens when Windows fails to start and from Settings > System > Recovery.
 
-By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if `Config\Updates\SafeOS` or `Config\Updates\Setup` has files, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
 
 ## After installation
 
@@ -337,16 +337,17 @@ The code is laid out like this:
 | `LunqDebloater.ps1` | The script itself: parameters, step-by-step mode, checks and the build plan |
 | `Install.ps1` | Loader for the one-command start (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | The module with the functions. The version is set in the `LunqDebloater.psd1` manifest |
-| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Build` (build steps), `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Build` (build steps), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |
 | `Tests\` | Pester tests and a stub of the DISM module |
 
-The tests do not touch the system: stubs replace DISM, reg.exe, oscdimg and winget, and the build runs in the test folder. To run them (Pester 5 is needed):
+The tests do not touch the system: stubs replace DISM, reg.exe, oscdimg and winget, and the build runs in the test folder. To run them and the analyzer (Pester 5 and PSScriptAnalyzer are needed):
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -Scope CurrentUser -Force
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
 Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
