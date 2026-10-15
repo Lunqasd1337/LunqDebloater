@@ -29,7 +29,7 @@ LunqDebloater меняет установочный образ Windows так, �
 - Windows 11 и Windows PowerShell 5.1 (встроен в Windows). Если запустить скрипт из PowerShell 7, он сам перезапустится в 5.1: в PowerShell 7 командлеты DISM для Appx падают с ошибкой «Класс не зарегистрирован».
 - Лучше собирать на Windows 11 той же версии, что и ISO, или новее. Модуль DISM берётся из системы, и DISM старой системы, особенно Windows 10, может не справиться со свежими обновлениями нового образа. Скрипт предупредит, если система старше образа.
 - [Windows ADK](https://learn.microsoft.com/windows-hardware/get-started/adk-install), компонент **Deployment Tools** (нужен только `oscdimg.exe`).
-- Около 25 ГБ свободного места на NTFS-диске для рабочей папки (по умолчанию `C:\LunqWork`).
+- Около 25 ГБ свободного места на NTFS-диске для рабочей папки (по умолчанию `C:\LunqWork`), с обновлениями и драйверами больше: ещё три размера обновлений и два размера драйверов. Точную цифру покажет проверка перед сборкой.
 - Оригинальный ISO Windows 11.
 
 Скрипт сам проверит права администратора, наличие ADK и свободное место ещё до начала сборки и подскажет, что исправить.
@@ -66,7 +66,7 @@ irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1
 
 1. Скачайте репозиторий (Code → Download ZIP) и распакуйте его.
 2. Дважды щёлкните `Start.cmd`. Скрипт попросит права администратора.
-3. Дальше он всё спросит сам: выберите ISO в окне, затем категории твиков, проверьте сводку «Что войдёт в образ» и выберите редакцию (у каждой редакции есть короткое пояснение).
+3. Дальше он всё спросит сам: выберите, собрать ISO или посмотреть, что в образе, затем ISO в окне, затем категории твиков, проверьте сводку «Что войдёт в образ» и выберите редакцию (у каждой редакции есть короткое пояснение).
 4. Проверьте план сборки и подтвердите. Сборка обычно занимает 15-40 минут, в окне видно «Шаг N из M» с пояснением, что происходит.
 5. В конце скрипт покажет итог: что удалено, чего не нашлось в образе, где лежит готовый ISO.
 
@@ -123,7 +123,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-UpdatesPath` | Папка с обновлениями `.msu`/`.cab` вместо `Config\Updates` (подпапки `SafeOS` и `Setup` ищутся в ней же) |
 | `-DriversPath` | Папка с драйверами (`.inf`, можно в подпапках) вместо `Config\Drivers` |
 | `-DriversToSetup` | Добавить драйверы контроллеров дисков ещё и в установщик (`boot.wim`) и среду восстановления (WinRE), если они не видят диск |
-| `-UpdatesToSetup` | Встроить обновления Windows ещё и в установщик и WinRE, а также Safe OS и Setup Dynamic Update из подпапок `SafeOS` и `Setup` |
+| `-UpdatesToSetup` | Встроить обновления Windows ещё и в установщик и WinRE, а также Safe OS и Setup Dynamic Update (из подпапок `SafeOS` и `Setup` или распознанные в самой папке) |
 | `-SkipUpdates`, `-SkipDrivers` | Не встраивать обновления или драйверы из `Config` |
 | `-SkipApps`, `-SkipScripts` | Не ставить программы из `Apps.txt` или не выполнять скрипты из `Scripts` при первом входе |
 | `-Unattend` | Положить в ISO файл ответов: без вопросов о лицензии и конфиденциальности, язык, регион и часовой пояс как на этом компьютере |
@@ -143,7 +143,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 1. ISO монтируется, его содержимое копируется в рабочую папку.
 2. Выбранная редакция экспортируется в отдельный `install.wim` (ESD при этом конвертируется в WIM).
 3. `install.wim` монтируется, в него встраиваются обновления и драйверы (если выбраны), при желании обновляется WinRE и добавляется скрипт первого входа. В корень ISO кладётся файл ответов, если он включён. Затем применяется профиль: Appx, компоненты, реестр.
-4. Образ сохраняется и пересжимается. Если выбрано, обновляется и установщик: в `sources` распаковывается Setup Dynamic Update, обслуживается `boot.wim`, и из него копируются `setup.exe` и `setuphost.exe`. `oscdimg` собирает загрузочный ISO.
+4. Образ сохраняется. Если выбрано, обновляется установщик: в `sources` распаковывается Setup Dynamic Update, обслуживается `boot.wim`, и из него копируются `setup.exe` и `setuphost.exe`. Затем `install.wim` пересжимается, и `oscdimg` собирает загрузочный ISO.
 
 Все шаги по порядку и условия, при которых они выполняются, описаны в [ARCHITECTURE.md](ARCHITECTURE.md#шаги-сборки).
 
@@ -168,7 +168,7 @@ reg query HKLM\SOFTWARE\LunqDebloater
 1. Скачайте накопительное обновление для своей версии из [каталога Центра обновления Майкрософт](https://www.catalog.update.microsoft.com), например по запросу `Windows 11 Version 26H2 x64`. Если в каталоге для него несколько файлов, скачайте все.
 2. В пошаговом режиме выберите папку с ними в сводке пунктом «Выбрать папку с обновлениями», например «Загрузки». Или положите файлы в `Config\Updates`: тогда они сразу появятся в сводке, а с параметрами встроятся сами (если не нужно, добавьте `-SkipUpdates`). Другую папку с параметрами задаёт `-UpdatesPath`.
 
-В саму папку кладите только обновления для системы: накопительное обновление и обновление .NET. Обновления Safe OS и Setup Dynamic Update каталог показывает в том же поиске, но они для среды восстановления и установщика, в саму систему не встанут. Для них есть подпапки:
+Обновления Safe OS и Setup Dynamic Update каталог показывает в том же поиске, что и накопительное, но они для среды восстановления и установщика, в саму систему не встанут. В `Config\Updates` для них есть подпапки:
 
 - `Config\Updates\SafeOS`: Safe OS Dynamic Update (`.cab`), ставится в WinRE после накопительного обновления;
 - `Config\Updates\Setup`: Setup Dynamic Update (`.cab`), распаковывается в `sources` ISO и обновляет файлы установщика.
@@ -194,7 +194,7 @@ reg query HKLM\SOFTWARE\LunqDebloater
 - **установщик** (`sources\boot.wim`, образ 2), с которого загружается флешка;
 - **среда восстановления** (WinRE, `Windows\System32\Recovery\Winre.wim` внутри системы), которая открывается при сбое загрузки и через «Параметры → Восстановление».
 
-По умолчанию они остаются такими, как в ISO. С `-UpdatesToSetup` в них встраиваются те же обновления Windows, что и в систему, а с `-DriversToSetup` драйверы контроллеров дисков. В сводке перед сборкой это пункты под обновлениями и драйверами; если в `Config\Updates\SafeOS` или `Config\Updates\Setup` что-то лежит, пункт обновления установщика включён сразу. С `-UpdatesToSetup` в WinRE ставится и Safe OS Dynamic Update, а в `sources` ISO распаковывается Setup Dynamic Update. После обновления установщика `setup.exe` и `setuphost.exe` из `boot.wim` копируются в `sources` ISO: по инструкции Microsoft они должны совпадать с файлами в `boot.wim`, иначе установка может не запуститься. Обновления .NET и прочие пакеты, которые не ставятся в Windows PE, пропускаются. После обновлений оба образа очищаются от старых файлов и пересжимаются. Сборка с обновлениями займёт на 10-20 минут дольше.
+По умолчанию они остаются такими, как в ISO. С `-UpdatesToSetup` в них встраиваются те же обновления Windows, что и в систему, а с `-DriversToSetup` драйверы контроллеров дисков. В сводке перед сборкой это пункты под обновлениями и драйверами; если нашлись Safe OS или Setup Dynamic Update, пункт обновления установщика включён сразу. С `-UpdatesToSetup` в WinRE ставится и Safe OS Dynamic Update, а в `sources` ISO распаковывается Setup Dynamic Update. После обновления установщика `setup.exe` и `setuphost.exe` из `boot.wim` копируются в `sources` ISO: по инструкции Microsoft они должны совпадать с файлами в `boot.wim`, иначе установка может не запуститься. Обновления .NET и прочие пакеты, которые не ставятся в Windows PE, пропускаются. После обновлений оба образа очищаются от старых файлов и пересжимаются. Сборка с обновлениями займёт на 10-20 минут дольше.
 
 ## После установки
 
@@ -337,16 +337,17 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 | `LunqDebloater.ps1` | Сам скрипт: параметры, пошаговый режим, проверки и план сборки |
 | `Install.ps1` | Загрузчик для запуска одной командой (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | Модуль с функциями. Версия задаётся в манифесте `LunqDebloater.psd1` |
-| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Build` (шаги сборки), `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (сводка «Что войдёт в образ»), `Build` (шаги сборки), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Тексты интерфейса: `ru\*.psd1` и `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | Скрипт первого входа, который кладётся в образ |
 | `Schemas\Profile.schema.json` | JSON-схема профиля |
 | `Tests\` | Тесты Pester и заглушка модуля DISM |
 
-Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки, а сборка идёт в папке теста. Запустить их (нужен Pester 5):
+Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки, а сборка идёт в папке теста. Запустить их и анализатор (нужны Pester 5 и PSScriptAnalyzer):
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -Scope CurrentUser -Force
 Invoke-Pester -Path .\Tests
 Invoke-ScriptAnalyzer -Path .\LunqDebloater.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
 Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.psd1
