@@ -199,12 +199,19 @@ function Select-LunqPEDrivers {
     # Для установщика и WinRE отбираются только драйверы контроллеров дисков (классы SCSIAdapter
     # и HDC): ради них драйверы туда и добавляют. Все драйверы сразу сильно раздули бы boot.wim,
     # а он при загрузке с флешки целиком распаковывается в память.
-    param($InfFiles)
+    # -Cache (путь, размер и время файла): ответы по уже прочитанным .inf. Сводка показывается
+    # заново после каждого действия, и без кэша сотни .inf драйверов этого компьютера читались бы
+    # целиком каждый раз.
+    param($InfFiles, [hashtable]$Cache = @{})
     $diskClasses = @('SCSIAdapter', 'HDC')
     $selected = foreach ($inf in @($InfFiles)) {
-        # Get-Content сам распознаёт .inf в UTF-16 по метке BOM.
-        $text = Get-Content -LiteralPath $inf.FullName -Raw -ErrorAction SilentlyContinue
-        if ($text -and $text -match '(?im)^\s*Class\s*=\s*"?([A-Za-z0-9_]+)' -and $diskClasses -contains $Matches[1]) { $inf }
+        $key = '{0}|{1}|{2}' -f $inf.FullName, $inf.Length, $inf.LastWriteTimeUtc.Ticks
+        if (-not $Cache.ContainsKey($key)) {
+            # Get-Content сам распознаёт .inf в UTF-16 по метке BOM.
+            $text = Get-Content -LiteralPath $inf.FullName -Raw -ErrorAction SilentlyContinue
+            $Cache[$key] = [bool]($text -and $text -match '(?im)^\s*Class\s*=\s*"?([A-Za-z0-9_]+)' -and $diskClasses -contains $Matches[1])
+        }
+        if ($Cache[$key]) { $inf }
     }
     return , @($selected)
 }

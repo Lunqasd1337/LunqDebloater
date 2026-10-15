@@ -14,9 +14,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # Образ раннера обычно уже содержит модули: установка только при их отсутствии экономит
+      # минуту-две. Верхняя граница версии не даёт новому выпуску сделать CI красным без изменений в коде.
       - name: Install PSScriptAnalyzer
         shell: powershell
-        run: Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -Scope CurrentUser -Force
+        run: |
+          $have = Get-Module -ListAvailable PSScriptAnalyzer | Where-Object { $_.Version -ge [version]'1.23.0' -and $_.Version -lt [version]'2.0' }
+          if (-not $have) { Install-Module PSScriptAnalyzer -MinimumVersion 1.23.0 -MaximumVersion 1.99.99 -Scope CurrentUser -Force }
+          Get-Module -ListAvailable PSScriptAnalyzer | Select-Object -First 1 Name, Version, ModuleBase | Format-List
       - name: Analyze
         shell: powershell
         run: |
@@ -42,7 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Pester
-        run: Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck
+        run: |
+          $have = Get-Module -ListAvailable Pester | Where-Object { $_.Version -ge [version]'5.5.0' -and $_.Version -lt [version]'6.0' }
+          if (-not $have) { Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force -SkipPublisherCheck }
       - name: Run tests
         run: |
           Import-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99

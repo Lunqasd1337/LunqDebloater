@@ -48,7 +48,7 @@ function Dismount-WindowsImage { [CmdletBinding()] param($Path, [switch]$Save, [
 function Export-WindowsImage {
     [CmdletBinding()]
     param($SourceImagePath, $SourceIndex, $DestinationImagePath, $CompressionType, [switch]$CheckIntegrity, [switch]$SetBootable, $LogPath)
-    Write-Host "    [mock] export $SourceImagePath index $SourceIndex"
+    Write-Host "    [mock] export $SourceImagePath index $SourceIndex compression $CompressionType"
     Add-Content -LiteralPath $DestinationImagePath -Value 'wim'
 }
 
@@ -90,7 +90,7 @@ function Add-WindowsPackage {
     [CmdletBinding()]
     param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath)
     Write-Host "    [mock] add package $(Split-Path $PackagePath -Leaf)"
-    if ($PackagePath -match 'broken') { throw 'The package does not apply to this image' }
+    if ((Split-Path $PackagePath -Leaf) -match 'broken') { throw 'The package does not apply to this image' }
     # Так DISM отвечает на пакет для другого образа, например Safe OS Dynamic Update вне WinRE.
     if ((Split-Path $PackagePath -Leaf) -match 'notapplicable') {
         Write-Warning "Не удалось добавить пакет $PackagePath"
@@ -102,7 +102,8 @@ function Add-WindowsDriver {
     [CmdletBinding()]
     param($Path, $Driver, $LogPath)
     Write-Host "    [mock] add driver $(Split-Path $Driver -Leaf)"
-    if ($Driver -match 'bad') { throw 'The driver does not fit this image' }
+    # Проверяется только имя файла: путь к временной папке теста содержит GUID, а в нём бывает «bad».
+    if ((Split-Path $Driver -Leaf) -match '^bad') { throw 'The driver does not fit this image' }
 }
 
 function Export-WindowsDriver {

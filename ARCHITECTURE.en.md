@@ -77,8 +77,8 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Step | What it does | When |
 |---|---|---|
 | Prepare | Clears the working folder (`Reset-LunqWorkDir`) | always |
-| CopyIso | Copies the ISO contents to `WorkDir\iso` | always |
-| Export | Exports the chosen edition to its own `install.wim` (ESD becomes WIM) | always |
+| CopyIso | Copies the ISO contents to `WorkDir\iso`, except `install.wim` and `install.esd` | always |
+| Export | Exports the chosen edition straight from the mounted ISO to its own `install.wim` (ESD becomes WIM) with fast compression: the Recompress step applies maximum compression | always |
 | Mount | Mounts `install.wim` in `WorkDir\mount` | always |
 | Updates | Installs updates in ascending KB order | there are updates |
 | Drivers | Adds drivers one `.inf` at a time | there are drivers |

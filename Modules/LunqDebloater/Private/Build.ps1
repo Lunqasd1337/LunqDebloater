@@ -27,7 +27,13 @@ function Get-LunqBuildSteps {
             Title = Get-LunqText 'Main.StepExport'; Hint = Get-LunqText 'Main.StepExportHint'
             Run = {
                 param($c)
-                Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $c.IsoDir) -SourceIndex $c.Index -DestinationImage $c.WimPath
+                # Редакция берётся прямо с подключённого ISO: install.esd не копируется в рабочую папку.
+                $iso = Mount-IsoImage -IsoPath $c.IsoPath
+                try {
+                    Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $iso.Root) -SourceIndex $c.Index -DestinationImage $c.WimPath `
+                        -CompressionType Fast -KeepSource
+                }
+                finally { Dismount-IsoImage -Iso $iso }
                 # Сведения об образе нужны позже: язык для файла ответов.
                 $c.State.ImageInfo = Get-WindowsImage -ImagePath $c.WimPath -Index 1
                 Write-Info (Get-LunqText 'Main.ExportedInfo' $c.State.ImageInfo.ImageName $c.State.ImageInfo.Version)

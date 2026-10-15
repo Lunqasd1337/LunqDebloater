@@ -90,4 +90,21 @@ Describe 'Обновления и драйверы' {
         $infs.Count | Should -Be 3
         @(Select-LunqPEDrivers $infs | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('hdc.inf', 'rst.inf')
     }
+
+    It 'с кэшем каждый .inf читается один раз' {
+        $dir = Join-Path $TestDrive 'pecache'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'rst.inf') -Value "[Version]`r`nClass = SCSIAdapter"
+        Set-Content -LiteralPath (Join-Path $dir 'net.inf') -Value "[Version]`r`nClass = Net"
+        $infs = Get-LunqDriverFiles -Path $dir
+        $cache = @{}
+        (Select-LunqPEDrivers $infs -Cache $cache).Count | Should -Be 1
+        $cache.Count | Should -Be 2
+        # Повторный вызов берёт ответ из кэша, а заменённый файл читается заново.
+        foreach ($key in @($cache.Keys)) { if ($key -like '*rst.inf|*') { $cache[$key] = $false } }
+        (Select-LunqPEDrivers $infs -Cache $cache).Count | Should -Be 0
+        Set-Content -LiteralPath (Join-Path $dir 'net.inf') -Value "[Version]`r`nClass = HDC"
+        (Get-Item -LiteralPath (Join-Path $dir 'net.inf')).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(1)
+        @(Select-LunqPEDrivers (Get-LunqDriverFiles -Path $dir) -Cache $cache | ForEach-Object { $_.Name }) | Should -Be @('net.inf')
+    }
 }

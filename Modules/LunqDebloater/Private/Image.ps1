@@ -1,18 +1,23 @@
 ﻿function Export-SingleEdition {
     # Экспортирует одну редакцию в новый install.wim (заодно конвертирует ESD в WIM).
+    # -CompressionType Fast для первого экспорта: после обслуживания образ всё равно пересжимается
+    # в Max, и первое сжатие Max только тратило бы минуты. -KeepSource: источник на подключённом
+    # ISO, удалять его нельзя.
     param(
         [Parameter(Mandatory)][string]$SourceImage,
         [Parameter(Mandatory)][int]$SourceIndex,
-        [Parameter(Mandatory)][string]$DestinationImage
+        [Parameter(Mandatory)][string]$DestinationImage,
+        [ValidateSet('Max', 'Fast')][string]$CompressionType = 'Max',
+        [switch]$KeepSource
     )
 
     $temp = "$DestinationImage.tmp"
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
 
     Export-WindowsImage -SourceImagePath $SourceImage -SourceIndex $SourceIndex `
-        -DestinationImagePath $temp -CompressionType Max -CheckIntegrity | Out-Null
+        -DestinationImagePath $temp -CompressionType $CompressionType -CheckIntegrity | Out-Null
 
-    Remove-Item -LiteralPath $SourceImage -Force
+    if (-not $KeepSource) { Remove-Item -LiteralPath $SourceImage -Force }
     if (Test-Path -LiteralPath $DestinationImage) { Remove-Item -LiteralPath $DestinationImage -Force }
     Move-Item -LiteralPath $temp -Destination $DestinationImage
 }

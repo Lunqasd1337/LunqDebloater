@@ -66,6 +66,12 @@ Describe 'Сборка с параметрами' {
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\bootmgr.efi') | Should -Be 'bootmgr.efi from boot.wim'
 
         $native = Get-Content -LiteralPath $t.NativeLog -Encoding UTF8
+        # install.esd не копируется в рабочую папку: редакция экспортируется прямо с ISO, сначала
+        # быстро (Fast), а сжатие Max делается один раз, после обслуживания.
+        @($native | Where-Object { $_ -like 'robocopy.exe|*|/XF|install.wim|install.esd|/A-:R|*' }).Count | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $t.WorkDir 'iso\sources\install.esd') | Should -BeFalse
+        $run.Output | Should -Match 'export \S*isoroot\S*install\.esd index 5 compression Fast'
+        $run.Output | Should -Match 'export \S*install\.wim index 1 compression Max'
         # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
         @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 3
         $registry = Get-Content -LiteralPath $t.RegLog -Encoding UTF8

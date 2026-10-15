@@ -223,6 +223,7 @@ try {
     $choices = @{}
     # Какого вида .cab в корне папки обновлений: распознаётся один раз, а не при каждом показе сводки.
     $cabKinds = @{}
+    $peDriverKinds = @{}
     $cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
 
     while ($true) {
@@ -309,7 +310,7 @@ try {
             $scriptsDetails = Get-LunqText 'Main.ScriptsNoneHint'
         }
         $regionDetails = Get-LunqText 'Main.RegionDetails' $hostRegion.Locale ($hostRegion.Keyboards -join ', ') $hostRegion.TimeZone
-        $peDriversCount = (Select-LunqPEDrivers $foundDrivers).Count
+        $peDriversCount = (Select-LunqPEDrivers $foundDrivers -Cache $peDriverKinds).Count
         $updatesToSetupDetails = @(Get-LunqText 'Main.OptUpdatesToSetupHint')
         if ($foundDU.Count -gt 0) { $updatesToSetupDetails += Get-LunqText 'Main.OptUpdatesToSetupDU' $foundSafeOS.Count $foundSetupDU.Count }
 
@@ -427,7 +428,7 @@ try {
     if ($UpdatesToSetup) { $peUpdates = Select-LunqPEUpdates $updates }
     $peDrivers = @()
     if ($DriversToSetup) {
-        $peDrivers = Select-LunqPEDrivers $drivers
+        $peDrivers = Select-LunqPEDrivers $drivers -Cache $peDriverKinds
         if ($peDrivers.Count -eq 0) { Write-Warning (Get-LunqText 'Main.NoPEDrivers') }
     }
     $serviceRecovery = ($peUpdates.Count + $safeOSUpdates.Count + $peDrivers.Count) -gt 0
