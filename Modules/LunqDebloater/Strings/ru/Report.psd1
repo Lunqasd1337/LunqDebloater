@@ -7,6 +7,7 @@
     'Report.RemovedOrDisabled' = 'удалено или отключено: {0}'
     'Report.RegistryPart'      = 'реестр: {0} из {1}'
     'Report.RegistryFailed'    = 'записей реестра: {0}'
+    'Report.NotApplicable'     = 'Не подходят к этому образу: {0}'
     'Report.Missing'           = 'Нет в образе или уже убрано: {0}'
     'Report.SkippedCategories' = 'Пропущены категории: {0}'
     'Report.OutputIso'         = 'Итоговый ISO: {0} ({1})'

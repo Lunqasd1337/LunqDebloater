@@ -94,6 +94,29 @@ Describe 'Сборка с параметрами' {
         $expand[0] | Should -BeLike '*windows11.0-kb5080200-x64.cab|-F:`*|*iso?sources|*'
     }
 
+    It 'Safe OS и Setup Dynamic Update в одной папке без подпапок узнаются по содержимому' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true } -Prepare {
+            param($t)
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080100-x64_0123456789abcdef0123456789abcdef01234567.cab') -Value 'MSCF safeos'
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080200-x64_0123456789abcdef0123456789abcdef01234567.cab') -Value 'MSCF setup files'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 14
+        $run.Output | Should -Match 'Обновления:\s+1 шт\.'
+        $run.Output | Should -Match 'Установщик/WinRE: обновления \(1 шт\.\), Safe OS Dynamic Update \(1 шт\.\) и Setup Dynamic Update \(1 шт\.\)'
+        $run.Output | Should -Match 'Safe OS Dynamic Update в WinRE: установлено 1, ошибок 0'
+        $run.Output | Should -Match 'Setup Dynamic Update: установлено 1, ошибок 0'
+        # В систему и установщик Dynamic Update не ставятся.
+        $run.Output | Should -Match 'Обновления: установлено 1, ошибок 0'
+        $run.Output | Should -Match 'Обновления в установщике: установлено 1, ошибок 0'
+        $expand = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'expand.exe|*|-F:`*|*' })
+        $expand.Count | Should -Be 1
+        $expand[0] | Should -BeLike '*windows11.0-kb5080200-x64_*.cab|-F:`*|*iso?sources|*'
+    }
+
     It 'Setup Dynamic Update без других обновлений: WinRE не трогается' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true } -Prepare {
             param($t)

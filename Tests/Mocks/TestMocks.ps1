@@ -53,6 +53,15 @@ function Invoke-Native {
             }
             return 1
         }
+        'expand.exe' {
+            # Проверка вида .cab распаковывает только .mum: что в нём, задаёт текст файла-пустышки.
+            if ($Arguments[1] -eq '-F:*.mum') {
+                $text = Get-Content -LiteralPath $Arguments[0] -Raw
+                if ($text -match 'safeos') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_SafeOSDU" />' }
+                elseif ($text -match 'rollup') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_RollupFix" />' }
+            }
+            return 0
+        }
         'reg.exe' { if ($Arguments[0] -eq 'query') { return 1 }; return 0 }
         'dism.exe' { if ($env:LUNQ_TEST_DISM_EXIT) { return [int]$env:LUNQ_TEST_DISM_EXIT }; return 0 }
         '*oscdimg*' { Set-Content -LiteralPath $Arguments[-1] -Value ('i' * 2048); return 0 }

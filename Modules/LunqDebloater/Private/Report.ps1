@@ -48,6 +48,7 @@ function Write-LunqReport {
             Write-Info (Get-LunqText $key $r.Title $r.Done.Count $r.Failed.Count)
         }
         if ($r.Failed.Count -gt 0) { Write-Host ('        ' + (Get-LunqText 'Report.Failed' ($r.Failed -join ', '))) -ForegroundColor Yellow }
+        if ($r.Kind -like 'Updates*' -and $r.Skipped.Count -gt 0) { Write-Host ('        ' + (Get-LunqText 'Report.NotApplicable' ($r.Skipped -join ', '))) -ForegroundColor DarkGray }
     }
     $registry = @($results | Where-Object { $_.Kind -eq 'Registry' }) | Select-Object -First 1
 

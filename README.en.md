@@ -173,7 +173,7 @@ Put only updates for the system itself in the folder: the cumulative update and 
 - `Config\Updates\SafeOS`: Safe OS Dynamic Update (`.cab`), installed into WinRE after the cumulative update;
 - `Config\Updates\Setup`: Setup Dynamic Update (`.cab`), expanded into the ISO's `sources` folder to update the Windows Setup files.
 
-The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
+The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. If there are none, for example in Downloads, the Dynamic Updates can stay next to the other updates: the script recognizes them by the contents of the `.cab`. A Setup Dynamic Update has no DISM package (`.mum` file) in it, and a Safe OS Dynamic Update is named `Package_for_SafeOSDU`. The summary marks such files. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
 Updates are installed right after the image is mounted, in ascending KB number order, before apps and components are removed. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
 
