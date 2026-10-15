@@ -2,6 +2,7 @@
 @{
     'Registry.HiveLoadFailed'       = 'Не удалось загрузить куст {0}'
     'Registry.HiveUnloadFailed'     = 'Не удалось выгрузить {0}. Выгрузите вручную: reg unload {0}'
+    'Registry.HivesStillLoaded'     = 'Кусты реестра образа так и не выгрузились: {0}. С ними DISM не сохранит образ, поэтому сборка остановлена. Закройте программы, которые могут их держать (regedit, антивирус), и запустите снова.'
     'Registry.NeedNumber'           = 'нужно число'
     'Registry.NotNumber'            = '''{0}'' не число'
     'Registry.DwordOverflow'        = '{0} не помещается в REG_DWORD'

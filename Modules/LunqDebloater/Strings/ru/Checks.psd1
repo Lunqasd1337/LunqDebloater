@@ -6,6 +6,7 @@
     'Checks.WorkDirNotEmpty'     = 'папка не пустая и создана не этим скриптом'
     'Checks.WorkDirMarker'       = 'Рабочая папка LunqDebloater. Удаляется после сборки.'
     'Checks.LeftoverMount'       = 'Найден оставшийся смонтированный образ в {0}, отключаю без сохранения.'
+    'Checks.MountQueryFailed'    = 'DISM не ответил, смонтированы ли образы в {0}. Папка не удаляется, чтобы не потерять смонтированный образ. Перезагрузите компьютер или выполните dism /Cleanup-Wim и запустите снова.'
     'Checks.OutputIsSource'      = 'это исходный ISO, он был бы перезаписан'
     'Checks.OutputIsFolder'      = 'это папка, а нужен путь к файлу .iso'
     'Checks.OutputNoFolder'      = 'папки {0} нет, создайте её'

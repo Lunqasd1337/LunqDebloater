@@ -77,6 +77,30 @@ Describe 'Рабочая папка и итоговый ISO' {
     }
 }
 
+Describe 'Смонтированные образы' {
+    It 'DISM не ответил: считается, что образ смонтирован, и рабочая папка не удаляется' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Get-WindowsImage { throw 'DISM is busy' } -ParameterFilter { $Mounted }
+            Mock Dismount-OfflineHives { }
+            $work = Join-Path $Root 'busywork'
+            New-Item -ItemType Directory -Path $work -Force | Out-Null
+            Get-LunqMountedPaths -Paths @(Join-Path $work 'mount') | Should -BeNullOrEmpty
+            Test-LunqAnyMounted -Paths @(Join-Path $work 'mount') | Should -BeTrue
+            { Reset-LunqWorkDir -WorkDir $work -MountPaths @(Join-Path $work 'mount') } | Should -Throw '*DISM не ответил*'
+            Test-Path -LiteralPath $work | Should -BeTrue
+        }
+    }
+
+    It 'DISM ответил: занятые папки из списка и пустой список, если ничего не смонтировано' {
+        InModuleScope LunqDebloater {
+            Mock Get-WindowsImage { @([pscustomobject]@{ Path = 'C:\W\mount' }, [pscustomobject]@{ Path = 'C:\Other' }) } -ParameterFilter { $Mounted }
+            @(Get-LunqMountedPaths -Paths 'C:\W\mount', 'C:\W\remount') | Should -Be @('C:\W\mount')
+            Test-LunqAnyMounted -Paths 'C:\W\remount' | Should -BeFalse
+        }
+    }
+}
+
 Describe 'Test-LunqImageRequirements' {
     BeforeAll {
         $requirements = [pscustomobject]@{ Build = 26300; MinRevision = 9457; Architecture = 'amd64' }

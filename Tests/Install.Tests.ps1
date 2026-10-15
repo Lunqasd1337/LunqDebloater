@@ -59,6 +59,16 @@ Describe 'Test-LunqInstallFolder' {
         Set-Content -LiteralPath (Join-Path $foreign.FullName 'photo.jpg') -Value ''
         Test-LunqInstallFolder -Path $foreign.FullName | Should -BeFalse
     }
+
+    It 'клон репозитория не принимается за прежнюю установку, а установка с файлом состояния принимается' {
+        # В клоне тоже есть LunqDebloater.ps1, но папки релиза заменились бы целиком вместе с несохранённой работой.
+        $clone = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'clone')
+        Set-Content -LiteralPath (Join-Path $clone.FullName 'LunqDebloater.ps1') -Value ''
+        New-Item -ItemType Directory -Path (Join-Path $clone.FullName '.git') | Out-Null
+        Test-LunqInstallFolder -Path $clone.FullName | Should -BeFalse
+        Set-Content -LiteralPath (Join-Path $clone.FullName '.lunq-install.json') -Value '{}'
+        Test-LunqInstallFolder -Path $clone.FullName | Should -BeTrue
+    }
 }
 
 Describe 'Install-LunqFiles' {

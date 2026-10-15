@@ -37,6 +37,9 @@ function Mount-WindowsImage {
         # Установщик внутри boot.wim: его setup.exe и setuphost.exe копируются в sources ISO.
         New-Item -ItemType Directory -Path (Join-Path $Path 'sources') -Force | Out-Null
         foreach ($name in 'setup.exe', 'setuphost.exe') { Set-Content -LiteralPath (Join-Path $Path "sources\$name") -Value 'from boot.wim' }
+        # Загрузчик UEFI из WinPE: после обновления boot.wim он заменяет загрузчик на ISO.
+        New-Item -ItemType Directory -Path (Join-Path $Path 'Windows\Boot\EFI') -Force | Out-Null
+        foreach ($name in 'bootmgfw.efi', 'bootmgr.efi') { Set-Content -LiteralPath (Join-Path $Path "Windows\Boot\EFI\$name") -Value "$name from boot.wim" }
     }
 }
 

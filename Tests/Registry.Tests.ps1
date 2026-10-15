@@ -65,6 +65,28 @@ Describe 'ConvertTo-LunqRegValue' {
     }
 }
 
+Describe 'Dismount-OfflineHives' {
+    It 'куст, который не выгружается, останавливает сборку только с -Strict' {
+        InModuleScope LunqDebloater {
+            # reg query находит куст, а reg unload каждый раз отказывает.
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 0 } else { 1 } }
+            Mock Start-Sleep { }
+            Mock Write-Warning { }
+            { Dismount-OfflineHives } | Should -Not -Throw
+            { Dismount-OfflineHives -Strict } | Should -Throw '*HKLM\LUNQ_SOFTWARE*сборка остановлена*'
+            # 3 куста по 5 попыток при каждом из двух вызовов.
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'unload' } -Times 30 -Exactly
+        }
+    }
+
+    It 'выгруженные кусты не мешают -Strict' {
+        InModuleScope LunqDebloater {
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 1 } else { 0 } }
+            { Dismount-OfflineHives -Strict } | Should -Not -Throw
+        }
+    }
+}
+
 Describe 'Запись в реестр' -Skip:(-not $script:OnWindows) {
     It 'типы значений записываются как в профиле' {
         $entries = @(

@@ -6,6 +6,7 @@
     'Checks.WorkDirNotEmpty'     = 'the folder is not empty and was not created by this script'
     'Checks.WorkDirMarker'       = 'LunqDebloater working folder. It is deleted after the build.'
     'Checks.LeftoverMount'       = 'Found an image still mounted at {0} from an earlier run, unmounting it without saving.'
+    'Checks.MountQueryFailed'    = 'DISM did not report whether images are mounted in {0}. The folder is not deleted so that a mounted image is not lost. Restart the computer or run dism /Cleanup-Wim and start again.'
     'Checks.OutputIsSource'      = 'it is the source ISO, it would be overwritten'
     'Checks.OutputIsFolder'      = 'it is a folder, but a path to an .iso file is needed'
     'Checks.OutputNoFolder'      = 'the folder {0} does not exist, create it'

@@ -134,6 +134,14 @@ $wimPath = Join-Path $isoDir 'sources\install.wim'
 # Заголовок окна не меняется в некоторых консолях (например, при перенаправленном выводе), это не ошибка.
 try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
 
+$runLock = Enter-LunqRunLock
+if (-not $runLock) {
+    Write-Host (Get-LunqText 'Main.AlreadyRunning') -ForegroundColor Red
+    if (-not $interactive) { throw (Get-LunqText 'Main.AlreadyRunning') }
+    Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null
+    return
+}
+
 try {
     # Лог ведётся с самого начала: так в него попадают и ошибки при выборе ISO и проверке системы.
     $lunqLog = Start-LunqLog -Dir (Join-Path $PSScriptRoot 'Logs')
@@ -672,14 +680,14 @@ catch {
     if ($state.Mounted) {
         Write-Info (Get-LunqText 'Main.DiscardImage')
         Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
-        $state.Mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
+        $state.Mounted = Test-LunqAnyMounted -Paths $mountDir
     }
     if ($lunqLog) { Write-Info (Get-LunqText 'Main.LogDetails' $lunqLog.Path) }
     if (-not $interactive) { throw }
 }
 finally {
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
-    $stillMounted = $state.Mounted -or ((Test-Path -LiteralPath $isoDir) -and (Get-LunqMountedPaths -Paths $allMountDirs).Count -gt 0)
+    $stillMounted = $state.Mounted -or ((Test-Path -LiteralPath $isoDir) -and (Test-LunqAnyMounted -Paths $allMountDirs))
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
     elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -698,6 +706,8 @@ finally {
         $dismLog = Compress-LunqDismLog -Path $lunqLog.DismPath
         if ($failed -and $dismLog) { Write-Info (Get-LunqText 'Main.DismLog' $dismLog) }
     }
+    # До вопроса «нажмите Enter»: пока окно ждёт, новый запуск уже можно начать.
+    Exit-LunqRunLock -Lock $runLock
     if ($interactive) {
         Write-Host ''
         Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null

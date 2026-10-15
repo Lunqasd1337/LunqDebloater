@@ -23,4 +23,7 @@
     'Servicing.SetupFilesTitle'     = 'Setup files'
     'Servicing.SetupFilesDone'      = '{0} copied from boot.wim to sources'
     'Servicing.SetupFileFailed'     = 'Could not copy {0} from boot.wim to sources: {1}'
+    'Servicing.BootFilesTitle'      = 'Boot manager on the ISO'
+    'Servicing.BootFilesDone'       = '{0} updated from boot.wim'
+    'Servicing.BootFileFailed'      = 'Could not update {0} from boot.wim: {1}'
 }

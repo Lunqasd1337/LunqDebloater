@@ -15,11 +15,13 @@ BeforeAll {
         $user = Join-Path $lunq 'User'
         New-Item -ItemType Directory -Path $user -Force | Out-Null
         $text = [IO.File]::ReadAllText($script:Source)
-        if (-not $script:OnWindows) {
-            # Вне Windows нет WindowsIdentity: проверка прав администратора заменяется на «да».
-            $text = $text.Replace('if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {', 'if ($false) {')
-            $text = $text.Replace('$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())', '')
-        }
+        # Проверка прав администратора заменяется на «да» везде, а не только вне Windows. В обычном
+        # окне Windows скрипт иначе перезапустил бы себя через UAC, и копия без заглушек поставила бы
+        # настоящие программы и зарегистрировала бы настоящее задание.
+        $check = 'if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {'
+        if (-not $text.Contains($check)) { throw 'FirstLogon.ps1: admin check not found, update the test' }
+        $text = $text.Replace($check, 'if ($false) {')
+        $text = $text.Replace('$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())', '')
         [IO.File]::WriteAllText((Join-Path $lunq 'FirstLogon.ps1'), $text, (New-Object Text.UTF8Encoding($true)))
         [IO.File]::WriteAllText((Join-Path $lunq 'Language.txt'), $Language, (New-Object Text.UTF8Encoding($false)))
         if ($Apps.Count -gt 0) { Set-Content -LiteralPath (Join-Path $user 'Apps.txt') -Value $Apps -Encoding UTF8 }

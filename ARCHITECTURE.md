@@ -40,7 +40,7 @@ Tests\                       Тесты Pester и заглушки
 |---|---|
 | `Console.ps1` | Вывод: `Write-Step` («Шаг N из M»), `Write-Section`, `Write-Info`, `Write-Check`, `Read-YesNo`, `Format-Size` |
 | `Language.ps1` | Таблицы строк и язык: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` для текстов профиля |
-| `System.ps1` | Права администратора, лог (`Start-LunqLog`), метки шагов в логе DISM и его сжатие в конце запуска (`Compress-LunqDismLog`), архив для отчёта об ошибке (`New-LunqBugReport`), версия, `Invoke-Native` для внешних программ (вывод при ошибке попадает в лог), передача параметров при перезапуске |
+| `System.ps1` | Права администратора, один запуск за раз (`Enter-LunqRunLock`), лог (`Start-LunqLog`), метки шагов в логе DISM и его сжатие в конце запуска (`Compress-LunqDismLog`), архив для отчёта об ошибке (`New-LunqBugReport`), версия, `Invoke-Native` для внешних программ (вывод при ошибке попадает в лог), передача параметров при перезапуске |
 | `Profile.ps1` | Чтение и проверка профиля, выбор профиля и категорий, сборка общих списков из включённых категорий (`Get-LunqEffectiveConfig`) |
 | `Options.ps1` | Сводка «Что войдёт в образ» в пошаговом режиме: пункты, их зависимости, переключение по номеру, пункты-действия и окно выбора папки (`Select-LunqFolder`) |
 | `Iso.ps1` | Подключение ISO, список редакций, версия образа и проверка требований профиля, копирование содержимого ISO |
@@ -91,7 +91,7 @@ Tests\                       Тесты Pester и заглушки
 | Registry | Применяет записи реестра профиля | без `-SkipRegistry` |
 | Cleanup | Очищает хранилище компонентов (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
 | Save | Пишет отметку о сборке в реестр образа и сохраняет `install.wim` | всегда |
-| Setup | Распаковывает Setup DU в `sources`, обслуживает `boot.wim` (образ 2), копирует из него `setup.exe` и `setuphost.exe` | есть что ставить в установщик |
+| Setup | Распаковывает Setup DU в `sources`; если для `boot.wim` (образ 2) есть обновления или драйверы, обслуживает его и копирует из него `setup.exe`, `setuphost.exe` и загрузчик UEFI | есть что ставить в установщик |
 | Recompress | Пересжимает `install.wim` | всегда |
 | Iso | Собирает загрузочный ISO через `oscdimg` | всегда |
 

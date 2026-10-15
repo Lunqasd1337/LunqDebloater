@@ -14,9 +14,13 @@ param(
 
 function Test-LunqInstallFolder {
     # Files are copied into the folder, so only a new or empty folder or an earlier install will do.
+    # Release folders are replaced as a whole, so a git clone (it has LunqDebloater.ps1 too) is
+    # refused: uncommitted work in Modules or Tests would be lost.
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $true }
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $Path '.lunq-install.json')) { return $true }
+    if (Test-Path -LiteralPath (Join-Path $Path '.git')) { return $false }
     if (Test-Path -LiteralPath (Join-Path $Path 'LunqDebloater.ps1')) { return $true }
     return -not (Get-ChildItem -LiteralPath $Path -Force | Select-Object -First 1)
 }

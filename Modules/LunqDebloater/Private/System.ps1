@@ -6,6 +6,26 @@
 
 function Get-LunqVersion { return $script:LunqVersion }
 
+function Enter-LunqRunLock {
+    # Два запуска сразу мешают друг другу: подготовка второго отключает образ первого, удаляет его
+    # рабочую папку и выгружает его кусты реестра (их имена одни на все запуски). Глобальный мьютекс
+    # виден из всех сеансов Windows. Возвращает мьютекс или $null, если другой запуск уже идёт.
+    param([string]$Name = 'Global\LunqDebloater')
+    $mutex = New-Object System.Threading.Mutex($false, $Name)
+    try { $acquired = $mutex.WaitOne(0) }
+    catch [System.Threading.AbandonedMutexException] { $acquired = $true }   # прошлый запуск закрыли, не отпустив мьютекс
+    if ($acquired) { return $mutex }
+    $mutex.Dispose()
+    return $null
+}
+
+function Exit-LunqRunLock {
+    param($Lock)
+    if (-not $Lock) { return }
+    try { $Lock.ReleaseMutex() } catch { }   # мьютекс уже отпущен: ничего страшного
+    $Lock.Dispose()
+}
+
 function Start-LunqLog {
     # Начинает лог запуска в папке Logs и направляет туда же подробный лог DISM, чтобы
     # при ошибке была видна её настоящая причина. Хранятся логи последних $Keep запусков,

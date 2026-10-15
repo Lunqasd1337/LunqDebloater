@@ -46,7 +46,7 @@ function Invoke-Native {
     switch -Wildcard ($FilePath) {
         'robocopy.exe' {
             $destination = $Arguments[1]
-            foreach ($file in 'sources\install.esd', 'sources\boot.wim', 'sources\setup.exe', 'boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin') {
+            foreach ($file in 'sources\install.esd', 'sources\boot.wim', 'sources\setup.exe', 'boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin', 'efi\boot\bootx64.efi', 'bootmgr.efi') {
                 $path = Join-Path $destination $file
                 New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
                 Set-Content -LiteralPath $path -Value 'x'

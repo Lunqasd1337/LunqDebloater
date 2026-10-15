@@ -23,4 +23,7 @@
     'Servicing.SetupFilesTitle'     = 'Файлы установщика'
     'Servicing.SetupFilesDone'      = '{0} скопированы из boot.wim в sources'
     'Servicing.SetupFileFailed'     = 'Не удалось скопировать {0} из boot.wim в sources: {1}'
+    'Servicing.BootFilesTitle'      = 'Загрузчик на ISO'
+    'Servicing.BootFilesDone'       = '{0} обновлены из boot.wim'
+    'Servicing.BootFileFailed'      = 'Не удалось обновить {0} из boot.wim: {1}'
 }

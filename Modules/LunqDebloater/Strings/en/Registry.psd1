@@ -2,6 +2,7 @@
 @{
     'Registry.HiveLoadFailed'       = 'Could not load hive {0}'
     'Registry.HiveUnloadFailed'     = 'Could not unload {0}. Unload it manually: reg unload {0}'
+    'Registry.HivesStillLoaded'     = 'The registry hives of the image could not be unloaded: {0}. DISM cannot save the image while they are loaded, so the build is stopped. Close programs that may hold them (regedit, antivirus) and start again.'
     'Registry.NeedNumber'           = 'a number is required'
     'Registry.NotNumber'            = '''{0}'' is not a number'
     'Registry.DwordOverflow'        = '{0} does not fit in REG_DWORD'

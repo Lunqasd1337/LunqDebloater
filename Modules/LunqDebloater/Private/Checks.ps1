@@ -67,8 +67,11 @@ function Reset-LunqWorkDir {
     param([Parameter(Mandatory)][string]$WorkDir, [Parameter(Mandatory)][string[]]$MountPaths)
     # Если прошлый запуск прервали на шаге реестра, его кусты остались загружены,
     # и DISM не сможет отключить образ, пока они открыты.
-    Dismount-OfflineHives
-    foreach ($leftover in (Get-LunqMountedPaths -Paths $MountPaths)) {
+    Dismount-OfflineHives -Strict
+    $mounted = Get-LunqMountedPaths -Paths $MountPaths
+    # DISM не ответил: папку нельзя удалять, в ней может быть смонтирован образ.
+    if ($null -eq $mounted) { throw (Get-LunqText 'Checks.MountQueryFailed' $WorkDir) }
+    foreach ($leftover in $mounted) {
         Write-Info (Get-LunqText 'Checks.LeftoverMount' $leftover)
         Dismount-WindowsImage -Path $leftover -Discard | Out-Null
     }
@@ -77,11 +80,20 @@ function Reset-LunqWorkDir {
 }
 
 function Get-LunqMountedPaths {
-    # Какие из указанных папок сейчас заняты смонтированным образом DISM.
+    # Какие из указанных папок сейчас заняты смонтированным образом DISM. Если DISM не ответил,
+    # возвращает $null, а не пустой список: «не знаю» нельзя считать «ничего не смонтировано».
     param([string[]]$Paths)
     try { $mountedImages = @(Get-WindowsImage -Mounted -ErrorAction Stop) }
-    catch { return , @() }
+    catch { return $null }
     return , @($mountedImages | Where-Object { $Paths -contains $_.Path } | ForEach-Object { $_.Path })
+}
+
+function Test-LunqAnyMounted {
+    # Занята ли хоть одна из папок образом. Если DISM не ответил, считается, что занята:
+    # так рабочая папка остаётся на диске, а не удаляется вместе со смонтированным образом.
+    param([string[]]$Paths)
+    $mounted = Get-LunqMountedPaths -Paths $Paths
+    return ($null -eq $mounted) -or ($mounted.Count -gt 0)
 }
 
 function Test-LunqOutputPath {

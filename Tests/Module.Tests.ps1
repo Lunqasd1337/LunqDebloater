@@ -124,6 +124,38 @@ Describe 'Лог' {
     }
 }
 
+Describe 'Один запуск за раз' {
+    It 'второй запуск не получает мьютекс, пока первый его держит' {
+        $name = 'Global\LunqDebloaterTest_' + [guid]::NewGuid().ToString('N')
+        $ready = New-Object System.Threading.ManualResetEvent($false)
+        $release = New-Object System.Threading.ManualResetEvent($false)
+        # Первый запуск изображает другой поток: мьютекс принадлежит потоку, а не процессу.
+        $other = [powershell]::Create()
+        $null = $other.AddScript({
+                param($Name, $Ready, $Release)
+                $m = New-Object System.Threading.Mutex($false, $Name)
+                $null = $m.WaitOne()
+                $null = $Ready.Set()
+                $null = $Release.WaitOne(30000)
+                $m.ReleaseMutex()
+                $m.Dispose()
+            }).AddArgument($name).AddArgument($ready).AddArgument($release)
+        $handle = $other.BeginInvoke()
+        try {
+            $ready.WaitOne(10000) | Should -BeTrue
+            Enter-LunqRunLock -Name $name | Should -BeNullOrEmpty
+        }
+        finally {
+            $null = $release.Set()
+            $other.EndInvoke($handle)
+            $other.Dispose()
+        }
+        $lock = Enter-LunqRunLock -Name $name
+        $lock | Should -Not -BeNullOrEmpty
+        Exit-LunqRunLock -Lock $lock
+    }
+}
+
 Describe 'Размер логов' {
     It 'лог DISM в конце запуска сжимается в архив рядом' {
         $log = Join-Path $TestDrive 'LunqDebloater_2_dism.log'
