@@ -40,7 +40,7 @@ Tests\                       Pester tests and stubs
 |---|---|
 | `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Read-YesNo`, `Format-Size` |
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
-| `System.ps1` | Administrator rights, the log (`Start-LunqLog`), step markers in the DISM log, the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
+| `System.ps1` | Administrator rights, the log (`Start-LunqLog`), step markers in the DISM log and its compression at the end of the run (`Compress-LunqDismLog`), the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
 | `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: items, their dependencies, toggling by number, action items and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |

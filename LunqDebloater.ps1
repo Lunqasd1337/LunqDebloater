@@ -674,10 +674,7 @@ catch {
         Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
         $state.Mounted = (Get-LunqMountedPaths -Paths $mountDir).Count -gt 0
     }
-    if ($lunqLog) {
-        Write-Info (Get-LunqText 'Main.LogDetails' $lunqLog.Path)
-        if (Test-Path -LiteralPath $lunqLog.DismPath) { Write-Info (Get-LunqText 'Main.DismLog' $lunqLog.DismPath) }
-    }
+    if ($lunqLog) { Write-Info (Get-LunqText 'Main.LogDetails' $lunqLog.Path) }
     if (-not $interactive) { throw }
 }
 finally {
@@ -697,6 +694,9 @@ finally {
             }
             catch { Write-Warning $_.Exception.Message }
         }
+        # Лог DISM сжимается последним: из полного лога собирается архив для отчёта.
+        $dismLog = Compress-LunqDismLog -Path $lunqLog.DismPath
+        if ($failed -and $dismLog) { Write-Info (Get-LunqText 'Main.DismLog' $dismLog) }
     }
     if ($interactive) {
         Write-Host ''
