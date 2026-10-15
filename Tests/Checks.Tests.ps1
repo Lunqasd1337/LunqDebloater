@@ -38,6 +38,13 @@ Describe 'Рабочая папка и итоговый ISO' {
             Initialize-LunqWorkDir -WorkDir $own
             Set-Content -LiteralPath (Join-Path $own 'leftover.txt') -Value 'x'
             Test-LunqWorkDir -WorkDir $own | Should -BeNullOrEmpty
+
+            # Папка по умолчанию без метки: остаток старой версии годится, чужие файлы нет.
+            $old = Join-Path $Root 'LunqWork'
+            New-Item -ItemType Directory -Path (Join-Path $old 'iso'), (Join-Path $old 'mount') -Force | Out-Null
+            Test-LunqWorkDir -WorkDir $old -IsDefault | Should -BeNullOrEmpty
+            Set-Content -LiteralPath (Join-Path $old 'photo.jpg') -Value 'x'
+            Test-LunqWorkDir -WorkDir $old -IsDefault | Should -Be 'папка не пустая и создана не этим скриптом'
         }
     }
 
@@ -179,7 +186,7 @@ Describe 'Test-LunqPrerequisites: остатки прошлого запуска
         $work = Join-Path $TestDrive 'w'
         $iso = Join-Path $TestDrive 'in.iso'
         Set-Content -LiteralPath $iso -Value 'iso'
-        Mock -ModuleName LunqDebloater Get-LunqDriveInfo { [pscustomobject]@{ Name = 'T:\'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB } }
+        Mock -ModuleName LunqDebloater Get-LunqDriveInfo { [pscustomobject]@{ Name = 'T:\'; DriveType = 'Fixed'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB } }
         Mock -ModuleName LunqDebloater Find-Oscdimg { 'oscdimg.exe' }
         Mock -ModuleName LunqDebloater Write-Host { }
     }

@@ -74,7 +74,7 @@ function Exit-LunqTestEnvironment {
     foreach ($name in $script:SavedEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $script:SavedEnvironment[$name])
     }
-    foreach ($name in 'LUNQ_TEST_MOUNTED', 'LUNQ_TEST_DISM_EXIT', 'LUNQ_TEST_HOST_BUILD', 'LUNQ_TEST_NOT_ADMIN', 'LUNQ_TEST_ISO_ATTACHED', 'LUNQ_TEST_IMAGE_VERSION', 'LUNQ_TEST_FAIL_APPX', 'LUNQ_TEST_FOLDER', 'LUNQ_TEST_NO_HOST_DRIVERS', 'LUNQ_TEST_SYSPREP_UNATTEND') {
+    foreach ($name in 'LUNQ_TEST_MOUNTED', 'LUNQ_TEST_DISM_EXIT', 'LUNQ_TEST_HOST_BUILD', 'LUNQ_TEST_NOT_ADMIN', 'LUNQ_TEST_ISO_ATTACHED', 'LUNQ_TEST_IMAGE_VERSION', 'LUNQ_TEST_FAIL_APPX', 'LUNQ_TEST_FOLDER', 'LUNQ_TEST_NO_HOST_DRIVERS', 'LUNQ_TEST_SYSPREP_UNATTEND', 'LUNQ_TEST_NETWORK_DRIVE') {
         [Environment]::SetEnvironmentVariable($name, $null)
     }
     Remove-Module Dism, LunqDebloater -Force -ErrorAction SilentlyContinue

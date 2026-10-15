@@ -228,6 +228,13 @@ Describe 'Сборка с параметрами' {
 }
 
 Describe 'Ошибки и предупреждения' {
+    It 'рабочая папка на подключённом сетевом диске: остановка до сборки' {
+        $run = Start-TestBuild -Prepare { $env:LUNQ_TEST_NETWORK_DRIVE = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match '\[FAIL\] Рабочая папка .* на сетевом диске'
+        Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
+    }
+
     It 'нет папки для итогового ISO: остановка до сборки' {
         $run = Start-TestBuild -Parameters @{ OutputIso = (Join-Path $TestDrive 'missing\out.iso') }
         $run.Error | Should -Not -BeNullOrEmpty

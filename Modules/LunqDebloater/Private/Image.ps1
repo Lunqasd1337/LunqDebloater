@@ -61,7 +61,11 @@ function Find-Oscdimg {
     param([string]$Path)
 
     if ($Path) {
-        if (Test-Path -LiteralPath $Path) { return $Path }
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { return $Path }
+        # Вместо файла часто указывают папку Oscdimg из ADK: тогда oscdimg.exe ищется в ней.
+        # Без этого папка проходила проверку и ошибка всплывала только на последнем шаге.
+        $inFolder = Join-Path $Path 'oscdimg.exe'
+        if ((Test-Path -LiteralPath $Path -PathType Container) -and (Test-Path -LiteralPath $inFolder -PathType Leaf)) { return $inFolder }
         throw (Get-LunqText 'Image.OscdimgNotFoundAt' $Path)
     }
 

@@ -82,7 +82,7 @@ Describe 'Install-LunqFirstLogon' {
 
 Describe 'Файл ответов' {
     BeforeAll {
-        $regionInfo = [pscustomobject]@{ Locale = 'ru-RU'; InputLocale = '0419:00000419;0409:00000409'; Keyboards = @('ru-RU', 'en-US'); TimeZone = 'Russian Standard Time' }
+        $regionInfo = [pscustomobject]@{ Locale = 'en-GB'; SystemLocale = 'ru-RU'; InputLocale = '0419:00000419;0409:00000409'; Keyboards = @('ru-RU', 'en-US'); TimeZone = 'Russian Standard Time' }
         function Get-Answers {
             param([switch]$Oobe, [switch]$Region, [switch]$Bypass, [switch]$LocalAccount, [string]$Language = 'ru-RU', [string]$Command)
             $answers = [pscustomobject]@{ Oobe = [bool]$Oobe; Region = $(if ($Region) { $regionInfo } else { $null }); Bypass = [bool]$Bypass; LocalAccount = [bool]$LocalAccount }
@@ -107,9 +107,13 @@ Describe 'Файл ответов' {
         $winpe | Should -Not -BeNullOrEmpty
         $winpe.SetupUILanguage.UILanguage | Should -Be 'ru-RU'
         $winpe.InputLocale | Should -Be '0419:00000419;0409:00000409'
+        # Кодовая страница из системного языка, формат чисел и дат из пользовательского.
         $winpe.SystemLocale | Should -Be 'ru-RU'
         $winpe.UILanguage | Should -Be 'ru-RU'
-        $winpe.UserLocale | Should -Be 'ru-RU'
+        $winpe.UserLocale | Should -Be 'en-GB'
+        $oobe = (Select-Xml -Xml $xml -XPath "//u:component[@name='Microsoft-Windows-International-Core']" -Namespace $ns).Node
+        $oobe.SystemLocale | Should -Be 'ru-RU'
+        $oobe.UserLocale | Should -Be 'en-GB'
     }
 
     It 'без региона нет языковых разделов и часового пояса' {

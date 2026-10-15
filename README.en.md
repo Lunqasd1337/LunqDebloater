@@ -119,7 +119,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
 | `-Index` / `-Edition` | Edition by number or name |
 | `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO. Only administrators can access it |
-| `-OscdimgPath` | Path to `oscdimg.exe` if the ADK is not in its standard folder |
+| `-OscdimgPath` | Path to `oscdimg.exe` or the folder that holds it, if the ADK is not in its standard folder |
 | `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
 | `-DriversToSetup` | Also add disk controller drivers to Windows Setup (`boot.wim`) and the recovery environment (WinRE) if they do not see the disk |

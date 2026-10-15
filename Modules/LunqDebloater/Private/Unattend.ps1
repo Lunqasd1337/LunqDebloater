@@ -1,8 +1,12 @@
 ﻿function Get-LunqHostRegion {
     # Формат, раскладки и часовой пояс компьютера, на котором собирается образ: их получит и новая Windows.
     # Если что-то узнать не удалось, остаётся значение по умолчанию.
-    $region = [pscustomobject]@{ Locale = 'en-US'; InputLocale = '0409:00000409'; Keyboards = @('en-US'); TimeZone = 'UTC' }
-    try { $culture = (Get-Culture).Name; if ($culture) { $region.Locale = $culture } } catch { }
+    $region = [pscustomobject]@{ Locale = 'en-US'; SystemLocale = 'en-US'; InputLocale = '0409:00000409'; Keyboards = @('en-US'); TimeZone = 'UTC' }
+    try { $culture = (Get-Culture).Name; if ($culture) { $region.Locale = $culture; $region.SystemLocale = $culture } } catch { }
+    # Язык программ, не поддерживающих Юникод (кодовая страница), задаётся отдельно от формата чисел
+    # и дат: у пользователя с форматом en-US и русской кодовой страницей старые программы иначе
+    # показали бы кракозябры.
+    try { $system = (Get-WinSystemLocale -ErrorAction Stop).Name; if ($system) { $region.SystemLocale = $system } } catch { }
     try {
         $languages = @(Get-WinUserLanguageList -ErrorAction Stop)
         $tips = @($languages | ForEach-Object { @($_.InputMethodTips) } | Where-Object { $_ } | Select-Object -Unique)
@@ -48,6 +52,11 @@ function New-LunqUnattendXml {
         [string]$FirstLogonCommand
     )
     $e = { param($text) [Security.SecurityElement]::Escape([string]$text) }
+    $systemLocale = $null
+    if ($Unattend.Region) {
+        $systemLocale = $Unattend.Region.Locale
+        if ($Unattend.Region.PSObject.Properties['SystemLocale'] -and $Unattend.Region.SystemLocale) { $systemLocale = $Unattend.Region.SystemLocale }
+    }
     $attrs = 'processorArchitecture="{0}" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"' -f $Architecture
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add('<?xml version="1.0" encoding="utf-8"?>')
@@ -63,7 +72,7 @@ function New-LunqUnattendXml {
         $lines.Add("        <UILanguage>$(& $e $ImageLanguage)</UILanguage>")
         $lines.Add('      </SetupUILanguage>')
         $lines.Add("      <InputLocale>$(& $e $Unattend.Region.InputLocale)</InputLocale>")
-        $lines.Add("      <SystemLocale>$(& $e $Unattend.Region.Locale)</SystemLocale>")
+        $lines.Add("      <SystemLocale>$(& $e $systemLocale)</SystemLocale>")
         $lines.Add("      <UILanguage>$(& $e $ImageLanguage)</UILanguage>")
         $lines.Add("      <UserLocale>$(& $e $Unattend.Region.Locale)</UserLocale>")
         $lines.Add('    </component>')
@@ -106,7 +115,7 @@ function New-LunqUnattendXml {
     if ($Unattend.Region) {
         $lines.Add("    <component name=`"Microsoft-Windows-International-Core`" $attrs>")
         $lines.Add("      <InputLocale>$(& $e $Unattend.Region.InputLocale)</InputLocale>")
-        $lines.Add("      <SystemLocale>$(& $e $Unattend.Region.Locale)</SystemLocale>")
+        $lines.Add("      <SystemLocale>$(& $e $systemLocale)</SystemLocale>")
         if ($ImageLanguage) { $lines.Add("      <UILanguage>$(& $e $ImageLanguage)</UILanguage>") }
         $lines.Add("      <UserLocale>$(& $e $Unattend.Region.Locale)</UserLocale>")
         $lines.Add('    </component>')

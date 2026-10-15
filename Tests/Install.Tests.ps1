@@ -167,3 +167,23 @@ Describe 'Invoke-LunqInstall' {
         Should -Invoke Start-LunqDebloater -Times 0 -Exactly
     }
 }
+
+Describe 'Get-LunqLatestRelease' {
+    It 'API GitHub отказал (лимит запросов): версия берётся со страницы релизов' {
+        Mock Invoke-RestMethod { throw 'Response status code does not indicate success: 403 (rate limit exceeded).' }
+        Mock Invoke-WebRequest {
+            [pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.2' } }
+        } -ParameterFilter { $Uri -like '*/releases/latest' }
+        $release = Get-LunqLatestRelease
+        $release.Tag | Should -Be 'v1.9.2'
+        $release.ZipUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/archive/refs/tags/v1.9.2.zip'
+        # В PowerShell 7 адрес лежит в RequestMessage.
+        Mock Invoke-WebRequest {
+            [pscustomobject]@{ BaseResponse = [pscustomobject]@{ RequestMessage = [pscustomobject]@{ RequestUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.3' } } }
+        } -ParameterFilter { $Uri -like '*/releases/latest' }
+        (Get-LunqLatestRelease).Tag | Should -Be 'v1.9.3'
+        # Страница не дала тега: видна исходная ошибка API.
+        Mock Invoke-WebRequest { [pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [uri]'https://github.com/login' } } } -ParameterFilter { $Uri -like '*/releases/latest' }
+        { Get-LunqLatestRelease } | Should -Throw '*403*'
+    }
+}

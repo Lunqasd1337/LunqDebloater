@@ -19,6 +19,16 @@ public static class FakeWinget {
     public static int Main(string[] args) {
         string root = Path.GetDirectoryName(Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location));
         string failing = Path.Combine(root, "failing.txt");
+        // notready.txt: сколько ещё раз winget --version завершится с ошибкой (App Installer обновляется).
+        if (args.Length > 0 && args[0] == "--version") {
+            string notReady = Path.Combine(root, "notready.txt");
+            if (File.Exists(notReady)) {
+                int left = int.Parse(File.ReadAllText(notReady).Trim());
+                if (left > 0) { File.WriteAllText(notReady, (left - 1).ToString()); return 1; }
+            }
+            Console.WriteLine("v1.0.0");
+            return 0;
+        }
         int i = Array.IndexOf(args, "--id"); string id = i >= 0 ? args[i + 1] : "";
         File.AppendAllText(Path.Combine(root, "winget.log"), id + Environment.NewLine);
         if (File.Exists(failing) && File.ReadAllLines(failing).Contains(id)) return 1;
@@ -35,7 +45,7 @@ public static class FakeWinget {
         if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать winget.exe: $compilerOutput" }
     }
     else {
-        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`nexit 0`n"
+        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nif [ `"`$1`" = '--version' ]; then left=0; if [ -f `"`$root/notready.txt`" ]; then left=`$(cat `"`$root/notready.txt`"); fi; if [ `"`$left`" -gt 0 ]; then echo `$((left - 1)) > `"`$root/notready.txt`"; exit 1; fi; echo v1.0.0; exit 0; fi`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`nexit 0`n"
         [IO.File]::WriteAllText($script:FakeWinget, $sh)
         & chmod +x $script:FakeWinget
     }
@@ -75,19 +85,24 @@ public static class FakeWinget {
         # Обёртка: заглушки и запуск скрипта. Часы идут вперёд на каждый Start-Sleep, так что
         # ожидание интернета «до 5 минут» проходит мгновенно.
         $wrapper = @'
-param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails)
+param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked)
 $env:PATH = $Bin + [IO.Path]::PathSeparator + $env:PATH
 $env:WINDIR = $Windows
 $global:Now = [datetime]'2026-01-01'
 $global:Offline = [bool]$Offline
 $global:NoTask = [bool]$NoTask
 $global:AclFails = [bool]$AclFails
+$global:NcsiBlocked = [bool]$NcsiBlocked
 $global:TaskFile = Join-Path $State 'task'
 $env:USERDOMAIN = 'PC'
 $env:USERNAME = 'user'
 function global:Get-Date { $global:Now }
 function global:Start-Sleep { param($Seconds = 0, $Milliseconds = 0) $global:Now = $global:Now.AddSeconds($Seconds).AddMilliseconds($Milliseconds) }
-function global:Invoke-WebRequest { param($Uri, [switch]$UseBasicParsing, $TimeoutSec) if ($global:Offline) { throw 'нет сети' }; [pscustomobject]@{ Content = 'Microsoft Connect Test' } }
+function global:Invoke-WebRequest {
+    param($Uri, [switch]$UseBasicParsing, $TimeoutSec, $Method)
+    if ($global:Offline -or ($global:NcsiBlocked -and $Uri -like '*msftconnecttest*')) { throw 'нет сети' }
+    [pscustomobject]@{ Content = 'Microsoft Connect Test' }
+}
 function global:Get-ScheduledTask { param($TaskName, $ErrorAction) if (Test-Path -LiteralPath $global:TaskFile) { 'task' } }
 function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) if ($global:NoTask) { throw 'планировщик недоступен' }; Set-Content -LiteralPath $global:TaskFile -Value @("name: $TaskName", $Action, $Trigger, $Principal, $Settings) }
 function global:Unregister-ScheduledTask { Remove-Item -LiteralPath $global:TaskFile -ErrorAction SilentlyContinue }
@@ -108,11 +123,12 @@ function global:Add-AppxPackage { }
 
     function Invoke-FirstLogon {
         # Один вход в Windows: запуск скрипта в отдельном процессе. Возвращает вывод.
-        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask, [switch]$AclFails)
+        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked)
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Test.Root 'wrapper.ps1'), '-Lunq', $Test.Lunq, '-Windows', $Test.Windows, '-Bin', $Test.Bin, '-State', $Test.Root)
         if ($Offline) { $arguments += '-Offline' }
         if ($NoTask) { $arguments += '-NoTask' }
         if ($AclFails) { $arguments += '-AclFails' }
+        if ($NcsiBlocked) { $arguments += '-NcsiBlocked' }
         $output = & $script:PowerShell @arguments 2>&1 | Out-String
         return $output
     }
@@ -145,6 +161,22 @@ Describe 'Скрипт первого входа' {
         $out | Should -Match ('Не удалось закрыть .*' + [regex]::Escape((Split-Path $t.User -Leaf)) + ' от других пользователей')
         Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
         $out | Should -Match 'Установлено программ: 1'
+    }
+
+    It 'winget ещё не запускается: скрипт ждёт, а не теряет попытку' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        Set-Content -LiteralPath (Join-Path $t.Root 'notready.txt') -Value '2'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Жду, пока Windows зарегистрирует winget'
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+        $out | Should -Match 'Установлено программ: 1'
+    }
+
+    It 'msftconnecttest.com закрыт фильтром: интернет находится по второму адресу без ожидания' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $out = Invoke-FirstLogon -Test $t -NcsiBlocked
+        $out | Should -Not -Match 'Жду подключения к интернету'
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
     }
 
     It 'по-английски, если в Language.txt записано en' {

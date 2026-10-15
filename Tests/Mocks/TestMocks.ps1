@@ -14,7 +14,9 @@ function Get-LunqHostBuild {
 function Get-LunqDriveInfo {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
-    return [pscustomobject]@{ Name = 'T:\'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
+    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске.
+    $type = if ($env:LUNQ_TEST_NETWORK_DRIVE) { 'Network' } else { 'Fixed' }
+    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
 }
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }

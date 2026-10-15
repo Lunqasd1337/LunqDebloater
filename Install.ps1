@@ -62,10 +62,26 @@ function Get-LunqLatestRelease {
     # The latest published release, not main: main may be in the middle of changes.
     $repo = 'Lunqasd1337/LunqDebloater'
     $headers = @{ 'User-Agent' = 'LunqDebloater-Install'; 'Accept' = 'application/vnd.github+json' }
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers -UseBasicParsing
+    try { $tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers -UseBasicParsing).tag_name }
+    catch {
+        # Without a token the API allows 60 requests an hour per IP address, so behind a shared NAT
+        # (a school, an office) it answers 403. The releases page has no such limit: it redirects
+        # to the page of the latest tag.
+        $apiError = $_
+        try {
+            $response = Invoke-WebRequest -Uri "https://github.com/$repo/releases/latest" -Headers @{ 'User-Agent' = 'LunqDebloater-Install' } -UseBasicParsing
+            # Windows PowerShell 5.1 and PowerShell 7 keep the final address in different places.
+            $base = $response.BaseResponse
+            if ($base.PSObject.Properties['ResponseUri']) { $finalUri = [string]$base.ResponseUri }
+            else { $finalUri = [string]$base.RequestMessage.RequestUri }
+        }
+        catch { throw $apiError }
+        if ($finalUri -notmatch '/releases/tag/([^/?#]+)') { throw $apiError }
+        $tag = [uri]::UnescapeDataString($Matches[1])
+    }
     return [pscustomobject]@{
-        Tag    = $release.tag_name
-        ZipUrl = "https://github.com/$repo/archive/refs/tags/$($release.tag_name).zip"
+        Tag    = $tag
+        ZipUrl = "https://github.com/$repo/archive/refs/tags/$tag.zip"
     }
 }
 
