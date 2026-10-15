@@ -153,7 +153,9 @@ If an error occurs, the image is dismounted without saving and the registry hive
 
 Every run writes a log to the `Logs` folder next to the script, from the very start: it also contains errors that happen while choosing the ISO and profile and while checking the system. The first lines of the log show the LunqDebloater version, the Windows and PowerShell versions and the parameters of the run. Next to it is the detailed DISM log (`*_dism.log`): when DISM reports an error, the real cause is usually visible only there. The logs of the last 10 runs and the DISM logs of the last 3 runs (they are much bigger) are kept, older ones are deleted automatically. The path to the log is shown in the build plan, in the result and on an error.
 
-If something goes wrong, send both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.log`.
+Every step header shows the time the step started, and the result lists the three longest steps. In the DISM log each step starts with a marker `===== LunqDebloater <time>: step N/M: <step> =====`, which makes the right place easy to find. When an external program (for example, robocopy or oscdimg) fails, the last lines of its output go into the log. On an error, the text below it shows where exactly it happened.
+
+When a build stops with an error, an archive `LunqDebloater_<date>_report.zip` appears next to the log with the run log, the DISM log and the profile. The user folder path, the user name and the computer name in it are replaced, so this archive alone is enough for a bug report. If there is no archive, send both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.log`.
 
 The LunqDebloater version is shown in the window title, at the start of the log and in the build result. It is also written to the built image together with the build settings. On the installed system you can see them like this:
 

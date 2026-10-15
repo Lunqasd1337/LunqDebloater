@@ -6,4 +6,5 @@
     'System.NoParameters'  = 'нет (пошаговый режим)'
     'System.RunParameters' = 'Параметры: {0}'
     'System.DismLog'       = 'Подробный лог DISM: {0}'
+    'System.NativeOutput'  = '{0} завершился с кодом {1}, его вывод:'
 }

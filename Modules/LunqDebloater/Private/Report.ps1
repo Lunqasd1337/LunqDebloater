@@ -31,6 +31,7 @@ function Write-LunqReport {
         $LunqProfile,
         [string]$OutputIso,
         [TimeSpan]$Elapsed,
+        $StepTimes = @(),
         [string]$LogPath,
         [switch]$HasFirstLogon,
         [switch]$HasUnattend
@@ -88,6 +89,10 @@ function Write-LunqReport {
         Write-Info (Get-LunqText 'Report.OutputIso' $OutputIso (Format-Size (Get-Item -LiteralPath $OutputIso).Length))
     }
     if ($Elapsed) { Write-Info (Get-LunqText 'Report.Elapsed' $Elapsed (Get-LunqVersion)) }
+    $longest = @($StepTimes | Sort-Object { $_.Elapsed } -Descending | Select-Object -First 3)
+    if ($longest.Count -gt 0) {
+        Write-Info (Get-LunqText 'Report.Longest' (($longest | ForEach-Object { '{0} {1:hh\:mm\:ss}' -f $_.Title, $_.Elapsed }) -join ', '))
+    }
     if ($LogPath) { Write-Info (Get-LunqText 'Report.Log' $LogPath) }
     Write-Info ''
     Write-Info (Get-LunqText 'Report.Next')

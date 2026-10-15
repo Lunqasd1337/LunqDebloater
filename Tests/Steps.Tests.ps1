@@ -123,6 +123,28 @@ Describe 'Invoke-LunqBuild' {
             $results = Invoke-LunqBuild -Context $context
             @($results | ForEach-Object { $_.Title }) | Should -Be @('Первый', 'Второй')
             $context.State.Seen | Should -BeTrue
+            # Время записывается для выполненных шагов, чтобы итог показал самые долгие.
+            @($context.State.StepTimes | ForEach-Object { $_.Title }) | Should -Be @('A', 'C')
+            $context.State.StepTimes[0].Elapsed | Should -BeOfType [TimeSpan]
+        }
+    }
+
+    It 'перед каждым шагом в лог DISM пишется метка' {
+        InModuleScope LunqDebloater {
+            Mock Write-Host { }
+            Mock Get-LunqBuildSteps {
+                @(
+                    @{ Name = 'Updates'; When = $true; Title = 'A'; Hint = ''; Run = { param($c) } },
+                    @{ Name = 'Iso'; When = $true; Title = 'B'; Hint = ''; Run = { param($c) } }
+                )
+            }
+            $old = $script:DismLogPath
+            $script:DismLogPath = Join-Path $TestDrive 'dism.log'
+            try { Invoke-LunqBuild -Context @{ State = @{} } | Out-Null }
+            finally { $log = $script:DismLogPath; $script:DismLogPath = $old }
+            $text = Get-Content -LiteralPath $log -Raw
+            $text | Should -Match '===== LunqDebloater \d{4}-\d\d-\d\d \d\d:\d\d:\d\d: step 1/2: Updates ====='
+            $text | Should -Match 'step 2/2: Iso'
         }
     }
 }

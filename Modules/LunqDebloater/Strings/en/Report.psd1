@@ -21,4 +21,5 @@
     'Report.FirstLogonRufus2'  = 'a local account and more. Do not tick any of them, or the programs and scripts will not start on'
     'Report.FirstLogonRufus3'  = 'their own after installation. The settings you need can be turned on in the LunqDebloater answer file'
     'Report.FirstLogonRufus4'  = '(the "What goes into the image" summary), and the programs and scripts can be run by hand: see README.'
+    'Report.Longest'           = 'Took the longest: {0}'
 }

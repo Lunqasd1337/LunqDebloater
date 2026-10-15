@@ -17,7 +17,9 @@ function Write-Step {
     Write-Host ''
     if ($script:StepTotal -gt 0) {
         $script:StepCurrent++
-        Write-Host ('==> ' + (Get-LunqText 'Console.Step' $script:StepCurrent $script:StepTotal $Message)) -ForegroundColor Cyan
+        Write-Host ('==> ' + (Get-LunqText 'Console.Step' $script:StepCurrent $script:StepTotal $Message)) -ForegroundColor Cyan -NoNewline
+        # Время начала шага: по логу видно, сколько шёл каждый шаг и когда случилась ошибка.
+        Write-Host ('  ' + (Get-Date -Format 'HH:mm:ss')) -ForegroundColor DarkGray
     }
     else {
         Write-Host "==> $Message" -ForegroundColor Cyan

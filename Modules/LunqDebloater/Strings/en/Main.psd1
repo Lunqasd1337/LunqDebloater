@@ -189,4 +189,6 @@
     'Main.LogDetails'            = 'Details in the log: {0}'
     'Main.DismLog'               = 'Detailed DISM log: {0}'
     'Main.WorkDirKept'           = 'The working folder {0} was kept: an image is mounted in it. The next run of the script will unmount it.'
+    'Main.ErrorWhere'            = 'Where the error happened:'
+    'Main.BugReport'             = 'For a bug report attach this archive (the user and computer names in it are replaced): {0}'
 }

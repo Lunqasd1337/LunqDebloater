@@ -19,7 +19,8 @@ function Mount-OfflineHives {
 function Dismount-OfflineHives {
     # Выгружает кусты; повторяет попытку, если какой-то процесс ещё держит дескриптор.
     foreach ($hive in $script:HiveMap.Values) {
-        if ((Invoke-Native reg.exe @('query', $hive.Key)) -ne 0) { continue }
+        # Код 1 значит, что куст не подключён: выгружать нечего.
+        if ((Invoke-Native reg.exe @('query', $hive.Key) -SuccessCodes 0, 1) -ne 0) { continue }
 
         $unloaded = $false
         for ($attempt = 1; $attempt -le 5 -and -not $unloaded; $attempt++) {

@@ -84,6 +84,46 @@ Describe 'ConvertTo-LunqArgumentList' {
     }
 }
 
+Describe 'Лог' {
+    It 'вывод внешней программы попадает в лог, только если она завершилась с ошибкой' {
+        # Внешняя программа: тот же PowerShell, который выполняет тесты.
+        $shell = (Get-Process -Id $PID).Path
+        & (Get-Module LunqDebloater) {
+            param($shell)
+            $failed = & { Invoke-Native $shell @('-NoProfile', '-Command', 'Write-Output first; Write-Output second; exit 3') } 6>&1
+            @($failed | Where-Object { $_ -is [int] }) | Should -Be @(3)
+            $text = ($failed | Where-Object { $_ -isnot [int] } | Out-String)
+            $text | Should -Match 'завершился с кодом 3'
+            $text | Should -Match 'second'
+            # Код из -SuccessCodes считается успехом: вывода нет.
+            $ok = & { Invoke-Native $shell @('-NoProfile', '-Command', 'Write-Output quiet; exit 1') -SuccessCodes 0, 1 } 6>&1
+            @($ok | Where-Object { $_ -isnot [int] }).Count | Should -Be 0
+        } $shell
+    }
+
+    It 'архив для отчёта: логи и профиль с заменёнными путём профиля и именами' {
+        $dir = Join-Path $TestDrive 'logs'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $log = [pscustomobject]@{ Path = Join-Path $dir 'LunqDebloater_1.log'; DismPath = Join-Path $dir 'LunqDebloater_1_dism.log' }
+        Set-Content -LiteralPath $log.Path -Value @('Путь: C:\Users\Nikolai\Downloads\Win11.iso', 'Компьютер PC-NIKOLAI, пользователь Nikolai, папка Users') -Encoding UTF8
+        Set-Content -LiteralPath $log.DismPath -Value 'Image path C:\USERS\NIKOLAI\work' -Encoding ASCII
+        $replace = [ordered]@{ 'C:\Users\Nikolai' = '%USERPROFILE%'; 'Nikolai' = '<user>'; 'PC-NIKOLAI' = '<computer>' }
+
+        $zip = New-LunqBugReport -Log $log -ProfilePath (Join-Path $dir 'none.json') -Replace $replace
+        $zip | Should -Be (Join-Path $dir 'LunqDebloater_1_report.zip')
+        $out = Join-Path $TestDrive 'report'
+        Expand-Archive -LiteralPath $zip -DestinationPath $out
+        $names = @(Get-ChildItem -LiteralPath $out | ForEach-Object { $_.Name })
+        $names.Count | Should -Be 2
+        $names | Should -Contain 'LunqDebloater_1.log'
+        $names | Should -Contain 'LunqDebloater_1_dism.log'
+        $text = Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_1.log') -Raw -Encoding UTF8
+        $text | Should -Match ([regex]::Escape('Путь: %USERPROFILE%\Downloads\Win11.iso'))
+        $text | Should -Match 'Компьютер <computer>, пользователь <user>, папка Users'
+        Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_1_dism.log') -Raw | Should -Match ([regex]::Escape('%USERPROFILE%\work'))
+    }
+}
+
 Describe 'Строки интерфейса' {
     BeforeAll {
         $script:Repo = Split-Path $PSScriptRoot -Parent

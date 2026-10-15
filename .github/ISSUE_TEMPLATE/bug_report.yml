@@ -59,8 +59,8 @@ body:
     attributes:
       label: Лог / Log file
       description: |
-        Перетащите сюда оба файла последнего запуска из папки `Logs`: `LunqDebloater_<дата>.log` и `LunqDebloater_<дата>_dism.log`. Ошибки после установки: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
-        Drag both files of the last run from the `Logs` folder here: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.log`. For problems after installation: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+        Перетащите сюда архив `LunqDebloater_<дата>_report.zip` из папки `Logs` (он появляется после ошибки сборки) или оба файла последнего запуска: `LunqDebloater_<дата>.log` и `LunqDebloater_<дата>_dism.log`. Ошибки после установки: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+        Drag the archive `LunqDebloater_<date>_report.zip` from the `Logs` folder here (it appears after a failed build) or both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.log`. For problems after installation: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
       placeholder: Перетащите файлы сюда / Drag the files here
     validations:
       required: true
