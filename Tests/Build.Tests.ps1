@@ -151,8 +151,13 @@ Describe 'Сборка с параметрами' {
         # Время начала у заголовка шага, самые долгие шаги в итоге и метки шагов в логе DISM.
         $run.Output | Should -Match '==> Шаг 1 из \d+\. .+\s+\d\d:\d\d:\d\d'
         $run.Output | Should -Match 'Дольше всего: .+ \d\d:\d\d:\d\d'
-        $dismLog = Get-ChildItem -LiteralPath (Join-Path $script:Test.App 'Logs') -Filter '*_dism.log' | Sort-Object LastWriteTime | Select-Object -Last 1
-        Get-Content -LiteralPath $dismLog.FullName -Raw | Should -Match 'LunqDebloater .+: step 1/\d+: Prepare'
+        # В конце запуска лог DISM сжимается: от него остаётся только архив.
+        $logs = Join-Path $script:Test.App 'Logs'
+        @(Get-ChildItem -LiteralPath $logs -Filter '*_dism.log').Count | Should -Be 0
+        $dismZip = Get-ChildItem -LiteralPath $logs -Filter '*_dism.zip' | Sort-Object LastWriteTime | Select-Object -Last 1
+        $out = Join-Path $TestDrive 'dismlog'
+        Expand-Archive -LiteralPath $dismZip.FullName -DestinationPath $out -Force
+        Get-Content -LiteralPath (Get-ChildItem -LiteralPath $out -Filter '*_dism.log').FullName -Raw | Should -Match 'LunqDebloater .+: step 1/\d+: Prepare'
     }
 
     It 'с -SkipAppx -SkipComponents -SkipRegistry шагов профиля нет' {
@@ -233,6 +238,7 @@ Describe 'Ошибки и предупреждения' {
         $run.Output | Should -Match 'Remove-LunqAppx'
         $run.Output | Should -Match 'Для отчёта об ошибке приложите этот архив'
         @(Get-ChildItem -LiteralPath (Join-Path $script:Test.App 'Logs') -Filter '*_report.zip').Count | Should -Be 1
+        $run.Output | Should -Match 'Подробный лог DISM: .+_dism\.zip'
     }
 
     It 'неудачная очистка хранилища не срывает сборку' {

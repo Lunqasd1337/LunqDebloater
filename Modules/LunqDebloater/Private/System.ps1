@@ -9,7 +9,8 @@ function Get-LunqVersion { return $script:LunqVersion }
 function Start-LunqLog {
     # Начинает лог запуска в папке Logs и направляет туда же подробный лог DISM, чтобы
     # при ошибке была видна её настоящая причина. Хранятся логи последних $Keep запусков,
-    # а логи DISM, которые намного больше, только последних $KeepDism.
+    # а логи DISM, которые намного больше, только последних $KeepDism. В конце запуска лог DISM
+    # сжимается в _dism.zip (Compress-LunqDismLog), удаляются оба вида.
     param([Parameter(Mandatory)][string]$Dir, [int]$Keep = 10, [int]$KeepDism = 3)
 
     try { New-Item -ItemType Directory -Path $Dir -Force -ErrorAction Stop | Out-Null }
@@ -23,9 +24,10 @@ function Start-LunqLog {
     foreach ($file in $old) {
         Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_dism.log') -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_dism.zip') -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($file.FullName -replace '\.log$', '_report.zip') -Force -ErrorAction SilentlyContinue
     }
-    $oldDism = @(Get-ChildItem -LiteralPath $Dir -Filter 'LunqDebloater_*_dism.log' -File |
+    $oldDism = @(Get-ChildItem -LiteralPath $Dir -Filter 'LunqDebloater_*_dism.*' -File | Where-Object { $_.Extension -in '.log', '.zip' } |
             Sort-Object Name -Descending | Select-Object -Skip ([Math]::Max($KeepDism - 1, 0)))
     foreach ($file in $oldDism) { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue }
 
@@ -60,6 +62,24 @@ function Stop-LunqLog {
     try { Stop-Transcript | Out-Null } catch { }
 }
 
+function Compress-LunqDismLog {
+    # Сжимает лог DISM в конце запуска: со сборкой обновлений он вырастает до сотен мегабайт, а
+    # текст сжимается в десятки раз. Возвращает путь к тому, что осталось на диске: к архиву или,
+    # если сжать не удалось, к самому логу.
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $zip = $Path -replace '\.log$', '.zip'
+    try {
+        Compress-Archive -LiteralPath $Path -DestinationPath $zip -Force -ErrorAction Stop
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+        return $zip
+    }
+    catch {
+        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+        return $Path
+    }
+}
+
 function Write-LunqDismMarker {
     # Метка в логе DISM перед шагом сборки: лог большой, и по ней видно, где начинается нужный шаг.
     # Между шагами DISM файл не держит, но если запись не удалась, сборке это не мешает.
@@ -87,22 +107,43 @@ function Copy-LunqAnonymized {
     param(
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination,
-        [Parameter(Mandatory)][Collections.IDictionary]$Replace
+        [Parameter(Mandatory)][Collections.IDictionary]$Replace,
+        # Больше нуля: вместо всего файла записать строки с ошибками, предупреждениями и метками
+        # шагов, а затем последние $KeepTail строк целиком. Так делается для большого лога DISM.
+        [int]$KeepTail = 0
     )
     $patterns = @(foreach ($key in $Replace.Keys) {
             # Путь заменяется как есть, имена только целым словом: «User» не трогает «Users».
             $pattern = [regex]::Escape($key)
             if ($key -notmatch '[\\/]') { $pattern = '(?<![\w-])' + $pattern + '(?![\w-])' }
-            [pscustomobject]@{ Regex = New-Object regex($pattern, 'IgnoreCase'); Value = $Replace[$key] }
+            [pscustomobject]@{ Regex = New-Object regex($pattern, 'IgnoreCase'); Value = ([string]$Replace[$key]).Replace('$', '$$') }
         })
+    $hide = {
+        param([string]$Text)
+        foreach ($p in $patterns) { $Text = $p.Regex.Replace($Text, $p.Value) }
+        $Text
+    }
     $reader = New-Object IO.StreamReader($Source, [Text.Encoding]::Default, $true)
     try {
         $null = $reader.Peek()
         $writer = New-Object IO.StreamWriter($Destination, $false, $reader.CurrentEncoding)
         try {
-            while ($null -ne ($line = $reader.ReadLine())) {
-                foreach ($p in $patterns) { $line = $p.Regex.Replace($line, $p.Value.Replace('$', '$$')) }
-                $writer.WriteLine($line)
+            if ($KeepTail -le 0) {
+                while ($null -ne ($line = $reader.ReadLine())) { $writer.WriteLine((& $hide $line)) }
+            }
+            else {
+                # В логе DISM миллионы строк, поэтому замены делаются только в тех, что попадут в отчёт.
+                $tail = New-Object 'System.Collections.Generic.Queue[string]'
+                $important = New-Object regex('^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d, (Error|Warning)\b|^===== LunqDebloater ')
+                $writer.WriteLine((Get-LunqText 'System.ReportShortened'))
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    if ($important.IsMatch($line)) { $writer.WriteLine((& $hide $line)) }
+                    $tail.Enqueue($line)
+                    if ($tail.Count -gt $KeepTail) { $null = $tail.Dequeue() }
+                }
+                $writer.WriteLine('')
+                $writer.WriteLine((Get-LunqText 'System.ReportTail' $tail.Count))
+                foreach ($line in $tail) { $writer.WriteLine((& $hide $line)) }
             }
         }
         finally { $writer.Dispose() }
@@ -113,11 +154,14 @@ function Copy-LunqAnonymized {
 function New-LunqBugReport {
     # Архив для отчёта об ошибке рядом с логом: лог запуска, лог DISM и профиль. Путь к профилю
     # пользователя и имена заменены, чтобы их не приходилось вычищать вручную перед отправкой.
+    # Лог DISM больше $MaxDismBytes сокращается: иначе архив не пролезет в issue на GitHub.
     # Вызывается после Stop-LunqLog: пока идёт транскрипт, лог ещё не дописан.
     param(
         [Parameter(Mandatory)]$Log,
         [string]$ProfilePath,
-        [Collections.IDictionary]$Replace = (Get-LunqPrivateNames)
+        [Collections.IDictionary]$Replace = (Get-LunqPrivateNames),
+        [long]$MaxDismBytes = 20MB,
+        [int]$DismTail = 20000
     )
     $files = @(@($Log.Path, $Log.DismPath, $ProfilePath) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) })
     if ($files.Count -eq 0) { return $null }
@@ -125,7 +169,11 @@ function New-LunqBugReport {
     $temp = Join-Path ([IO.Path]::GetTempPath()) ('LunqDebloater-report-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
     try {
-        foreach ($file in $files) { Copy-LunqAnonymized -Source $file -Destination (Join-Path $temp (Split-Path $file -Leaf)) -Replace $Replace }
+        foreach ($file in $files) {
+            $keepTail = 0
+            if ($file -eq $Log.DismPath -and (Get-Item -LiteralPath $file).Length -gt $MaxDismBytes) { $keepTail = $DismTail }
+            Copy-LunqAnonymized -Source $file -Destination (Join-Path $temp (Split-Path $file -Leaf)) -Replace $Replace -KeepTail $keepTail
+        }
         Compress-Archive -Path (Join-Path $temp '*') -DestinationPath $zip -Force
     }
     finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }

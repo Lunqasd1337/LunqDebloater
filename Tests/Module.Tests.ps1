@@ -124,6 +124,65 @@ Describe 'Лог' {
     }
 }
 
+Describe 'Размер логов' {
+    It 'лог DISM в конце запуска сжимается в архив рядом' {
+        $log = Join-Path $TestDrive 'LunqDebloater_2_dism.log'
+        Set-Content -LiteralPath $log -Value (1..2000 | ForEach-Object { "2026-10-15 01:00:00, Info DISM line $_" }) -Encoding ASCII
+        $zip = Compress-LunqDismLog -Path $log
+        $zip | Should -Be (Join-Path $TestDrive 'LunqDebloater_2_dism.zip')
+        Test-Path -LiteralPath $log | Should -BeFalse
+        (Get-Item -LiteralPath $zip).Length | Should -BeLessThan 20000
+        $out = Join-Path $TestDrive 'dism'
+        Expand-Archive -LiteralPath $zip -DestinationPath $out
+        @(Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_2_dism.log')).Count | Should -Be 2000
+        # Лога нет, например сборка не дошла до DISM: и архива нет.
+        Compress-LunqDismLog -Path (Join-Path $TestDrive 'none_dism.log') | Should -BeNullOrEmpty
+    }
+
+    It 'большой лог DISM попадает в отчёт сокращённым: ошибки, метки шагов и конец лога' {
+        $dir = Join-Path $TestDrive 'big'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $log = [pscustomobject]@{ Path = Join-Path $dir 'LunqDebloater_3.log'; DismPath = Join-Path $dir 'LunqDebloater_3_dism.log' }
+        Set-Content -LiteralPath $log.Path -Value 'run log' -Encoding UTF8
+        $lines = @('===== LunqDebloater 2026-10-15 01:00:00: step 5/9: Updates =====')
+        $lines += 1..500 | ForEach-Object { "2026-10-15 01:00:00, Info                  DISM   middle $_" }
+        $lines += '2026-10-15 01:00:01, Error                 DISM   DISM Package Manager: Failed hr:0x800f081e'
+        $lines += 1..500 | ForEach-Object { "2026-10-15 01:00:02, Info                  DISM   end $_" }
+        Set-Content -LiteralPath $log.DismPath -Value $lines -Encoding ASCII
+
+        $zip = New-LunqBugReport -Log $log -Replace ([ordered]@{}) -MaxDismBytes 1KB -DismTail 100
+        $out = Join-Path $TestDrive 'bigreport'
+        Expand-Archive -LiteralPath $zip -DestinationPath $out
+        $text = Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_3_dism.log') -Raw
+        $text | Should -Match 'Лог DISM сокращён для отчёта'
+        $text | Should -Match 'step 5/9: Updates'
+        $text | Should -Match 'Failed hr:0x800f081e'
+        $text | Should -Match 'end 500'
+        $text | Should -Match 'end 401\b'
+        $text | Should -Not -Match 'end 400\b'
+        $text | Should -Not -Match 'middle 250\b'
+    }
+
+    It 'старые логи DISM удаляются и в виде архива' {
+        $dir = Join-Path $TestDrive 'rotate'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        foreach ($day in 1..4) {
+            Set-Content -LiteralPath (Join-Path $dir "LunqDebloater_2026-10-0${day}_10-00-00.log") -Value 'log'
+            Set-Content -LiteralPath (Join-Path $dir "LunqDebloater_2026-10-0${day}_10-00-00_dism.zip") -Value 'zip'
+        }
+        InModuleScope LunqDebloater -Parameters @{ Dir = $dir } {
+            param($Dir)
+            # Транскрипт не нужен: проверяется только уборка старых файлов.
+            Mock Start-Transcript { }
+            Mock Stop-Transcript { }
+            Start-LunqLog -Dir $Dir -Keep 3 -KeepDism 2 | Out-Null
+            Stop-LunqLog
+        }
+        @(Get-ChildItem -LiteralPath $dir -Filter '*_dism.zip' | ForEach-Object { $_.Name }) | Should -Be @('LunqDebloater_2026-10-04_10-00-00_dism.zip')
+        Test-Path -LiteralPath (Join-Path $dir 'LunqDebloater_2026-10-01_10-00-00.log') | Should -BeFalse
+    }
+}
+
 Describe 'Строки интерфейса' {
     BeforeAll {
         $script:Repo = Split-Path $PSScriptRoot -Parent
