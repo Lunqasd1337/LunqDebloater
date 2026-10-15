@@ -44,8 +44,9 @@ Describe 'Манифест и версия' {
         # Без BOM Windows PowerShell 5.1 читает русский текст как ANSI. Install.ps1 исключение:
         # он только в ASCII, его проверяет Tests\Install.Tests.ps1.
         $repo = Split-Path $PSScriptRoot -Parent
-        $files = @(Get-ChildItem -LiteralPath $repo -Recurse -File -Include '*.ps1', '*.psm1', '*.psd1' |
-                Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -ne 'Install.ps1' })
+        # Расширение проверяется в Where-Object: в 5.1 -Include вместе с -LiteralPath не действует.
+        $files = @(Get-ChildItem -LiteralPath $repo -Recurse -File |
+                Where-Object { '.ps1', '.psm1', '.psd1' -contains $_.Extension -and $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -ne 'Install.ps1' })
         $files += @(Get-ChildItem -LiteralPath (Join-Path $repo 'Config') -File -Filter 'README*.txt')
         $files.Count | Should -BeGreaterThan 30
         $noBom = @($files | Where-Object {

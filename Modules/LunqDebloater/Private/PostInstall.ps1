@@ -90,8 +90,10 @@ function Install-LunqFirstLogon {
         foreach ($item in @(Get-ChildItem -LiteralPath $FirstLogon.ScriptsPath -Force | Where-Object { $skip -notcontains $_.Name })) {
             Copy-Item -LiteralPath $item.FullName -Destination $userTarget -Recurse -Force
         }
-        $converted = @(Get-ChildItem -LiteralPath $userTarget -Recurse -File -Include '*.ps1', '*.psm1' |
-                Where-Object { ConvertTo-LunqUtf8Bom -Path $_.FullName })
+        # Расширение проверяется в Where-Object: в 5.1 -Include вместе с -LiteralPath не действует,
+        # и BOM получили бы все файлы рядом со скриптами, а .cmd с BOM не запускается.
+        $converted = @(Get-ChildItem -LiteralPath $userTarget -Recurse -File |
+                Where-Object { '.ps1', '.psm1' -contains $_.Extension -and (ConvertTo-LunqUtf8Bom -Path $_.FullName) })
         if ($converted.Count -gt 0) {
             Write-Info (Get-LunqText 'PostInstall.ConvertedToBom' (($converted | ForEach-Object { $_.Name }) -join ', '))
         }

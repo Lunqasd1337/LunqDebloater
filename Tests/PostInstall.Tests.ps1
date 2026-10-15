@@ -51,6 +51,7 @@ Describe 'Install-LunqFirstLogon' {
         Set-Content -LiteralPath (Join-Path $config 'Apps.txt') -Value @('# комментарий', '7zip.7zip')
         [IO.File]::WriteAllText((Join-Path $scripts '10-привет.ps1'), "Write-Host 'Привет'", (New-Object Text.UTF8Encoding($false)))
         Set-Content -LiteralPath (Join-Path $scripts 'data\key.txt') -Value 'secret'
+        [IO.File]::WriteAllText((Join-Path $scripts 'data\run.cmd'), "@echo off`r`necho Привет", (New-Object Text.UTF8Encoding($false)))
         Set-Content -LiteralPath (Join-Path $scripts '.gitkeep') -Value ''
         $mount = Join-Path $TestDrive 'logonmount'
         New-Item -ItemType Directory -Path $mount -Force | Out-Null
@@ -69,6 +70,9 @@ Describe 'Install-LunqFirstLogon' {
         # Скрипт в UTF-8 без BOM пересохранён с BOM, иначе Windows PowerShell 5.1 сломает русский текст.
         $bytes = [IO.File]::ReadAllBytes((Join-Path $lunq 'User\10-привет.ps1'))
         $bytes[0..2] | Should -Be @(0xEF, 0xBB, 0xBF)
+        # Остальные файлы не меняются: .cmd с BOM не запускается.
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $lunq 'User\data\run.cmd'))
+        $bytes[0..2] | Should -Be @(0x40, 0x65, 0x63)
         $xml = [xml](Get-Content -LiteralPath (Join-Path $mount 'Windows\System32\Sysprep\unattend.xml') -Raw -Encoding UTF8)
         $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
         $component = (Select-Xml -Xml $xml -XPath "//u:settings[@pass='oobeSystem']/u:component[@name='Microsoft-Windows-Shell-Setup']" -Namespace $ns).Node
