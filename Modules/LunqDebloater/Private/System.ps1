@@ -103,7 +103,8 @@ function Get-LunqPrivateNames {
 
 function Copy-LunqAnonymized {
     # Копирует текстовый файл построчно с заменами. Лог DISM бывает большим, поэтому целиком он
-    # в память не читается. Кодировка сохраняется: лог DISM записан не в UTF-8.
+    # в память не читается. Лог DISM записан не в UTF-8 (кодировка ANSI), а копия пишется в UTF-8
+    # с BOM: в ней бывают русские строки, которых нет в кодовой странице ANSI, например в английской Windows.
     param(
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination,
@@ -125,8 +126,7 @@ function Copy-LunqAnonymized {
     }
     $reader = New-Object IO.StreamReader($Source, [Text.Encoding]::Default, $true)
     try {
-        $null = $reader.Peek()
-        $writer = New-Object IO.StreamWriter($Destination, $false, $reader.CurrentEncoding)
+        $writer = New-Object IO.StreamWriter($Destination, $false, (New-Object Text.UTF8Encoding($true)))
         try {
             if ($KeepTail -le 0) {
                 while ($null -ne ($line = $reader.ReadLine())) { $writer.WriteLine((& $hide $line)) }

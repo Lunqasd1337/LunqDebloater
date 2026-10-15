@@ -153,7 +153,11 @@ Describe 'Размер логов' {
         $zip = New-LunqBugReport -Log $log -Replace ([ordered]@{}) -MaxDismBytes 1KB -DismTail 100
         $out = Join-Path $TestDrive 'bigreport'
         Expand-Archive -LiteralPath $zip -DestinationPath $out
-        $text = Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_3_dism.log') -Raw
+        $copy = Join-Path $out 'LunqDebloater_3_dism.log'
+        # Лог DISM в ANSI, а копия в UTF-8 с BOM: русская пометка читается в любой Windows.
+        $bom = [IO.File]::ReadAllBytes($copy)[0..2]
+        $bom | Should -Be @(0xEF, 0xBB, 0xBF)
+        $text = Get-Content -LiteralPath $copy -Raw -Encoding UTF8
         $text | Should -Match 'Лог DISM сокращён для отчёта'
         $text | Should -Match 'step 5/9: Updates'
         $text | Should -Match 'Failed hr:0x800f081e'
