@@ -40,6 +40,23 @@ Describe 'Манифест и версия' {
         }
     }
 
+    It 'скрипты и README в Config сохранены в UTF-8 с BOM' {
+        # Без BOM Windows PowerShell 5.1 читает русский текст как ANSI. Install.ps1 исключение:
+        # он только в ASCII, его проверяет Tests\Install.Tests.ps1.
+        $repo = Split-Path $PSScriptRoot -Parent
+        $files = @(Get-ChildItem -LiteralPath $repo -Recurse -File -Include '*.ps1', '*.psm1', '*.psd1' |
+                Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -ne 'Install.ps1' })
+        $files += @(Get-ChildItem -LiteralPath (Join-Path $repo 'Config') -File -Filter 'README*.txt')
+        $files.Count | Should -BeGreaterThan 30
+        $noBom = @($files | Where-Object {
+                $bytes = New-Object byte[] 3
+                $stream = [IO.File]::OpenRead($_.FullName)
+                try { $read = $stream.Read($bytes, 0, 3) } finally { $stream.Dispose() }
+                -not ($read -eq 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            } | ForEach-Object { $_.FullName.Substring($repo.Length + 1) })
+        $noBom | Should -BeNullOrEmpty
+    }
+
     It 'наружу видны только функции, которые вызывает LunqDebloater.ps1' {
         $repo = Split-Path $PSScriptRoot -Parent
         $manifest = Import-PowerShellDataFile (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1')

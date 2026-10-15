@@ -25,7 +25,7 @@ function Get-WindowsImage {
 
 function Mount-WindowsImage {
     [CmdletBinding()]
-    param($ImagePath, $Index, $Path, [switch]$ReadOnly, $LogPath)
+    param([Parameter(Mandatory)]$ImagePath, [Parameter(Mandatory)]$Index, [Parameter(Mandatory)]$Path, [switch]$ReadOnly, $LogPath)
     Write-Host "    [mock] mount $ImagePath index $Index -> $Path"
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
     if ($ImagePath -like '*install.wim') {
@@ -48,52 +48,73 @@ function Mount-WindowsImage {
     }
 }
 
-function Dismount-WindowsImage { [CmdletBinding()] param($Path, [switch]$Save, [switch]$Discard, $LogPath) Write-Host "    [mock] dismount $Path save=$Save discard=$Discard" }
+function Dismount-WindowsImage {
+    # Настоящий DISM требует ровно одно из -Save и -Discard.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Path, [switch]$Save, [switch]$Discard, $LogPath)
+    if ($Save -eq $Discard) { throw 'Dismount-WindowsImage: exactly one of -Save and -Discard is required' }
+    Write-Host "    [mock] dismount $Path save=$Save discard=$Discard"
+}
 
 function Export-WindowsImage {
     [CmdletBinding()]
-    param($SourceImagePath, $SourceIndex, $DestinationImagePath, $CompressionType, [switch]$CheckIntegrity, [switch]$SetBootable, $LogPath)
+    param([Parameter(Mandatory)]$SourceImagePath, [Parameter(Mandatory)]$SourceIndex, [Parameter(Mandatory)]$DestinationImagePath, $CompressionType, [switch]$CheckIntegrity, [switch]$SetBootable, $LogPath)
     Write-Host "    [mock] export $SourceImagePath index $SourceIndex compression $CompressionType"
     Add-Content -LiteralPath $DestinationImagePath -Value 'wim'
 }
 
 function Get-AppxProvisionedPackage {
     [CmdletBinding()]
-    param($Path, $LogPath)
+    param([Parameter(Mandatory)]$Path, $LogPath)
     if ($env:LUNQ_TEST_FAIL_APPX) { throw 'DISM failure to test the rollback' }
     @(
         [pscustomobject]@{ DisplayName = 'Microsoft.BingNews'; PackageName = 'Microsoft.BingNews_1.0_x64' },
         [pscustomobject]@{ DisplayName = 'Microsoft.WindowsCalculator'; PackageName = 'Microsoft.WindowsCalculator_1.0_x64' }
     )
 }
-function Remove-AppxProvisionedPackage { [CmdletBinding()] param($Path, $PackageName, $LogPath) }
+function Remove-AppxProvisionedPackage { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$PackageName, $LogPath) }
 
 function Get-WindowsCapability {
     [CmdletBinding()]
-    param($Path, $LogPath)
+    param([Parameter(Mandatory)]$Path, $LogPath)
     @(
         [pscustomobject]@{ Name = 'App.StepsRecorder~~~~0.0.1.0'; State = 'Installed' },
         [pscustomobject]@{ Name = 'Language.Basic~~~ru-RU~0.0.1.0'; State = 'Installed' }
     )
 }
-function Remove-WindowsCapability { [CmdletBinding()] param($Path, $Name, $LogPath) }
+function Remove-WindowsCapability { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$Name, $LogPath) }
 
 function Get-WindowsOptionalFeature {
     [CmdletBinding()]
-    param($Path, $LogPath)
+    param([Parameter(Mandatory)]$Path, $LogPath)
     @(
         [pscustomobject]@{ FeatureName = 'Recall'; State = 'Enabled' },
         [pscustomobject]@{ FeatureName = 'Microsoft-Hyper-V-All'; State = 'Disabled' }
     )
 }
-function Disable-WindowsOptionalFeature { [CmdletBinding()] param($Path, $FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath) }
+function Disable-WindowsOptionalFeature { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath) }
 
-function Get-WindowsPackage { [CmdletBinding()] param($Path, $LogPath) @() }
-function Remove-WindowsPackage { [CmdletBinding()] param($Path, $PackageName, [switch]$NoRestart, $LogPath) }
+function Get-WindowsPackage {
+    # Пакеты CBS образа. Staged-пакеты не установлены, их удалять не нужно.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Path, $LogPath)
+    @(
+        [pscustomobject]@{ PackageName = 'Microsoft-Windows-Foundation-Package~31bf3856ad364e35~amd64~~10.0.26300.1'; PackageState = 'Installed' },
+        [pscustomobject]@{ PackageName = 'Microsoft-Windows-MediaPlayer-Package~31bf3856ad364e35~amd64~~10.0.26300.1'; PackageState = 'Installed' },
+        [pscustomobject]@{ PackageName = 'Microsoft-Windows-Broken-Package~31bf3856ad364e35~amd64~~10.0.26300.1'; PackageState = 'Installed' },
+        [pscustomobject]@{ PackageName = 'Microsoft-Windows-MediaPlayer-Package~31bf3856ad364e35~wow64~~10.0.26300.1'; PackageState = 'Staged' }
+    )
+}
+function Remove-WindowsPackage {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$PackageName, [switch]$NoRestart, $LogPath)
+    Write-Host "    [mock] remove package $PackageName"
+    if ($PackageName -match 'Broken') { throw 'The package is permanent and cannot be removed' }
+}
 
 function Add-WindowsPackage {
     [CmdletBinding()]
-    param($Path, $PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath)
+    param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$PackagePath, $ScratchDirectory, [switch]$NoRestart, $LogPath)
     Write-Host "    [mock] add package $(Split-Path $PackagePath -Leaf)"
     if ((Split-Path $PackagePath -Leaf) -match 'broken') { throw 'The package does not apply to this image' }
     # Так DISM отвечает на пакет для другого образа, например Safe OS Dynamic Update вне WinRE.
@@ -105,7 +126,7 @@ function Add-WindowsPackage {
 
 function Add-WindowsDriver {
     [CmdletBinding()]
-    param($Path, $Driver, $LogPath)
+    param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$Driver, $LogPath)
     Write-Host "    [mock] add driver $(Split-Path $Driver -Leaf)"
     # Проверяется только имя файла: путь к временной папке теста содержит GUID, а в нём бывает «bad».
     if ((Split-Path $Driver -Leaf) -match '^bad') { throw 'The driver does not fit this image' }

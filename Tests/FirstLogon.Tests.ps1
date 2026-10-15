@@ -83,15 +83,18 @@ $global:Offline = [bool]$Offline
 $global:NoTask = [bool]$NoTask
 $global:AclFails = [bool]$AclFails
 $global:TaskFile = Join-Path $State 'task'
+$env:USERDOMAIN = 'PC'
+$env:USERNAME = 'user'
 function global:Get-Date { $global:Now }
 function global:Start-Sleep { param($Seconds = 0, $Milliseconds = 0) $global:Now = $global:Now.AddSeconds($Seconds).AddMilliseconds($Milliseconds) }
 function global:Invoke-WebRequest { param($Uri, [switch]$UseBasicParsing, $TimeoutSec) if ($global:Offline) { throw 'нет сети' }; [pscustomobject]@{ Content = 'Microsoft Connect Test' } }
 function global:Get-ScheduledTask { param($TaskName, $ErrorAction) if (Test-Path -LiteralPath $global:TaskFile) { 'task' } }
-function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) if ($global:NoTask) { throw 'планировщик недоступен' }; Set-Content -LiteralPath $global:TaskFile -Value $Settings }
+function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force) if ($global:NoTask) { throw 'планировщик недоступен' }; Set-Content -LiteralPath $global:TaskFile -Value @("name: $TaskName", $Action, $Trigger, $Principal, $Settings) }
 function global:Unregister-ScheduledTask { Remove-Item -LiteralPath $global:TaskFile -ErrorAction SilentlyContinue }
-function global:New-ScheduledTaskAction { 'action' }
-function global:New-ScheduledTaskTrigger { 'trigger' }
-function global:New-ScheduledTaskPrincipal { 'principal' }
+# Заглушки задания возвращают свои аргументы строкой: тест сверяет их в файле задания.
+function global:New-ScheduledTaskAction { param($Execute, $Argument) "action: $Execute $Argument" }
+function global:New-ScheduledTaskTrigger { param([switch]$AtLogOn, $User) "trigger: atlogon=$AtLogOn user=$User" }
+function global:New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) "principal: user=$UserId logon=$LogonType level=$RunLevel" }
 function global:New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, $ExecutionTimeLimit) 'battery={0},{1} limit={2}' -f $AllowStartIfOnBatteries, $DontStopIfGoingOnBatteries, $ExecutionTimeLimit }
 function global:Set-Acl { param($LiteralPath, $AclObject, $ErrorAction) if ($global:AclFails) { throw 'доступ запрещён' }; Microsoft.PowerShell.Security\Set-Acl -LiteralPath $LiteralPath -AclObject $AclObject -ErrorAction Stop }
 function global:Start-Transcript { }
@@ -159,9 +162,23 @@ Describe 'Скрипт первого входа' {
         $out = Invoke-FirstLogon -Test $t
         $out | Should -Match 'Не удалось установить Broken.App'
         Test-Path -LiteralPath $t.Task | Should -BeTrue
-        # Задание запускается и от батареи, без ограничения по времени.
-        Get-Content -LiteralPath $t.Task | Should -Be 'battery=True,True limit=00:00:00'
+        # Задание запускает этот же скрипт при входе этого пользователя с повышенными правами,
+        # и от батареи, без ограничения по времени.
+        $script = Join-Path $t.Lunq 'FirstLogon.ps1'
+        Get-Content -LiteralPath $t.Task | Should -Be @(
+            'name: LunqFirstLogon',
+            "action: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`"",
+            'trigger: atlogon=True user=PC\user',
+            'principal: user=PC\user logon=Interactive level=Highest',
+            'battery=True,True limit=00:00:00')
         Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeTrue
+        if ($script:OnWindows) {
+            # Скрипты и файлы рядом с ними (там могут быть пароли) доступны только администраторам и SYSTEM.
+            $acl = Get-Acl -LiteralPath $t.User
+            $acl.AreAccessRulesProtected | Should -BeTrue
+            @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique) |
+                Should -Be @('S-1-5-18', 'S-1-5-32-544')
+        }
 
         Remove-Item -LiteralPath $t.Failing
         Invoke-FirstLogon -Test $t | Out-Null

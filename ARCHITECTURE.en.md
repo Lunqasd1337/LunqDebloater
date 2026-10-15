@@ -137,6 +137,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
+| `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later, including drivers for `Export-WindowsDriver` |
 | `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), the folder picker and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
