@@ -34,7 +34,7 @@ Tests\                       Pester tests and stubs
 
 ## The LunqDebloater module
 
-`LunqDebloater.psm1` loads every `Private\*.ps1` in alphabetical order and picks the language from the system right away. Only the functions in the manifest's `FunctionsToExport` are visible outside. Tests reach the rest through `& (Get-Module LunqDebloater) { ... }`.
+`LunqDebloater.psm1` loads every `Private\*.ps1` in alphabetical order and picks the language from the system right away. Only the functions in the manifest's `FunctionsToExport` are visible outside, and these are exactly the ones `LunqDebloater.ps1` calls: a test in `Tests\Module.Tests.ps1` makes sure there are no extra ones. Add a new function that the script calls there too. Tests reach the rest through `& (Get-Module LunqDebloater) { ... }`.
 
 | File | Responsible for |
 |---|---|
@@ -42,7 +42,7 @@ Tests\                       Pester tests and stubs
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
 | `System.ps1` | Administrator rights, one run at a time (`Enter-LunqRunLock`), the log (`Start-LunqLog`), step markers in the DISM log and its compression at the end of the run (`Compress-LunqDismLog`), the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
 | `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
-| `Options.ps1` | The "What goes into the image" summary in step-by-step mode: items, their dependencies, toggling by number, action items and the folder picker (`Select-LunqFolder`) |
+| `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
 | `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
@@ -52,7 +52,7 @@ Tests\                       Pester tests and stubs
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
 | `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
-| `Build.ps1` | Build steps (`Get-LunqBuildSteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
+| `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
 
 ## How a run goes
@@ -60,10 +60,10 @@ Tests\                       Pester tests and stubs
 1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder.
 2. **Log.** `Start-LunqLog` starts the log in `Logs` next to the script and a separate DISM log. Everything after that, including errors while choosing the ISO, goes into the log.
 3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters.
-4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, the script performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
+4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found: `Find-LunqBuildInputs` finds the updates and drivers. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary with the items from `New-LunqContentOptions` lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, `Invoke-LunqContentAction` performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), and the script searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
 5. **Checks** (`Test-LunqPrerequisites`): working folder, output ISO, space, `oscdimg`. An error stops the run before the long work starts.
 6. **Edition and version.** The ISO is mounted once: list of editions, choice, version of the chosen one. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
-7. **"What is in the image" mode** (`-ListContents`) ends here: the edition is mounted read-only, `Write-LunqInventory` saves the list and the image is unmounted without saving.
+7. **"What is in the image" mode** (`-ListContents`) ends here: `Invoke-LunqBuild -Inventory` runs the `Get-LunqInventorySteps` steps, the edition is mounted read-only, `Write-LunqInventory` saves the list and the image is unmounted without saving.
 8. **Plan.** The script shows what will be done and asks for confirmation in step-by-step mode.
 9. **Build** by the list of steps (below), then the result from `Write-LunqReport`.
 10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.

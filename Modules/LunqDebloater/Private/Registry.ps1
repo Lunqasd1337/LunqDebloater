@@ -6,9 +6,12 @@ $script:HiveMap = [ordered]@{
 }
 
 function Mount-OfflineHives {
-    param([Parameter(Mandatory)][string]$MountPath)
+    # -Hives: имена из HiveMap, по умолчанию все. Каждый куст загружается и выгружается секунды,
+    # поэтому лишние не трогаются.
+    param([Parameter(Mandatory)][string]$MountPath, [string[]]$Hives = @($script:HiveMap.Keys))
 
-    foreach ($hive in $script:HiveMap.Values) {
+    foreach ($name in $Hives) {
+        $hive = $script:HiveMap[$name]
         $file = Join-Path $MountPath $hive.File
         if ((Invoke-Native reg.exe @('load', $hive.Key, $file)) -ne 0) {
             throw (Get-LunqText 'Registry.HiveLoadFailed' $file)
@@ -146,6 +149,10 @@ $script:RegistryActions = 'Set', 'DeleteValue', 'DeleteKey'
 function Test-LunqRegistryEntry {
     # Проверяет запись профиля ещё при чтении, а не через полчаса сборки. Возвращает текст проблемы или $null.
     param([Parameter(Mandatory)]$Entry)
+    # Ключ с HKLM\ в начале или CurrentControlSet в офлайн-кусте записался бы, но никогда бы не сработал.
+    $path = [string](Get-ConfigValue $Entry 'Path')
+    if ($path -match '^(?i)(HKLM|HKCU|HKU|HKCR|HKCC|HKEY_[A-Z_]+)(\\|:|$)') { return (Get-LunqText 'Registry.PathHasHive' $Matches[1]) }
+    if ([string](Get-ConfigValue $Entry 'Hive') -eq 'SYSTEM' -and $path -match '^(?i)CurrentControlSet(\\|$)') { return (Get-LunqText 'Registry.PathCurrentControlSet') }
     $action = [string](Get-ConfigValue $Entry 'Action')
     if (-not $action) { $action = 'Set' }
     if ($script:RegistryActions -notcontains $action) {
@@ -193,7 +200,7 @@ function Set-LunqBuildStamp {
 
     $key = "$($script:HiveMap.SOFTWARE.Key)\LunqDebloater"
     try {
-        Mount-OfflineHives -MountPath $MountPath
+        Mount-OfflineHives -MountPath $MountPath -Hives SOFTWARE
         $failed = @()
         foreach ($name in $Values.Keys) {
             $data = [string]$Values[$name]

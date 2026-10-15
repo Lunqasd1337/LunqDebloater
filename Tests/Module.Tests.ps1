@@ -39,6 +39,14 @@ Describe 'Манифест и версия' {
             Get-Command -Module LunqDebloater -Name $name -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty -Because $name
         }
     }
+
+    It 'наружу видны только функции, которые вызывает LunqDebloater.ps1' {
+        $repo = Split-Path $PSScriptRoot -Parent
+        $manifest = Import-PowerShellDataFile (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1')
+        $script = Get-Content -LiteralPath (Join-Path $repo 'LunqDebloater.ps1') -Raw
+        $unused = @($manifest.FunctionsToExport | Where-Object { $script -notmatch ('(?<![\w-])' + [regex]::Escape($_) + '(?![\w-])') })
+        $unused | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Справка скрипта' {

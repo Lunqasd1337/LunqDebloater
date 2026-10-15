@@ -122,13 +122,7 @@ function New-LunqUnattendXml {
     $lines.Add("        <HideOnlineAccountScreens>$(([string][bool]$Unattend.LocalAccount).ToLower())</HideOnlineAccountScreens>")
     $lines.Add('      </OOBE>')
     if ($FirstLogonCommand) {
-        $lines.Add('      <FirstLogonCommands>')
-        $lines.Add('        <SynchronousCommand wcm:action="add">')
-        $lines.Add('          <Order>1</Order>')
-        $lines.Add("          <CommandLine>$(& $e $FirstLogonCommand)</CommandLine>")
-        $lines.Add('          <Description>LunqDebloater first logon</Description>')
-        $lines.Add('        </SynchronousCommand>')
-        $lines.Add('      </FirstLogonCommands>')
+        foreach ($line in (Get-LunqFirstLogonCommandsXml -Command $FirstLogonCommand -Indent '      ')) { $lines.Add($line) }
     }
     $lines.Add('    </component>')
     $lines.Add('  </settings>')

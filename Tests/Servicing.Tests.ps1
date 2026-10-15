@@ -7,6 +7,14 @@ BeforeAll {
     Import-Module (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
     # Проверки сверяют русский текст.
     Set-LunqLanguage -Language ru
+
+    # Внутренние функции модуля под теми же именами: снаружи модуля они не видны.
+    function Get-LunqUpdateFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqUpdateFiles -Path $p } $Path }
+    function Get-LunqDriverFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqDriverFiles -Path $p } $Path }
+    function Split-LunqDynamicUpdates {
+        param($Files, $TempDir, $Cache)
+        & (Get-Module LunqDebloater) { param($f, $t, $c) Split-LunqDynamicUpdates -Files $f -TempDir $t -Cache $c } $Files $TempDir $Cache
+    }
 }
 
 AfterAll {
@@ -39,7 +47,8 @@ Describe 'Обновления и драйверы' {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         foreach ($name in 'windows11.0-kb1-x64.msu', 'windows11.0-kb2-x64_notapplicable.cab', 'windows11.0-kb3-x64-broken.msu') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
         $files = Get-LunqUpdateFiles -Path $dir
-        $output = & { $script:r = Add-LunqUpdates -MountPath $dir -Files $files -ScratchDir (Join-Path $TestDrive 'scratch') } *>&1 | Out-String
+        $scratch = Join-Path $TestDrive 'scratch'
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($d, $f, $s) Add-LunqUpdates -MountPath $d -Files $f -ScratchDir $s } $dir $files $scratch } *>&1 | Out-String
         $script:r.Done | Should -Be @('windows11.0-kb1-x64.msu')
         $script:r.Skipped | Should -Be @('windows11.0-kb2-x64_notapplicable.cab')
         $script:r.Failed | Should -Be @('windows11.0-kb3-x64-broken.msu')

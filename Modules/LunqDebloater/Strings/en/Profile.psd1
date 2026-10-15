@@ -4,6 +4,7 @@
     'Profile.CategoryNoId'         = 'In profile {0}, one of the categories has no Id.'
     'Profile.CategoryIdRepeated'   = 'In profile {0}, the category Id ''{1}'' is used more than once.'
     'Profile.NotBoolean'           = 'In profile {0}, the field {1} must be true or false without quotes, but it is ''{2}''.'
+    'Profile.UnknownField'         = 'In profile {0}, the field {1} is unknown and will not be applied. Allowed: {2}'
     'Profile.DefaultCategoryName'  = 'Profile'
     'Profile.UnknownHive'          = 'Unknown hive ''{0}'' in category ''{1}''. Allowed: {2}'
     'Profile.RegistryNoPath'       = 'A registry entry for hive {0} in category ''{1}'' has no Path.'

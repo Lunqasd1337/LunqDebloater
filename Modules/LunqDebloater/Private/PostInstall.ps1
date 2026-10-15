@@ -31,6 +31,21 @@ function Format-FirstLogonSummary {
 # Команда первого входа: и в Sysprep\unattend.xml в образе, и в autounattend.xml в корне ISO.
 $script:FirstLogonCommand = 'cmd.exe /c start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WINDIR%\Setup\Scripts\Lunq\FirstLogon.ps1"'
 
+function Get-LunqFirstLogonCommandsXml {
+    # Блок FirstLogonCommands для компонента Microsoft-Windows-Shell-Setup, по строке на элемент.
+    # Один и тот же в Sysprep\unattend.xml образа и в autounattend.xml в корне ISO.
+    param([Parameter(Mandatory)][string]$Command, [string]$Indent = '')
+    $lines = @(
+        '<FirstLogonCommands>',
+        '  <SynchronousCommand wcm:action="add">',
+        '    <Order>1</Order>',
+        "    <CommandLine>$([Security.SecurityElement]::Escape($Command))</CommandLine>",
+        '    <Description>LunqDebloater first logon</Description>',
+        '  </SynchronousCommand>',
+        '</FirstLogonCommands>')
+    return , @($lines | ForEach-Object { $Indent + $_ })
+}
+
 function ConvertTo-LunqUtf8Bom {
     # Windows PowerShell 5.1 читает скрипт без BOM в кодировке ANSI. Русские буквы в UTF-8 тогда
     # частично становятся кавычками (байты «Г», «Д» в 1251 это “ ”), и скрипт не разбирается вовсе.
@@ -85,24 +100,15 @@ function Install-LunqFirstLogon {
     # Скрипт первого входа работает без модуля, поэтому язык интерфейса ему передаётся файлом.
     [IO.File]::WriteAllText((Join-Path $target 'Language.txt'), (Get-LunqLanguage), (New-Object Text.UTF8Encoding($false)))
 
-    $command = $script:FirstLogonCommand
-    $xml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Created by LunqDebloater: runs the first logon setup script. -->
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
-  <settings pass="oobeSystem">
-    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="$Architecture" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <FirstLogonCommands>
-        <SynchronousCommand wcm:action="add">
-          <Order>1</Order>
-          <CommandLine>$([Security.SecurityElement]::Escape($command))</CommandLine>
-          <Description>LunqDebloater first logon</Description>
-        </SynchronousCommand>
-      </FirstLogonCommands>
-    </component>
-  </settings>
-</unattend>
-"@
+    $lines = @(
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<!-- Created by LunqDebloater: runs the first logon setup script. -->',
+        '<unattend xmlns="urn:schemas-microsoft-com:unattend">',
+        '  <settings pass="oobeSystem">',
+        "    <component name=`"Microsoft-Windows-Shell-Setup`" processorArchitecture=`"$Architecture`" publicKeyToken=`"31bf3856ad364e35`" language=`"neutral`" versionScope=`"nonSxS`" xmlns:wcm=`"http://schemas.microsoft.com/WMIConfig/2002/State`" xmlns:xsi=`"http://www.w3.org/2001/XMLSchema-instance`">")
+    $lines += Get-LunqFirstLogonCommandsXml -Command $script:FirstLogonCommand -Indent '      '
+    $lines += @('    </component>', '  </settings>', '</unattend>', '')
+    $xml = $lines -join "`r`n"
     New-Item -ItemType Directory -Path (Split-Path $unattend -Parent) -Force | Out-Null
     [IO.File]::WriteAllText($unattend, $xml, (New-Object Text.UTF8Encoding($false)))
 

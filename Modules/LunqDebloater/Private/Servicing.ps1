@@ -84,7 +84,7 @@ function Split-LunqDynamicUpdates {
 function Test-CumulativeUpdate {
     # Похоже ли хотя бы одно обновление на накопительное для самой Windows (а не, например, для .NET).
     param($Files)
-    return [bool](@($Files) | Where-Object { $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' })
+    return (Select-LunqPEUpdates $Files).Count -gt 0
 }
 
 function Write-UpdateList {

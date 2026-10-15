@@ -39,6 +39,34 @@ function ConvertTo-LunqProfileBool {
     throw (Get-LunqText 'Profile.NotBoolean' $Path $Field $Value)
 }
 
+# Поля профиля, как в Schemas\Profile.schema.json. Опечатка в имени поля иначе пропадала бы молча:
+# «Categores» превращал профиль в пустой профиль старого формата.
+$script:ProfileFields = @{
+    'Root'         = @('$schema', 'Name', 'Description', 'Requirements', 'Options', 'Categories', 'Appx', 'Capabilities', 'Features', 'Packages', 'Registry')
+    'Requirements' = @('Build', 'MinRevision', 'Architecture')
+    'Options'      = @('RemoveFeaturePayload')
+    'Appx'         = @('Remove')
+    'Capabilities' = @('Remove')
+    'Features'     = @('Disable', 'RemovePayload')
+    'Packages'     = @('Remove')
+    'Category'     = @('Id', 'Name', 'Description', 'Enabled', 'Appx', 'Capabilities', 'Features', 'Packages', 'Registry')
+    'Registry'     = @('Hive', 'Path', 'Name', 'Action', 'Type', 'Value', 'Description')
+}
+
+function Write-LunqUnknownFields {
+    # Предупреждает о полях, которых нет в схеме. Не ошибка: профиль старой версии с лишним полем
+    # (например, «_comment») по-прежнему читается.
+    param($Object, [Parameter(Mandatory)][string]$Kind, [string]$Where, [Parameter(Mandatory)][string]$Path)
+    if ($null -eq $Object -or $Object -isnot [pscustomobject]) { return }
+    $allowed = $script:ProfileFields[$Kind]
+    foreach ($property in $Object.PSObject.Properties) {
+        if ($allowed -notcontains $property.Name) {
+            $field = if ($Where) { "$Where.$($property.Name)" } else { $property.Name }
+            Write-Warning (Get-LunqText 'Profile.UnknownField' $Path $field ($allowed -join ', '))
+        }
+    }
+}
+
 function Read-LunqProfile {
     # Читает профиль и приводит его к списку категорий. Профиль старого формата
     # (без Categories) превращается в одну категорию «Профиль».
@@ -49,6 +77,10 @@ function Read-LunqProfile {
     }
     $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     $config = $json | ConvertFrom-Json
+    Write-LunqUnknownFields $config -Kind 'Root' -Path $Path
+    foreach ($section in 'Requirements', 'Options', 'Appx', 'Capabilities', 'Features', 'Packages') {
+        Write-LunqUnknownFields (Get-ConfigValue $config $section) -Kind $section -Where $section -Path $Path
+    }
 
     $categories = New-Object System.Collections.Generic.List[object]
     $rawCategories = Get-ConfigValue $config 'Categories'
@@ -57,6 +89,12 @@ function Read-LunqProfile {
             $id = [string](Get-ConfigValue $raw 'Id')
             if (-not $id) { throw (Get-LunqText 'Profile.CategoryNoId' $Path) }
             if ($categories | Where-Object { $_.Id -eq $id }) { throw (Get-LunqText 'Profile.CategoryIdRepeated' $Path $id) }
+            Write-LunqUnknownFields $raw -Kind 'Category' -Where "Categories[$id]" -Path $Path
+            $i = 0
+            foreach ($entry in (Get-ConfigList $raw 'Registry')) {
+                Write-LunqUnknownFields $entry -Kind 'Registry' -Where "Categories[$id].Registry[$i]" -Path $Path
+                $i++
+            }
             $name = Get-LunqLocalized (Get-ConfigValue $raw 'Name')
             if (-not $name) { $name = $id }
             $enabled = ConvertTo-LunqProfileBool (Get-ConfigValue $raw 'Enabled') -Default $true -Field "Categories[$id].Enabled" -Path $Path

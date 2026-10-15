@@ -55,6 +55,29 @@ Describe 'Read-LunqProfile' {
         $p.Categories[0].Enabled | Should -BeFalse
     }
 
+    It 'предупреждает об опечатках в именах полей, а профиль по умолчанию проходит без предупреждений' {
+        $null = Read-LunqProfile -Path $script:ProfilePath -WarningVariable clean -WarningAction SilentlyContinue
+        $clean | Should -BeNullOrEmpty
+        $path = New-TestProfile @{ Categores = @(); Options = @{ RemovePayload = $true } }
+        $null = Read-LunqProfile -Path $path -WarningVariable typos -WarningAction SilentlyContinue
+        @($typos).Count | Should -Be 2
+        ($typos -join "`n") | Should -Match 'неизвестное поле Categores'
+        ($typos -join "`n") | Should -Match 'неизвестное поле Options\.RemovePayload'
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Capabilites = @('x'); Registry = @(@{ Hive = 'SOFTWARE'; Path = 'x'; Name = 'v'; Type = 'REG_DWORD'; Value = 1; Comment = 'y' }) }) }
+        $null = Read-LunqProfile -Path $path -WarningVariable typos -WarningAction SilentlyContinue
+        ($typos -join "`n") | Should -Match 'неизвестное поле Categories\[a\]\.Capabilites'
+        ($typos -join "`n") | Should -Match 'неизвестное поле Categories\[a\]\.Registry\[0\]\.Comment'
+    }
+
+    It 'отвергает путь реестра с кустом в начале и CurrentControlSet в SYSTEM' {
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = 'HKLM\SOFTWARE\Policies'; Name = 'v'; Type = 'REG_DWORD'; Value = 1 }) }) }
+        { Read-LunqProfile -Path $path } | Should -Throw '*без HKLM\ и имени куста (HKLM)*'
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SYSTEM'; Path = 'CurrentControlSet\Control'; Name = 'v'; Type = 'REG_DWORD'; Value = 1 }) }) }
+        { Read-LunqProfile -Path $path } | Should -Throw '*ControlSet001*'
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SYSTEM'; Path = 'ControlSet001\Control'; Name = 'v'; Type = 'REG_DWORD'; Value = 1 }) }) }
+        { Read-LunqProfile -Path $path } | Should -Not -Throw
+    }
+
     It 'не принимает неизвестный куст' {
         $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'HKCU'; Path = 'x' }) }) }
         { Read-LunqProfile -Path $path } | Should -Throw '*Неизвестный куст*'

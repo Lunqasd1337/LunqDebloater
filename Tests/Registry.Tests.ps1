@@ -87,6 +87,23 @@ Describe 'Dismount-OfflineHives' {
     }
 }
 
+Describe 'Set-LunqBuildStamp' {
+    It 'загружает только куст SOFTWARE' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 1 } else { 0 } }
+            Mock Set-LunqRegistryValue { }
+            Mock Write-Info { }
+            Mock Write-Warning { }
+            Set-LunqBuildStamp -MountPath $Root -Values ([ordered]@{ Version = '1.9.2' })
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'load' } -Times 1 -Exactly
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'load' -and $Arguments[1] -eq 'HKLM\LUNQ_SOFTWARE' } -Times 1 -Exactly
+            Should -Invoke Set-LunqRegistryValue -ParameterFilter { $Key -eq 'HKLM\LUNQ_SOFTWARE\LunqDebloater' -and $Name -eq 'Version' } -Times 1 -Exactly
+            Should -Invoke Write-Warning -Times 0 -Exactly
+        }
+    }
+}
+
 Describe 'Запись в реестр' -Skip:(-not $script:OnWindows) {
     It 'типы значений записываются как в профиле' {
         $entries = @(
