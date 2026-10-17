@@ -210,7 +210,7 @@ function Select-LunqEdition {
         if ([int]::TryParse($answer, [ref]$parsed) -and ($Images | Where-Object ImageIndex -eq $parsed)) {
             return $parsed
         }
-        Write-LunqWarning (Get-LunqText 'Iso.NoSuchNumber')
+        Write-Warning (Get-LunqText 'Iso.NoSuchNumber')
     }
 }
 
@@ -244,6 +244,6 @@ function Select-IsoFile {
         if ($path -and (Test-Path -LiteralPath $path -PathType Leaf) -and $path -like '*.iso') {
             return (Resolve-Path -LiteralPath $path).Path
         }
-        Write-LunqWarning (Get-LunqText 'Iso.FileNotIso' $path)
+        Write-Warning (Get-LunqText 'Iso.FileNotIso' $path)
     }
 }

@@ -2,7 +2,7 @@
     # Манифест модуля LunqDebloater. Версия отсюда видна в заголовке окна, в логе, в итоге
     # сборки и в реестре собранного образа (HKLM\SOFTWARE\LunqDebloater).
     RootModule        = 'LunqDebloater.psm1'
-    ModuleVersion     = '1.10.0'
+    ModuleVersion     = '1.9.2'
     GUID              = '2e51670f-e6c1-4bef-936f-7455bd5dff55'
     Author            = 'Lunqasd1337'
     Description       = 'Офлайн-преднастройка ISO-образа Windows 11 через DISM.'
@@ -16,7 +16,6 @@
         'Disable-LunqCategories',
         'Dismount-IsoImage',
         'Dismount-OfflineHives',
-        'Enable-LunqCategories',
         'Enter-LunqRunLock',
         'Exit-LunqRunLock',
         'Find-LunqBuildInputs',
@@ -28,7 +27,6 @@
         'Get-IsoImageInfo',
         'Get-LunqDefaultLanguage',
         'Get-LunqEffectiveConfig',
-        'Get-LunqEventWarnings',
         'Get-LunqFilesSize',
         'Get-LunqFirstLogon',
         'Get-LunqHostRegion',
@@ -50,14 +48,8 @@
         'Select-LunqPEDrivers',
         'Select-LunqPEUpdates',
         'Select-LunqProfile',
-        'Send-LunqEditionsEvent',
-        'Send-LunqEvent',
-        'Send-LunqFailure',
-        'Send-LunqResultEvents',
         'Set-LunqLanguage',
-        'Start-LunqEvents',
         'Start-LunqLog',
-        'Stop-LunqEvents',
         'Stop-LunqLog',
         'Test-Administrator',
         'Test-CumulativeUpdate',
@@ -67,11 +59,9 @@
         'Test-LunqPrerequisites',
         'Write-CategoryList',
         'Write-Check',
-        'Write-EditionList',
         'Write-Info',
         'Write-LunqReport',
         'Write-LunqRunInfo',
-        'Write-LunqWarning',
         'Write-Section',
         'Write-UpdateList'
     )

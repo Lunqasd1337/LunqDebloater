@@ -1,16 +1,12 @@
 param(
     # Folder for LunqDebloater, %USERPROFILE%\LunqDebloater by default. To choose another one:
     #   & ([scriptblock]::Create((irm <url>))) -Path D:\LunqDebloater
-    [string]$Path,
-    # Only install or update, without starting LunqDebloater. The window (LunqDebloater.exe) runs
-    # this file with it when it was downloaded without the script.
-    [switch]$NoStart
+    [string]$Path
 )
 # Starts LunqDebloater with one command:
 #   irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1 | iex
 # Downloads the latest release into a folder, updates it on the next run and keeps the user's
-# changes in Config, downloads the window LunqDebloater.exe next to it, then starts
-# LunqDebloater.ps1 in Windows PowerShell 5.1.
+# changes in Config, then starts LunqDebloater.ps1 in Windows PowerShell 5.1.
 #
 # This file is ASCII only and has no BOM, unlike the other scripts: irm hands it to iex as text,
 # and Windows PowerShell 5.1 may decode anything else wrongly. That is also why the messages
@@ -26,9 +22,7 @@ function Test-LunqInstallFolder {
     if (Test-Path -LiteralPath (Join-Path $Path '.lunq-install.json')) { return $true }
     if (Test-Path -LiteralPath (Join-Path $Path '.git')) { return $false }
     if (Test-Path -LiteralPath (Join-Path $Path 'LunqDebloater.ps1')) { return $true }
-    # The window may already be there: the user put LunqDebloater.exe into the folder and let it
-    # download the rest.
-    return -not (Get-ChildItem -LiteralPath $Path -Force | Where-Object { $_.Name -ne 'LunqDebloater.exe' } | Select-Object -First 1)
+    return -not (Get-ChildItem -LiteralPath $Path -Force | Select-Object -First 1)
 }
 
 function Protect-LunqInstallFolder {
@@ -88,7 +82,6 @@ function Get-LunqLatestRelease {
     return [pscustomobject]@{
         Tag    = $tag
         ZipUrl = "https://github.com/$repo/archive/refs/tags/$tag.zip"
-        ExeUrl = "https://github.com/$repo/releases/download/$tag/LunqDebloater.exe"
     }
 }
 
@@ -146,25 +139,6 @@ function Install-LunqFiles {
     return , $kept
 }
 
-function Install-LunqWindow {
-    # The window LunqDebloater.exe is a file of the release, not part of the source archive. The
-    # release workflow uploads it some minutes after the release is published, and the console
-    # version works without it, so a failed download is only a warning.
-    param([Parameter(Mandatory)]$Release, [Parameter(Mandatory)][string]$Path)
-    $exe = Join-Path $Path 'LunqDebloater.exe'
-    # Downloaded next to it first: a running window cannot be replaced, and a broken download
-    # must not replace a working one.
-    $download = "$exe.download"
-    try {
-        Invoke-WebRequest -Uri $Release.ExeUrl -OutFile $download -UseBasicParsing
-        Move-Item -LiteralPath $download -Destination $exe -Force
-    }
-    catch {
-        Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
-        Write-Warning "The window LunqDebloater.exe was not downloaded ($($_.Exception.Message)). LunqDebloater.ps1 works without it."
-    }
-}
-
 function Start-LunqDebloater {
     # LunqDebloater works only in Windows PowerShell 5.1 and asks for administrator rights by itself.
     param([Parameter(Mandatory)][string]$Path)
@@ -173,7 +147,7 @@ function Start-LunqDebloater {
 }
 
 function Invoke-LunqInstall {
-    param([string]$Path, [switch]$NoStart)
+    param([string]$Path)
     $ErrorActionPreference = 'Stop'
     # The progress bar makes downloads many times slower in Windows PowerShell 5.1.
     $ProgressPreference = 'SilentlyContinue'
@@ -199,7 +173,6 @@ function Invoke-LunqInstall {
     # Earlier installs get the same rights too: before 1.9.2 they kept the rights of the parent folder.
     Protect-LunqInstallFolder -Path $Path
 
-    $updated = $false
     if ($release -and $installed -and $state -and $state.Tag -eq $release.Tag) {
         Write-Host "LunqDebloater $($release.Tag) is up to date: $Path" -ForegroundColor Green
     }
@@ -220,24 +193,14 @@ function Invoke-LunqInstall {
             $kept = Install-LunqFiles -Source $root[0].FullName -Destination $Path -Tag $release.Tag
         }
         finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
-        $updated = $true
         Write-Host "LunqDebloater $($release.Tag) is in $Path" -ForegroundColor Green
         if ($kept.Count -gt 0) {
             Write-Host 'These files in Config were changed by you and were not replaced:'
             foreach ($file in $kept) { Write-Host "  Config\$file" }
         }
     }
-    # The window of the same release, or the one that is missing: earlier installs had no window.
-    if ($release -and ($updated -or -not (Test-Path -LiteralPath (Join-Path $Path 'LunqDebloater.exe')))) {
-        Install-LunqWindow -Release $release -Path $Path
-    }
-    if (-not $NoStart) { Start-LunqDebloater -Path $Path }
+    Start-LunqDebloater -Path $Path
 }
 
-try { Invoke-LunqInstall -Path $Path -NoStart:$NoStart }
-catch {
-    Write-Host "LunqDebloater: $($_.Exception.Message)" -ForegroundColor Red
-    # The window learns about the failure from the exit code. The console of irm | iex must stay
-    # open, so it gets no exit.
-    if ($NoStart) { exit 1 }
-}
+try { Invoke-LunqInstall -Path $Path }
+catch { Write-Host "LunqDebloater: $($_.Exception.Message)" -ForegroundColor Red }

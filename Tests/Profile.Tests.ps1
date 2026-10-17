@@ -128,14 +128,6 @@ Describe 'Get-LunqEffectiveConfig' {
         @($config.Registry | Where-Object { $_.LunqCategory -eq 'telemetry' }).Count | Should -Be 13
     }
 
-    It '-IncludeCategory включает выключенную в профиле категорию' {
-        $p = Read-LunqProfile -Path $script:ProfilePath
-        ($p.Categories | Where-Object { $_.Id -eq 'drivers' }).Enabled | Should -BeFalse
-        Enable-LunqCategories -LunqProfile $p -Ids 'drivers'
-        ($p.Categories | Where-Object { $_.Id -eq 'drivers' }).Enabled | Should -BeTrue
-        { Enable-LunqCategories -LunqProfile $p -Ids 'nope' } | Should -Throw '*Доступные Id*'
-    }
-
     It 'неизвестный Id в -SkipCategory даёт понятную ошибку' {
         $p = Read-LunqProfile -Path $script:ProfilePath
         { Disable-LunqCategories -LunqProfile $p -Ids 'nope' } | Should -Throw '*Доступные Id*'

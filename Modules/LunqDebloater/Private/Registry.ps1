@@ -38,7 +38,7 @@ function Dismount-OfflineHives {
             if (-not $unloaded) { Start-Sleep -Seconds 2 }
         }
         if (-not $unloaded) {
-            Write-LunqWarning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key)
+            Write-Warning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key)
             $stuck += $hive.Key
         }
     }
@@ -188,7 +188,7 @@ function Invoke-RegistryEntry {
         }
     }
     catch {
-        Write-LunqWarning (Get-LunqText 'Registry.ApplyFailed' $key $shownName $action $_.Exception.Message)
+        Write-Warning (Get-LunqText 'Registry.ApplyFailed' $key $shownName $action $_.Exception.Message)
         return 'Failed'
     }
 }
@@ -208,10 +208,10 @@ function Set-LunqBuildStamp {
             try { Set-LunqRegistryValue -Key $key -Name $name -Kind 'String' -Data $data }
             catch { $failed += $name }
         }
-        if ($failed.Count -gt 0) { Write-LunqWarning (Get-LunqText 'Registry.StampPartial' ($failed -join ', ')) }
+        if ($failed.Count -gt 0) { Write-Warning (Get-LunqText 'Registry.StampPartial' ($failed -join ', ')) }
         else { Write-Info (Get-LunqText 'Registry.StampWritten') }
     }
-    catch { Write-LunqWarning (Get-LunqText 'Registry.StampFailed' $_.Exception.Message) }
+    catch { Write-Warning (Get-LunqText 'Registry.StampFailed' $_.Exception.Message) }
     finally { Dismount-OfflineHives -Strict }
 }
 

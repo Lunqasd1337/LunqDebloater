@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Версия LunqDebloater / LunqDebloater version
-      description: Видна в заголовке консоли, рядом с названием в окне LunqDebloater.exe, в начале лога и в итоге сборки / Shown in the console title, next to the name in the LunqDebloater.exe window, at the start of the log and in the build result
+      description: Видна в заголовке окна, в начале лога и в итоге сборки / Shown in the window title, at the start of the log and in the build result
       placeholder: "1.x.y"
     validations:
       required: true
@@ -34,8 +34,8 @@ body:
   - type: textarea
     id: parameters
     attributes:
-      label: Как запускали / How you ran it
-      description: Командная строка целиком, «пошаговый режим (Start.cmd)» или «окно LunqDebloater.exe» и что вы выбрали / The full command line, "step-by-step mode (Start.cmd)" or "the LunqDebloater.exe window", and what you chose
+      label: Параметры запуска или пошаговый режим / Parameters used or step-by-step mode
+      description: Командная строка целиком или «пошаговый режим (Start.cmd)» и что вы выбрали / The full command line, or "step-by-step mode (Start.cmd)" and what you chose
       placeholder: |
         .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro" -Unattend
       render: powershell
@@ -59,8 +59,8 @@ body:
     attributes:
       label: Лог / Log file
       description: |
-        Перетащите сюда архив `LunqDebloater_<дата>_report.zip` из папки `Logs` (он появляется после ошибки сборки, в окне его показывает кнопка «Отчёт об ошибке») или оба файла последнего запуска: `LunqDebloater_<дата>.log` и `LunqDebloater_<дата>_dism.zip`. Ошибки после установки: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
-        Drag the archive `LunqDebloater_<date>_report.zip` from the `Logs` folder here (it appears after a failed build; in the window the "Bug report" button shows it) or both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.zip`. For problems after installation: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+        Перетащите сюда архив `LunqDebloater_<дата>_report.zip` из папки `Logs` (он появляется после ошибки сборки) или оба файла последнего запуска: `LunqDebloater_<дата>.log` и `LunqDebloater_<дата>_dism.zip`. Ошибки после установки: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
+        Drag the archive `LunqDebloater_<date>_report.zip` from the `Logs` folder here (it appears after a failed build) or both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.zip`. For problems after installation: `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log`.
       placeholder: Перетащите файлы сюда / Drag the files here
     validations:
       required: true

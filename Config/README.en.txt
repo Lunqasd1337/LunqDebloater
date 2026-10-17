@@ -5,13 +5,12 @@ Everything in this folder goes into the image. Before the build the script shows
 "What goes into the image" summary, and you can turn off anything by its number
 without deleting it from here. Drivers and updates do not have to be put here:
 in step-by-step mode their folder can be chosen right in the summary, and the drivers
-can be taken from this computer. In the LunqDebloater.exe window the same is under
-"More options" (except this computer's drivers).
+can be taken from this computer.
 
   Profile.json   What to remove from Windows and which registry settings to change. The
                  profile is split into categories that can be turned on and off before
                  the build. You can put more profiles (*.json) here, then the script asks
-                 which one to use (the LunqDebloater.exe window always uses Profile.json).
+                 which one to use.
 
   Apps.txt       Programs that winget installs at the first sign-in to Windows.
                  One program per line, the winget Id (to find it: winget search <name>).
@@ -72,8 +71,8 @@ programs and scripts do not start. In that case add the command from unattend.xm
 file. The same happens if you tick any Windows option in the Rufus window when writing the
 USB drive, including the bypass of the TPM, Secure Boot and memory requirements. It is
 better to turn on the bypass and the local account in the LunqDebloater answer file (items
-in the "What goes into the image" summary or "Result" in the window). If you cannot do
-without the Rufus options, after installation run everything by hand as administrator:
+in the "What goes into the image" summary). If you cannot do without the Rufus options,
+after installation run everything by hand as administrator:
     powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lunq\FirstLogon.ps1
 
 Several sets of settings

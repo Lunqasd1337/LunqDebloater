@@ -66,25 +66,3 @@ jobs:
         with:
           name: test-results-${{ matrix.shell }}
           path: TestResults.xml
-
-  gui:
-    name: Window (Tauri)
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: Gui/src-tauri
-    steps:
-      - uses: actions/checkout@v4
-      # Rust уже есть в образе раннера. Кэш зависимостей сокращает сборку с десятка минут до пары.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: Gui/src-tauri
-      - name: Clippy
-        run: cargo clippy --locked -- -D warnings
-      - name: Build
-        run: cargo build --release --locked
-      - name: Upload window
-        uses: actions/upload-artifact@v4
-        with:
-          name: LunqDebloater-window
-          path: Gui/src-tauri/target/release/LunqDebloater.exe

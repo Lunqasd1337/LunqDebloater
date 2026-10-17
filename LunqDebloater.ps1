@@ -27,7 +27,6 @@ param(
     [string]$ConfigPath,
     [string]$ProfilePath,
     [string[]]$SkipCategory,
-    [string[]]$IncludeCategory,
     [int]$Index = 0,
     [string]$Edition,
     [string]$WorkDir = (Join-Path $env:SystemDrive 'LunqWork'),
@@ -43,7 +42,6 @@ param(
     [switch]$Unattend,
     [switch]$BypassRequirements,
     [switch]$LocalAccount,
-    [switch]$SkipRegion,
     [switch]$ListContents,
     [ValidatePattern('^[A-Za-z0-9_-]{1,32}$')][string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
@@ -53,9 +51,7 @@ param(
     [switch]$SkipVersionCheck,
     [switch]$KeepWorkDir,
     [switch]$Force,
-    [ValidateSet('ru', 'en')][string]$Language,
-    [string]$EventsPath,
-    [switch]$ListEditions
+    [ValidateSet('ru', 'en')][string]$Language
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,7 +69,7 @@ Import-Module (Join-Path $PSScriptRoot 'Modules\LunqDebloater\LunqDebloater.psd1
 if (-not $Language) { $Language = Get-LunqDefaultLanguage }
 Set-LunqLanguage -Language $Language
 # Параметры с путями: при перезапуске они передаются полными, ведь новое окно может открыться в другой папке.
-$pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath', 'EventsPath'
+$pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath'
 
 # В PowerShell 7 часть командлетов модуля DISM (например, Get-AppxProvisionedPackage)
 # падает с ошибкой «Класс не зарегистрирован». Поэтому скрипт всегда работает
@@ -89,24 +85,9 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
     exit $LASTEXITCODE
 }
 Import-Module Dism
-if ($ListEditions -and $interactive) { throw (Get-LunqText 'Main.ListEditionsNeedIso') }
-
-# События для своих программ: окно с прогрессом читает их из файла, пока идёт сборка.
-# Файл открывается только здесь, в Windows PowerShell 5.1: запуск из PowerShell 7 выше
-# передал путь дальше и сам в файл не пишет.
-if ($EventsPath) {
-    # Вопрос в консоли повесил бы программу, которая ждёт событий, поэтому без -IsoPath нельзя.
-    if ($interactive) { throw (Get-LunqText 'Main.EventsNeedIso') }
-    $EventsPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EventsPath)
-    Start-LunqEvents -Path $EventsPath
-    Send-LunqEvent 'start' @{ version = (Get-LunqVersion); language = $Language; mode = $(if ($ListEditions) { 'editions' } elseif ($ListContents) { 'list' } else { 'build' }); pid = $PID }
-}
 
 if (-not (Test-Administrator)) {
-    if (-not $interactive) {
-        Send-LunqFailure (Get-LunqText 'Main.NeedAdminThrow')
-        throw (Get-LunqText 'Main.NeedAdminThrow')
-    }
+    if (-not $interactive) { throw (Get-LunqText 'Main.NeedAdminThrow') }
     Write-Host ''
     Write-Host (Get-LunqText 'Main.NeedAdmin') -ForegroundColor Yellow
     $elevated = $false
@@ -120,32 +101,12 @@ if (-not (Test-Administrator)) {
             Start-Process -FilePath $shell -Verb RunAs -ArgumentList ($relaunch -join ' ')
             $elevated = $true
         }
-        catch { Write-LunqWarning (Get-LunqText 'Main.ElevateDenied') }
+        catch { Write-Warning (Get-LunqText 'Main.ElevateDenied') }
     }
     if (-not $elevated) {
         Write-Info (Get-LunqText 'Main.NoAdminExit')
         Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null
     }
-    return
-}
-
-# Только список редакций ISO: окно показывает его до сборки. Ничего не проверяется и не меняется,
-# поэтому нет ни лога, ни блокировки второго запуска.
-if ($ListEditions) {
-    try {
-        $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
-        $iso = Mount-IsoImage -IsoPath $IsoPath
-        try { $images = Get-IsoEditions -IsoRoot $iso.Root }
-        finally { Dismount-IsoImage -Iso $iso }
-    }
-    catch {
-        Send-LunqFailure $_.Exception.Message
-        throw
-    }
-    Write-EditionList -Images $images
-    Send-LunqEditionsEvent -Images $images
-    Send-LunqEvent 'done' @{ ok = $true; warnings = 0 }
-    Stop-LunqEvents
     return
 }
 
@@ -173,11 +134,6 @@ $wimPath = Join-Path $isoDir 'sources\install.wim'
 # Обе папки удаляются в конце запуска: драйверы видеокарты занимают на системном диске 1-3 ГБ.
 $hostDriversDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
 $cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
-# Что попадает в событие done в конце запуска.
-$contentsPath = $null
-$bugReport = $null
-$dismLog = $null
-$runStarted = Get-Date
 
 # Заголовок окна не меняется в некоторых консолях (например, при перенаправленном выводе), это не ошибка.
 try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
@@ -185,10 +141,7 @@ try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { 
 $runLock = Enter-LunqRunLock
 if (-not $runLock) {
     Write-Host (Get-LunqText 'Main.AlreadyRunning') -ForegroundColor Red
-    if (-not $interactive) {
-        Send-LunqFailure (Get-LunqText 'Main.AlreadyRunning')
-        throw (Get-LunqText 'Main.AlreadyRunning')
-    }
+    if (-not $interactive) { throw (Get-LunqText 'Main.AlreadyRunning') }
     Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null
     return
 }
@@ -197,7 +150,6 @@ try {
     # Лог ведётся с самого начала: так в него попадают и ошибки при выборе ISO и проверке системы.
     $lunqLog = Start-LunqLog -Dir (Join-Path $PSScriptRoot 'Logs')
     Write-LunqRunInfo -BoundParameters $PSBoundParameters -DismLog $lunqLog.DismPath
-    Send-LunqEvent 'log' @{ path = $lunqLog.Path; dismLog = $lunqLog.DismPath }
 
     # ---------- Подготовка: всё, что можно проверить до долгой работы ----------
     if ($interactive) {
@@ -238,9 +190,6 @@ try {
     }
     $lunqProfile = Read-LunqProfile -Path $ProfilePath
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
-    # Сначала включаем, потом выключаем: если Id есть в обоих списках, побеждает пропуск.
-    $IncludeCategory = @($IncludeCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    if ($IncludeCategory.Count -gt 0) { Enable-LunqCategories -LunqProfile $lunqProfile -Ids $IncludeCategory }
     $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
     if ($interactive -and -not $listMode) {
@@ -248,7 +197,7 @@ try {
         Select-LunqCategories -LunqProfile $lunqProfile
     }
     if (-not $listMode -and -not ($lunqProfile.Categories | Where-Object { $_.Enabled })) {
-        Write-LunqWarning (Get-LunqText 'Main.AllCategoriesOff')
+        Write-Warning (Get-LunqText 'Main.AllCategoriesOff')
     }
     $config = Get-LunqEffectiveConfig -LunqProfile $lunqProfile
 
@@ -303,8 +252,7 @@ try {
             scripts        = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
             unattend       = [bool]$withUnattend
             oobe           = [bool]$withUnattend
-            # С -SkipRegion язык, формат и часовой пояс Windows спросит при установке, как без файла ответов.
-            region         = [bool]$withUnattend -and -not $SkipRegion
+            region         = [bool]$withUnattend
             bypass         = [bool]$BypassRequirements
             localAccount   = [bool]$LocalAccount
         }
@@ -378,7 +326,7 @@ try {
     $peDrivers = @()
     if ($DriversToSetup) {
         $peDrivers = Select-LunqPEDrivers $drivers -Cache $peDriverKinds
-        if ($peDrivers.Count -eq 0) { Write-LunqWarning (Get-LunqText 'Main.NoPEDrivers') }
+        if ($peDrivers.Count -eq 0) { Write-Warning (Get-LunqText 'Main.NoPEDrivers') }
     }
     $serviceRecovery = ($peUpdates.Count + $safeOSUpdates.Count + $peDrivers.Count) -gt 0
     $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
@@ -420,7 +368,7 @@ try {
 
     if (-not $listMode -and (Test-Path -LiteralPath $OutputIso)) {
         if ($interactive -and -not $Force) {
-            Write-LunqWarning (Get-LunqText 'Main.OutputExists' $OutputIso)
+            Write-Warning (Get-LunqText 'Main.OutputExists' $OutputIso)
             if (-not (Read-YesNo (Get-LunqText 'Main.AskOverwrite'))) { return }
         }
         elseif (-not $Force) {
@@ -434,8 +382,6 @@ try {
     $iso = Mount-IsoImage -IsoPath $IsoPath
     try {
         $images = Get-IsoEditions -IsoRoot $iso.Root
-        Send-LunqEditionsEvent -Images $images
-        if ($EventsPath -and $Index -le 0 -and -not $Edition -and @($images).Count -gt 1) { throw (Get-LunqText 'Main.EventsNeedEdition') }
         $selected = Select-LunqEdition -Images $images -Index $Index -Edition $Edition
         $editionName = ($images | Where-Object ImageIndex -eq $selected).ImageName
         $imageInfo = Get-IsoImageInfo -IsoRoot $iso.Root -Index $selected
@@ -466,7 +412,7 @@ try {
         else {
             foreach ($e in $versionCheck.Errors) { Write-Check Fail $e }
             if ($SkipVersionCheck) {
-                Write-LunqWarning (Get-LunqText 'Main.SkipVersionCheckWarn')
+                Write-Warning (Get-LunqText 'Main.SkipVersionCheckWarn')
             }
             else {
                 Write-Info ''
@@ -553,7 +499,7 @@ try {
     Write-CategoryList -LunqProfile $lunqProfile
     if ($SkipAppx) { Write-Info (Get-LunqText 'Main.PlanAppx' $skipped) }
     if ($SkipComponents) { Write-Info (Get-LunqText 'Main.PlanComponents' $skipped) }
-    elseif ($config.Packages.Remove.Count -gt 0) { Write-LunqWarning (Get-LunqText 'Main.PackagesWarning') }
+    elseif ($config.Packages.Remove.Count -gt 0) { Write-Warning (Get-LunqText 'Main.PackagesWarning') }
     if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
     if ($CleanupComponents) { Write-Info (Get-LunqText 'Main.PlanCleanup') }
     Write-Info (Get-LunqText 'Main.PlanOutputIso' $OutputIso)
@@ -611,7 +557,6 @@ try {
     }
     $started = Get-Date
     $results = Invoke-LunqBuild -Context $build
-    Send-LunqResultEvents -Results $results
 
     Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
 }
@@ -619,9 +564,6 @@ catch {
     $failed = $true
     Write-Host ''
     Write-Host (Get-LunqText 'Main.Error' $_.Exception.Message) -ForegroundColor Red
-    $where = @()
-    if ($_.ScriptStackTrace) { $where = @($_.ScriptStackTrace -split '\r?\n') }
-    Send-LunqEvent 'error' @{ text = $_.Exception.Message; where = $where }
     # Где именно случилась ошибка: по присланному логу сразу видно, какую функцию смотреть.
     if ($_.ScriptStackTrace) {
         Write-Host ('    ' + (Get-LunqText 'Main.ErrorWhere')) -ForegroundColor DarkGray
@@ -655,21 +597,12 @@ finally {
                 $bugReport = New-LunqBugReport -Log $lunqLog -ProfilePath $ProfilePath
                 if ($bugReport) { Write-Info (Get-LunqText 'Main.BugReport' $bugReport) }
             }
-            catch { Write-LunqWarning $_.Exception.Message }
+            catch { Write-Warning $_.Exception.Message }
         }
         # Лог DISM сжимается последним: из полного лога собирается архив для отчёта.
         $dismLog = Compress-LunqDismLog -Path $lunqLog.DismPath
         if ($failed -and $dismLog) { Write-Info (Get-LunqText 'Main.DismLog' $dismLog) }
     }
-    $doneIso = $null
-    if (-not $failed -and -not $listMode -and $OutputIso -and (Test-Path -LiteralPath $OutputIso)) { $doneIso = $OutputIso }
-    $logPath = $null
-    if ($lunqLog) { $logPath = $lunqLog.Path }
-    Send-LunqEvent 'done' @{
-        ok = -not $failed; iso = $doneIso; contents = $contentsPath; log = $logPath; dismLog = $dismLog; bugReport = $bugReport
-        warnings = (Get-LunqEventWarnings); seconds = [Math]::Round(((Get-Date) - $runStarted).TotalSeconds, 1)
-    }
-    Stop-LunqEvents
     # До вопроса «нажмите Enter»: пока окно ждёт, новый запуск уже можно начать.
     Exit-LunqRunLock -Lock $runLock
     if ($interactive) {

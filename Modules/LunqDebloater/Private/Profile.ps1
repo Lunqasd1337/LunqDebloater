@@ -62,7 +62,7 @@ function Write-LunqUnknownFields {
     foreach ($property in $Object.PSObject.Properties) {
         if ($allowed -notcontains $property.Name) {
             $field = if ($Where) { "$Where.$($property.Name)" } else { $property.Name }
-            Write-LunqWarning (Get-LunqText 'Profile.UnknownField' $Path $field ($allowed -join ', '))
+            Write-Warning (Get-LunqText 'Profile.UnknownField' $Path $field ($allowed -join ', '))
         }
     }
 }
@@ -198,30 +198,17 @@ function Write-CategoryList {
     }
 }
 
-function Set-LunqCategoriesEnabled {
-    # Включает или выключает категории по Id. Неизвестный Id останавливает запуск: опечатка
-    # в имени не должна молча собрать образ не с тем набором.
-    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids, [bool]$Enabled)
+function Disable-LunqCategories {
+    # Выключает категории по Id (для параметра -SkipCategory).
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
     foreach ($id in $Ids) {
         $category = $LunqProfile.Categories | Where-Object { $_.Id -eq $id }
         if (-not $category) {
             $known = ($LunqProfile.Categories | ForEach-Object { $_.Id }) -join ', '
             throw (Get-LunqText 'Profile.CategoryNotFound' $id $known)
         }
-        $category.Enabled = $Enabled
+        $category.Enabled = $false
     }
-}
-
-function Disable-LunqCategories {
-    # Выключает категории по Id (для параметра -SkipCategory).
-    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
-    Set-LunqCategoriesEnabled -LunqProfile $LunqProfile -Ids $Ids -Enabled $false
-}
-
-function Enable-LunqCategories {
-    # Включает категории по Id, в том числе выключенные в профиле (для параметра -IncludeCategory).
-    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
-    Set-LunqCategoriesEnabled -LunqProfile $LunqProfile -Ids $Ids -Enabled $true
 }
 
 function Select-LunqCategories {
@@ -241,7 +228,7 @@ function Select-LunqCategories {
                 $category = $LunqProfile.Categories[$parsed - 1]
                 $category.Enabled = -not $category.Enabled
             }
-            else { Write-LunqWarning (Get-LunqText 'Profile.NoSuchCategoryNumber' $token) }
+            else { Write-Warning (Get-LunqText 'Profile.NoSuchCategoryNumber' $token) }
         }
     }
 }
@@ -301,6 +288,6 @@ function Select-LunqProfile {
         if ([int]::TryParse($answer, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $items.Count) {
             return $items[$parsed - 1].Path
         }
-        Write-LunqWarning (Get-LunqText 'Profile.NoSuchNumber')
+        Write-Warning (Get-LunqText 'Profile.NoSuchNumber')
     }
 }

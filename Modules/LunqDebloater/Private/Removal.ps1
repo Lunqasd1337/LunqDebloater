@@ -17,7 +17,7 @@
                 $result.Done.Add($pkg.DisplayName)
             }
             catch {
-                Write-LunqWarning (Get-LunqText 'Removal.RemoveFailed' $pkg.DisplayName $_.Exception.Message)
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $pkg.DisplayName $_.Exception.Message)
                 $result.Failed.Add($pkg.DisplayName)
             }
         }
@@ -46,7 +46,7 @@ function Remove-LunqCapabilities {
                 $result.Done.Add($cap.Name)
             }
             catch {
-                Write-LunqWarning (Get-LunqText 'Removal.RemoveFailed' $cap.Name $_.Exception.Message)
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $cap.Name $_.Exception.Message)
                 $result.Failed.Add($cap.Name)
             }
         }
@@ -78,7 +78,7 @@ function Disable-LunqFeatures {
                 $result.Done.Add($feature.FeatureName)
             }
             catch {
-                Write-LunqWarning (Get-LunqText 'Removal.DisableFailed' $feature.FeatureName $_.Exception.Message)
+                Write-Warning (Get-LunqText 'Removal.DisableFailed' $feature.FeatureName $_.Exception.Message)
                 $result.Failed.Add($feature.FeatureName)
             }
         }
@@ -98,7 +98,7 @@ function Remove-LunqPackages {
     $patterns = Get-ConfigList $Config 'Packages', 'Remove'
     if ($patterns.Count -eq 0) { return $null }
 
-    Write-LunqWarning (Get-LunqText 'Removal.PackagesWarning')
+    Write-Warning (Get-LunqText 'Removal.PackagesWarning')
     $packages = @(Get-WindowsPackage -Path $MountPath | Where-Object PackageState -eq 'Installed')
     foreach ($pkg in $packages) {
         if (Test-NamePattern -Name $pkg.PackageName -Patterns $patterns) {
@@ -108,7 +108,7 @@ function Remove-LunqPackages {
                 $result.Done.Add($pkg.PackageName)
             }
             catch {
-                Write-LunqWarning (Get-LunqText 'Removal.RemoveFailed' $pkg.PackageName $_.Exception.Message)
+                Write-Warning (Get-LunqText 'Removal.RemoveFailed' $pkg.PackageName $_.Exception.Message)
                 $result.Failed.Add($pkg.PackageName)
             }
         }

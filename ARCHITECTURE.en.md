@@ -2,9 +2,7 @@
 
 Русский: [ARCHITECTURE.md](ARCHITECTURE.md)
 
-This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script and the window is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
-
-The project has two parts. All the work is done by the PowerShell script `LunqDebloater.ps1` with the `Modules\LunqDebloater` module. The `LunqDebloater.exe` window (the `Gui` folder) only collects its parameters, runs it and shows the events from `-EventsPath`; it has no build logic of its own (see "The window").
+This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
 
 ## Repository layout
 
@@ -30,9 +28,6 @@ Modules\
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
-Gui\                         The Tauri window over the script
-  src-tauri\                 Rust: runs the script with -EventsPath and reads its events
-  ui\                        The window page: HTML, CSS and JS without a bundler
 Tests\                       Pester tests and stubs
 .github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
 ```
@@ -43,11 +38,10 @@ Tests\                       Pester tests and stubs
 
 | File | Responsible for |
 |---|---|
-| `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Write-LunqWarning`, `Read-YesNo`, `Format-Size`. Warnings go through `Write-LunqWarning`, not `Write-Warning`, otherwise they do not reach the events |
-| `Events.ps1` | Events for your own programs (`-EventsPath`): a JSON file with one event per line. `Send-LunqEvent` writes an event, the output functions in `Console.ps1` call it themselves, and without `-EventsPath` it does nothing. `Send-LunqEditionsEvent` sends the list of editions, `Send-LunqResultEvents` the step results, `Send-LunqFailure` an error before the work starts |
+| `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Read-YesNo`, `Format-Size` |
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
 | `System.ps1` | Administrator rights, one run at a time (`Enter-LunqRunLock`), the log (`Start-LunqLog`), step markers in the DISM log and its compression at the end of the run (`Compress-LunqDismLog`), the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
-| `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, turning categories on and off by Id (`Enable-LunqCategories` for `-IncludeCategory`, `Disable-LunqCategories` for `-SkipCategory`), merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
+| `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
@@ -63,9 +57,9 @@ Tests\                       Pester tests and stubs
 
 ## How a run goes
 
-1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder. With `-EventsPath` the events file is opened before the rights check, so that error reaches the program too. `-ListEditions` ends right here: the ISO is mounted, the list of editions is printed (and sent as an `editions` event), and the script exits without a log, a lock or checks.
+1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder.
 2. **Log.** `Start-LunqLog` starts the log in `Logs` next to the script and a separate DISM log. Everything after that, including errors while choosing the ISO, goes into the log.
-3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters: first `-IncludeCategory` turns categories on, then `-SkipCategory` turns them off, so skipping wins when both name the same Id. With `-EventsPath` the script asks nothing, so without `-Index` or `-Edition` it stops when the ISO has several editions.
+3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters.
 4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found: `Find-LunqBuildInputs` finds the updates and drivers. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary with the items from `New-LunqContentOptions` lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, `Invoke-LunqContentAction` performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), and the script searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
 5. **Checks** (`Test-LunqPrerequisites`): working folder, output ISO, space, `oscdimg`. An error stops the run before the long work starts.
 6. **Edition and version.** The ISO is mounted once: list of editions, choice, version of the chosen one. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
@@ -138,13 +132,11 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Checks.Tests.ps1` | Working folder, output ISO, UEFI-only ISO, image and host versions, leftovers of an earlier run |
 | `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE, recognizing Dynamic Updates by their `.cab`, skipping packages that do not apply |
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
-| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders, this computer's drivers, `-IncludeCategory` and `-SkipCategory`), `-EventsPath` events and the `-ListEditions` mode, in Russian and English |
+| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders and this computer's drivers), in Russian and English |
 | `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
-| `Tests\Gui.Tests.ps1` | The window: the `ru` and `en` keys in `strings.js` match, every key used in the code exists, every parameter the window passes to the script and the embedded `Install.ps1` exists there, the version matches the module |
-| `Tests\Events.Tests.ps1` | Events: output is duplicated as events, the file can be read while open, lists in step results stay lists |
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later, including drivers for `Export-WindowsDriver` |
@@ -154,7 +146,7 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 ## How to add
 
-**A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch. If the window needs it too, add it there as described in "The window".
+**A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch.
 
 **A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
 
@@ -162,19 +154,7 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
 
-**A setting in the window.** A switch in `renderSetup()` or `renderMore()` in `Gui\ui\app.js`, the script parameter in `scriptArgs()` and the `ru` and `en` texts in `Gui\ui\strings.js`. The window does not decide by itself what goes into the image: everything it knows about the build must reach the script as a parameter.
-
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
-
-## The window
-
-`Gui\` is a shell over `LunqDebloater.ps1` and has no build logic of its own. The Rust part (`src-tauri\src\main.rs`) finds the script in the folders above the exe, runs Windows PowerShell 5.1 without a console window and reads the `-EventsPath` file: every 250 ms it reads the new lines and passes each to the page as a `lunq-event` event, and after the script exits it sends `lunq-exit` with the exit code and stderr. The list of editions comes from a run with `-ListEditions`. The `app.manifest` manifest asks for administrator rights right away, so the script starts with them and asks nothing.
-
-If there is no script in the folders above (the exe was downloaded from the release on its own), the window shows the install screen. `Install.ps1` is embedded in the exe (`include_str!`): the window runs it with `-Path` and `-NoStart`, and on failure the loader exits with code 1. After the install the window copies itself into the folder if the loader did not download the release's window, starts `LunqDebloater.exe` from there and closes. If `%USERPROFILE%\LunqDebloater` already has a release no older than the window itself, it opens the exe there right away without the screen: so the window and the script are always of the same release.
-
-The page (`ui\`) builds the script parameters in `scriptArgs()` in `app.js`: categories become `-SkipCategory` and `-IncludeCategory`, empty update and driver folders become `-SkipUpdates` and `-SkipDrivers`. The window texts are in `ui\strings.js`, and everything the script reports (steps, checks, errors) arrives already in the chosen language. To add a setting to the window: a script parameter, a switch in `renderSetup()` or `renderMore()`, the key in `scriptArgs()` and strings in both languages of `strings.js`. `Tests\Gui.Tests.ps1` checks that the script has that parameter.
-
-The window version in `Cargo.toml` and `tauri.conf.json` matches `ModuleVersion`, and a test checks that too. The `Window (Tauri)` CI job builds the exe for every PR, and `.github\workflows\window-release.yml` attaches it to every published release.
 
 ## The Install.ps1 loader
 
@@ -182,10 +162,8 @@ The window version in `Cargo.toml` and `tauri.conf.json` matches `ModuleVersion`
 
 Unlike the other scripts it is stored as ASCII without a BOM, which is why its messages and comments are in English. `irm` hands the file to `iex` as a string, and how Windows PowerShell 5.1 decodes it depends on the response headers. A BOM could end up at the start of the code, and Russian letters decoded with the wrong encoding can turn into "smart" quotes and break parsing. `Tests\Install.Tests.ps1` checks that the file is ASCII only.
 
-The window `LunqDebloater.exe` is not part of the source archive, it is a release file. The loader downloads it by the direct link `releases/download/<tag>/LunqDebloater.exe` when it installs a new release or when the folder has no window. A failed window download is only a warning: `window-release.yml` attaches the exe a few minutes after the release is published, and the console does not need it.
-
 Next to the program the loader keeps `.lunq-install.json` with the installed release tag and the hashes of the `Config` files it put there. A `Config` file whose hash has changed since then counts as the user's edit and is not replaced on update.
 
 ## Versions and releases
 
-The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub. The window version in `Gui\src-tauri\Cargo.toml` and `tauri.conf.json` is raised together with `ModuleVersion`.
+The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub.

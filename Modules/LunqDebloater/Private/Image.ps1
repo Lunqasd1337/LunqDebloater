@@ -53,7 +53,7 @@ function Invoke-LunqComponentCleanup {
     if ($script:DismLogPath) { $arguments += "/LogPath:$($script:DismLogPath)" }
     $code = Invoke-Native dism.exe $arguments
     if ($code -eq 0) { return $true }
-    Write-LunqWarning (Get-LunqText 'Image.CleanupFailed' $code)
+    Write-Warning (Get-LunqText 'Image.CleanupFailed' $code)
     return $false
 }
 
