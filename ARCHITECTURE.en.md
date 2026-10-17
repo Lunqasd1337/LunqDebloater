@@ -28,6 +28,9 @@ Modules\
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
+Gui\                         The Tauri window over the script
+  src-tauri\                 Rust: runs the script with -EventsPath and reads its events
+  ui\                        The window page: HTML, CSS and JS without a bundler
 Tests\                       Pester tests and stubs
 .github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
 ```
@@ -138,6 +141,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
+| `Tests\Gui.Tests.ps1` | The window: the `ru` and `en` keys in `strings.js` match, every key used in the code exists, every parameter the window passes exists in the script, the version matches the module |
 | `Tests\Events.Tests.ps1` | Events: output is duplicated as events, the file can be read while open, lists in step results stay lists |
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
@@ -158,6 +162,14 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
 
+## The window
+
+`Gui\` is a shell over `LunqDebloater.ps1` and has no build logic of its own. The Rust part (`src-tauri\src\main.rs`) finds the script in the folders above the exe, runs Windows PowerShell 5.1 without a console window and reads the `-EventsPath` file: every 250 ms it reads the new lines and passes each to the page as a `lunq-event` event, and after the script exits it sends `lunq-exit` with the exit code and stderr. The list of editions comes from a run with `-ListEditions`. The `app.manifest` manifest asks for administrator rights right away, so the script starts with them and asks nothing.
+
+The page (`ui\`) builds the script parameters in `scriptArgs()` in `app.js`: categories become `-SkipCategory` and `-IncludeCategory`, empty update and driver folders become `-SkipUpdates` and `-SkipDrivers`. The window texts are in `ui\strings.js`, and everything the script reports (steps, checks, errors) arrives already in the chosen language. To add a setting to the window: a script parameter, a switch in `renderSetup()` or `renderMore()`, the key in `scriptArgs()` and strings in both languages of `strings.js`. `Tests\Gui.Tests.ps1` checks that the script has that parameter.
+
+The window version in `Cargo.toml` and `tauri.conf.json` matches `ModuleVersion`, and a test checks that too. The `Window (Tauri)` CI job builds the exe for every PR, and `.github\workflows\window-release.yml` attaches it to every published release.
+
 ## The Install.ps1 loader
 
 `Install.ps1` does not depend on the module. The user gets it with `irm <raw link to main> | iex`, and the loader then downloads the archive of the latest release. So the loader itself comes from `main`, while the program comes only from a released version.
@@ -168,4 +180,4 @@ Next to the program the loader keeps `.lunq-install.json` with the installed rel
 
 ## Versions and releases
 
-The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub.
+The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub. The window version in `Gui\src-tauri\Cargo.toml` and `tauri.conf.json` is raised together with `ModuleVersion`.

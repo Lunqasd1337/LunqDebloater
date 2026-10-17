@@ -1,0 +1,27 @@
+name: Window release
+
+# Окно собирается из того же тега, что и релиз, и прикладывается к нему файлом
+# LunqDebloater.exe: пользователь кладёт его рядом с LunqDebloater.ps1.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  window:
+    name: Attach LunqDebloater.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Build
+        working-directory: Gui/src-tauri
+        run: cargo build --release --locked
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$env:TAG" Gui/src-tauri/target/release/LunqDebloater.exe --clobber

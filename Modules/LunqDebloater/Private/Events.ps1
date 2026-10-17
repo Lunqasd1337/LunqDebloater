@@ -47,6 +47,12 @@ function Send-LunqFailure {
     Stop-LunqEvents
 }
 
+function Send-LunqEditionsEvent {
+    # Редакции ISO по порядку: номер и имя, как их принимают -Index и -Edition.
+    param([Parameter(Mandatory)]$Images)
+    Send-LunqEvent 'editions' @{ items = @($Images | ForEach-Object { [ordered]@{ index = [int]$_.ImageIndex; name = [string]$_.ImageName } }) }
+}
+
 function Get-LunqEventWarnings {
     # Сколько предупреждений ушло в события: окно показывает это число в итоге.
     return $script:EventWarnings

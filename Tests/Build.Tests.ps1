@@ -379,6 +379,20 @@ Describe 'Реестр из своего профиля' {
     }
 }
 
+Describe 'Категории из командной строки' {
+    It '-IncludeCategory включает выключенную категорию, -SkipCategory через запятую выключает' {
+        # Так их передаёт окно: каждый список одной строкой через запятую.
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; IncludeCategory = 'drivers'; SkipCategory = 'ai,store' }
+        $run.Error | Should -BeNullOrEmpty
+        $log = @(Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8)
+        $enabled = @($log | Where-Object { $_ -match '\|Categories\|String\|' }) -replace '^.*\|String\|', ''
+        $skipped = @($log | Where-Object { $_ -match '\|SkippedCategories\|String\|' }) -replace '^.*\|String\|', ''
+        $enabled | Should -Match '(^|, )drivers(,|$)'
+        $enabled | Should -Not -Match '(^|, )ai(,|$)'
+        $skipped | Should -Be 'ai, store'
+    }
+}
+
 Describe 'Пошаговый режим' {
     It 'сборка с ответами по умолчанию: файл ответов включён' {
         # Ответы: [1] собрать, Enter для категорий, Enter для сводки, номер редакции, Y на план.
@@ -552,6 +566,20 @@ Describe 'События для своих программ' {
         $run = Start-TestBuild -Interactive -Parameters @{ EventsPath = (Join-Path $TestDrive 'no-iso.jsonl') } -Answers @()
         $run.Error | Should -Not -BeNullOrEmpty
         $run.Error.Exception.Message | Should -Match 'укажите и -IsoPath'
+    }
+
+    It '-ListEditions: только список редакций, без проверок и шагов' {
+        $path = Join-Path $TestDrive 'list-editions.jsonl'
+        $run = Start-TestBuild -Parameters @{ ListEditions = $true; Index = 0; EventsPath = $path }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match '\[5\]\s+Windows 11 Pro'
+        Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $script:Test.App 'Logs') | Should -BeFalse
+        $events = @(Read-BuildEvents -Path $path)
+        @($events | ForEach-Object { $_.type }) | Should -Be @('start', 'editions', 'done')
+        $events[0].mode | Should -Be 'editions'
+        @($events[1].items | ForEach-Object { $_.index }) | Should -Be @(1, 5)
+        $events[2].ok | Should -BeTrue
     }
 
     It 'без прав администратора: start, error и done, хотя лог ещё не начат' {

@@ -27,6 +27,7 @@ param(
     [string]$ConfigPath,
     [string]$ProfilePath,
     [string[]]$SkipCategory,
+    [string[]]$IncludeCategory,
     [int]$Index = 0,
     [string]$Edition,
     [string]$WorkDir = (Join-Path $env:SystemDrive 'LunqWork'),
@@ -52,7 +53,8 @@ param(
     [switch]$KeepWorkDir,
     [switch]$Force,
     [ValidateSet('ru', 'en')][string]$Language,
-    [string]$EventsPath
+    [string]$EventsPath,
+    [switch]$ListEditions
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,6 +88,7 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
     exit $LASTEXITCODE
 }
 Import-Module Dism
+if ($ListEditions -and $interactive) { throw (Get-LunqText 'Main.ListEditionsNeedIso') }
 
 # События для своих программ: окно с прогрессом читает их из файла, пока идёт сборка.
 # Файл открывается только здесь, в Windows PowerShell 5.1: запуск из PowerShell 7 выше
@@ -95,7 +98,7 @@ if ($EventsPath) {
     if ($interactive) { throw (Get-LunqText 'Main.EventsNeedIso') }
     $EventsPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EventsPath)
     Start-LunqEvents -Path $EventsPath
-    Send-LunqEvent 'start' @{ version = (Get-LunqVersion); language = $Language; mode = $(if ($ListContents) { 'list' } else { 'build' }); pid = $PID }
+    Send-LunqEvent 'start' @{ version = (Get-LunqVersion); language = $Language; mode = $(if ($ListEditions) { 'editions' } elseif ($ListContents) { 'list' } else { 'build' }); pid = $PID }
 }
 
 if (-not (Test-Administrator)) {
@@ -122,6 +125,26 @@ if (-not (Test-Administrator)) {
         Write-Info (Get-LunqText 'Main.NoAdminExit')
         Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null
     }
+    return
+}
+
+# Только список редакций ISO: окно показывает его до сборки. Ничего не проверяется и не меняется,
+# поэтому нет ни лога, ни блокировки второго запуска.
+if ($ListEditions) {
+    try {
+        $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
+        $iso = Mount-IsoImage -IsoPath $IsoPath
+        try { $images = Get-IsoEditions -IsoRoot $iso.Root }
+        finally { Dismount-IsoImage -Iso $iso }
+    }
+    catch {
+        Send-LunqFailure $_.Exception.Message
+        throw
+    }
+    Write-EditionList -Images $images
+    Send-LunqEditionsEvent -Images $images
+    Send-LunqEvent 'done' @{ ok = $true; warnings = 0 }
+    Stop-LunqEvents
     return
 }
 
@@ -214,6 +237,9 @@ try {
     }
     $lunqProfile = Read-LunqProfile -Path $ProfilePath
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
+    # Сначала включаем, потом выключаем: если Id есть в обоих списках, побеждает пропуск.
+    $IncludeCategory = @($IncludeCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($IncludeCategory.Count -gt 0) { Enable-LunqCategories -LunqProfile $lunqProfile -Ids $IncludeCategory }
     $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
     if ($interactive -and -not $listMode) {
@@ -406,7 +432,7 @@ try {
     $iso = Mount-IsoImage -IsoPath $IsoPath
     try {
         $images = Get-IsoEditions -IsoRoot $iso.Root
-        Send-LunqEvent 'editions' @{ items = @($images | ForEach-Object { [ordered]@{ index = [int]$_.ImageIndex; name = [string]$_.ImageName } }) }
+        Send-LunqEditionsEvent -Images $images
         if ($EventsPath -and $Index -le 0 -and -not $Edition -and @($images).Count -gt 1) { throw (Get-LunqText 'Main.EventsNeedEdition') }
         $selected = Select-LunqEdition -Images $images -Index $Index -Edition $Edition
         $editionName = ($images | Where-Object ImageIndex -eq $selected).ImageName

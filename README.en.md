@@ -97,6 +97,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.gith
 
 Name the shortcut, for example "LunqDebloater". The window does not close by itself: at the end the script waits for Enter.
 
+## The window
+
+Instead of the console, you can build the ISO in the `LunqDebloater.exe` window. It is a shell over the same script: the settings are on one page, and during the build you see the steps, warnings and the result. The window runs `LunqDebloater.ps1` with parameters, so the checks, the build and the log are the same as in the console.
+
+1. Download `LunqDebloater.exe` from the release and put it in the program folder next to `LunqDebloater.ps1` (after the one-command start it is `C:\Users\<name>\LunqDebloater`).
+2. Run it. The window asks for administrator rights right away: without them the script cannot mount the ISO.
+3. Click "Choose ISO…". The window reads the list of editions and picks Pro in advance if there is one. You cannot drag the ISO into the window: Windows does not allow dragging from regular windows into windows running as administrator.
+4. Check the categories and the result settings and click "Build ISO".
+
+The window takes updates and drivers from `Config\Updates` and `Config\Drivers`; you can choose another folder under "More options". The component store cleanup, drivers for Setup, the volume label and the working folder are there too. If you close the window during the build, the script finishes in the background, and the result is in its log. The window needs WebView2, which Windows 11 already has.
+
 ## Running with parameters
 
 All parameters are described in the table below. `Get-Help .\LunqDebloater.ps1` lists them with links to this description. For repeated builds and automation you can set everything with parameters. Then the script asks nothing and takes everything that is in `Config`:
@@ -117,6 +128,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-ConfigPath` | Settings folder instead of `Config` next to the script |
 | `-ProfilePath` | Your own JSON profile instead of `Config\Profile.json` |
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
+| `-IncludeCategory` | Ids of categories to turn on even if the profile turns them off (for example, `drivers`), separated by commas |
 | `-Index` / `-Edition` | Edition by number or name |
 | `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO. Only administrators can access it |
 | `-OscdimgPath` | Path to `oscdimg.exe` or the folder that holds it, if the ADK is not in its standard folder |
@@ -138,6 +150,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-Force` | Overwrite an existing finished ISO |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
 | `-EventsPath` | File the script writes events to for your own programs, such as a window with a progress bar (see "Events for your own programs"). Only works together with `-IsoPath` |
+| `-ListEditions` | Only show the editions in the ISO from `-IsoPath` (number and name) and exit. Checks and changes nothing. With `-EventsPath` the list arrives as the `editions` event |
 
 ## How the process works
 
@@ -263,7 +276,7 @@ Every event has `type` and `time`. The other fields:
 
 | `type` | When | Fields |
 |---|---|---|
-| `start` | Right after start | `version`, `language`, `mode` (`build` or `list`), `pid` |
+| `start` | Right after start | `version`, `language`, `mode` (`build`, `list` or `editions`), `pid` |
 | `log` | The log has started | `path`, `dismLog` |
 | `section` | A new output section | `text` |
 | `editions` | The ISO edition list was read | `items`: `index` and `name` of each |
@@ -340,7 +353,7 @@ Categories in `Profile.json`:
 | `drivers` | Drivers from Windows Update |
 | `onedrive` | OneDrive |
 
-To skip categories without editing the profile: `-SkipCategory drivers,store`. In step-by-step mode the script shows the list of categories, and you can turn them on and off by number.
+To skip categories without editing the profile: `-SkipCategory store,onedrive`; to turn on one that is off: `-IncludeCategory drivers`. In step-by-step mode the script shows the list of categories, and you can turn them on and off by number.
 
 Registry entries:
 
@@ -378,6 +391,7 @@ The code is laid out like this:
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |
+| `Gui\` | The Tauri window: `src-tauri` (Rust: runs the script and reads its events) and `ui` (HTML, CSS and JS without a bundler) |
 | `Tests\` | Pester tests and a stub of the DISM module |
 
 The tests do not touch the system: stubs replace DISM, reg.exe, oscdimg and winget, and the build runs in the test folder. To run them and the analyzer (Pester 5 and PSScriptAnalyzer are needed):
@@ -391,7 +405,16 @@ Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.p
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 
-GitHub Actions runs the same for every PR. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+The window is built like this (you need [Rust](https://rustup.rs) and Visual Studio Build Tools with the "Desktop development with C++" workload):
+
+```powershell
+cd Gui\src-tauri
+cargo build --release
+```
+
+The resulting `target\release\LunqDebloater.exe` finds the script in the folders above it, so you can run it right from there.
+
+GitHub Actions runs the same for every PR and attaches the built window to the run as the `LunqDebloater-window` artifact. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 The code layout, the order of build steps and the tests are described in detail in [ARCHITECTURE.en.md](ARCHITECTURE.en.md). How to propose a change and report a bug is described in [CONTRIBUTING.md](.github/CONTRIBUTING.md), how to report a vulnerability in [SECURITY.md](.github/SECURITY.md). Rules for AI assistants (Claude Code, Codex, Copilot) are in [AGENTS.md](AGENTS.md). The profile schema is in `Schemas\Profile.schema.json`; `.vscode\settings.json` maps it to the profiles in `Config*` folders, so VS Code suggests profile fields and checks them even without internet.
 

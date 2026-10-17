@@ -11,6 +11,7 @@
     'Main.PressEnter'            = 'Press Enter to close the window'
     'Main.EventsNeedIso'         = 'With -EventsPath the script asks no questions: specify -IsoPath as well.'
     'Main.EventsNeedEdition'     = 'With -EventsPath the edition must be given up front: -Index or -Edition. The list of editions is in the editions event.'
+    'Main.ListEditionsNeedIso'   = '-ListEditions needs the ISO in -IsoPath.'
     'Main.Banner'                = 'LunqDebloater {0}: preconfiguring a Windows 11 ISO image'
     'Main.Intro1'                = 'The script removes unneeded apps and components from the installation image'
     'Main.Intro2'                = 'and applies registry settings. The original ISO is not changed: the result'
