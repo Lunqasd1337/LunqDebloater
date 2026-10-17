@@ -198,17 +198,30 @@ function Write-CategoryList {
     }
 }
 
-function Disable-LunqCategories {
-    # Выключает категории по Id (для параметра -SkipCategory).
-    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
+function Set-LunqCategoriesEnabled {
+    # Включает или выключает категории по Id. Неизвестный Id останавливает запуск: опечатка
+    # в имени не должна молча собрать образ не с тем набором.
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids, [bool]$Enabled)
     foreach ($id in $Ids) {
         $category = $LunqProfile.Categories | Where-Object { $_.Id -eq $id }
         if (-not $category) {
             $known = ($LunqProfile.Categories | ForEach-Object { $_.Id }) -join ', '
             throw (Get-LunqText 'Profile.CategoryNotFound' $id $known)
         }
-        $category.Enabled = $false
+        $category.Enabled = $Enabled
     }
+}
+
+function Disable-LunqCategories {
+    # Выключает категории по Id (для параметра -SkipCategory).
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
+    Set-LunqCategoriesEnabled -LunqProfile $LunqProfile -Ids $Ids -Enabled $false
+}
+
+function Enable-LunqCategories {
+    # Включает категории по Id, в том числе выключенные в профиле (для параметра -IncludeCategory).
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
+    Set-LunqCategoriesEnabled -LunqProfile $LunqProfile -Ids $Ids -Enabled $true
 }
 
 function Select-LunqCategories {

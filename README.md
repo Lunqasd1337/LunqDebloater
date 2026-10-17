@@ -97,6 +97,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.gith
 
 Назовите ярлык, например, «LunqDebloater». Окно не закроется само: в конце скрипт ждёт Enter.
 
+## Окно
+
+Вместо консоли ISO можно собрать в окне `LunqDebloater.exe`. Это оболочка над тем же скриптом: настройки собраны на одной странице, а во время сборки видны шаги, предупреждения и итог. Окно запускает `LunqDebloater.ps1` с параметрами, поэтому проверки, сборка и лог те же, что в консоли.
+
+1. Скачайте `LunqDebloater.exe` из релиза и положите его в папку программы рядом с `LunqDebloater.ps1` (после запуска одной командой это `C:\Users\<имя>\LunqDebloater`).
+2. Запустите его. Окно сразу попросит права администратора: без них скрипт не подключит ISO.
+3. Нажмите «Выбрать ISO…». Окно прочитает список редакций и заранее выберет Pro, если она есть. Перетащить ISO в окно нельзя: Windows не пускает перетаскивание из обычных окон в окна с правами администратора.
+4. Проверьте категории и настройки готового образа и нажмите «Собрать ISO».
+
+Обновления и драйверы окно берёт из `Config\Updates` и `Config\Drivers`, другую папку можно выбрать в разделе «Дополнительно». Там же очистка хранилища компонентов, драйверы для установщика, метка тома и рабочая папка. Если закрыть окно во время сборки, скрипт доработает в фоне, а итог будет в его логе. Окну нужен WebView2, в Windows 11 он уже есть.
+
 ## Запуск с параметрами
 
 Все параметры описаны в таблице ниже. `Get-Help .\LunqDebloater.ps1` показывает их список и ссылки на это описание, а `Get-Help .\LunqDebloater.ps1 -Online` открывает его на GitHub. Для повторных сборок и автоматизации всё можно задать параметрами, тогда скрипт ничего не спрашивает и берёт всё, что есть в `Config`:
@@ -117,6 +128,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-ConfigPath` | Папка с настройками вместо `Config` рядом со скриптом |
 | `-ProfilePath` | Свой JSON-профиль вместо `Config\Profile.json` |
 | `-SkipCategory` | Id категорий профиля, которые нужно пропустить, через запятую |
+| `-IncludeCategory` | Id категорий, которые нужно включить, даже если в профиле они выключены (например, `drivers`), через запятую |
 | `-Index` / `-Edition` | Редакция по номеру или имени |
 | `-WorkDir` | Рабочая папка. Скрипт очищает её целиком, поэтому подойдёт только новая или пустая папка (или созданная им раньше), но не корень диска и не папка с ISO. Доступ к ней есть только у администраторов |
 | `-OscdimgPath` | Путь к `oscdimg.exe` или к папке с ним, если ADK стоит не в стандартной папке |
@@ -138,6 +150,7 @@ Get-ChildItem -Recurse | Unblock-File   # если архив скачан из 
 | `-Force` | Перезаписать существующий итоговый ISO |
 | `-Language` | Язык интерфейса: `ru` или `en`. По умолчанию русский на русской Windows и английский на любой другой |
 | `-EventsPath` | Файл, в который скрипт пишет события для своих программ, например окна с полосой прогресса (см. «События для своих программ»). Работает только вместе с `-IsoPath` |
+| `-ListEditions` | Только показать редакции в ISO из `-IsoPath` (номер и имя) и выйти. Ничего не проверяет и не меняет. С `-EventsPath` список приходит событием `editions` |
 
 ## Как устроен процесс
 
@@ -263,7 +276,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 
 | `type` | Когда | Поля |
 |---|---|---|
-| `start` | Сразу после запуска | `version`, `language`, `mode` (`build` или `list`), `pid` |
+| `start` | Сразу после запуска | `version`, `language`, `mode` (`build`, `list` или `editions`), `pid` |
 | `log` | Лог начат | `path`, `dismLog` |
 | `section` | Новый раздел вывода | `text` |
 | `editions` | Прочитан список редакций ISO | `items`: `index` и `name` каждой |
@@ -340,7 +353,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 | `drivers` | Драйверы из Windows Update |
 | `onedrive` | OneDrive |
 
-Пропустить категории без правки профиля: `-SkipCategory drivers,store`. В пошаговом режиме скрипт показывает список категорий, и их можно включать и выключать по номерам.
+Пропустить категории без правки профиля: `-SkipCategory store,onedrive`, а включить выключенную: `-IncludeCategory drivers`. В пошаговом режиме скрипт показывает список категорий, и их можно включать и выключать по номерам.
 
 Записи реестра:
 
@@ -378,6 +391,7 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 | `Modules\LunqDebloater\Strings\` | Тексты интерфейса: `ru\*.psd1` и `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | Скрипт первого входа, который кладётся в образ |
 | `Schemas\Profile.schema.json` | JSON-схема профиля |
+| `Gui\` | Окно на Tauri: `src-tauri` (Rust: запуск скрипта и чтение событий) и `ui` (HTML, CSS и JS без сборщика) |
 | `Tests\` | Тесты Pester и заглушка модуля DISM |
 
 Тесты не трогают систему: вместо DISM, reg.exe, oscdimg и winget работают заглушки, а сборка идёт в папке теста. Запустить их и анализатор (нужны Pester 5 и PSScriptAnalyzer):
@@ -391,7 +405,16 @@ Invoke-ScriptAnalyzer -Path .\Install.ps1 -Settings .\PSScriptAnalyzerSettings.p
 Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 ```
 
-То же самое GitHub Actions выполняет для каждого PR. Что поменялось в каждой версии, записано в [CHANGELOG.md](CHANGELOG.md).
+Окно собирается так (нужны [Rust](https://rustup.rs) и Visual Studio Build Tools с компонентом «Разработка классических приложений на C++»):
+
+```powershell
+cd Gui\src-tauri
+cargo build --release
+```
+
+Готовый `target\release\LunqDebloater.exe` сам находит скрипт выше по папкам, поэтому его можно запускать прямо оттуда.
+
+То же самое GitHub Actions выполняет для каждого PR, а собранное окно прикладывает к запуску как артефакт `LunqDebloater-window`. Что поменялось в каждой версии, записано в [CHANGELOG.md](CHANGELOG.md).
 
 Подробно устройство кода, порядок шагов сборки и тесты описаны в [ARCHITECTURE.md](ARCHITECTURE.md). Как предложить изменение и сообщить об ошибке, описано в [CONTRIBUTING.md](.github/CONTRIBUTING.md), об уязвимости в [SECURITY.md](.github/SECURITY.md). Правила для ИИ-помощников (Claude Code, Codex, Copilot) лежат в [AGENTS.md](AGENTS.md). Схема профиля лежит в `Schemas\Profile.schema.json`; `.vscode\settings.json` подключает её к профилям в папках `Config*`, так что VS Code подсказывает поля профиля и проверяет их даже без интернета.
 

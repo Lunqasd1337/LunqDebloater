@@ -11,6 +11,7 @@
     'Main.PressEnter'            = 'Нажмите Enter, чтобы закрыть окно'
     'Main.EventsNeedIso'         = 'С -EventsPath скрипт работает без вопросов: укажите и -IsoPath.'
     'Main.EventsNeedEdition'     = 'С -EventsPath редакцию нужно указать заранее: -Index или -Edition. Список редакций есть в событии editions.'
+    'Main.ListEditionsNeedIso'   = 'Для -ListEditions укажите ISO в -IsoPath.'
     'Main.Banner'                = 'LunqDebloater {0}: преднастройка ISO-образа Windows 11'
     'Main.Intro1'                = 'Скрипт удалит лишние приложения и компоненты из установочного образа'
     'Main.Intro2'                = 'и внесёт настройки реестра. Исходный ISO не изменяется: результат'
