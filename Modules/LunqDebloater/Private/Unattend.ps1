@@ -161,6 +161,6 @@ function Install-LunqUnattend {
     if ($WithFirstLogon) { $summary = Get-LunqText 'Unattend.WithFirstLogon' $summary }
     $result.Summary = $summary
     Write-Info "autounattend.xml: $summary"
-    if (-not $ImageLanguage -and $Unattend.Region) { Write-Warning (Get-LunqText 'Unattend.NoImageLanguage') }
+    if (-not $ImageLanguage -and $Unattend.Region) { Write-LunqWarning (Get-LunqText 'Unattend.NoImageLanguage') }
     return $result
 }

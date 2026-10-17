@@ -137,6 +137,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
+| `-EventsPath` | File the script writes events to for your own programs, such as a window with a progress bar (see "Events for your own programs"). Only works together with `-IsoPath` |
 
 ## How the process works
 
@@ -242,6 +243,40 @@ To make your own profile, it helps to know the exact names of apps and component
 ```
 
 The script builds and changes nothing. It copies the edition to the working folder, opens it read-only and saves the file `<ISO name>_<edition number>_contents.txt` next to the ISO. The file lists the Appx apps, the installed components (Capabilities) and the Windows features (enabled and disabled). On the right of each item are the profile categories that already remove it. At the end of the file are the profile entries that are not in the image. Windows ADK is not needed for this mode.
+
+## Events for your own programs
+
+To run a build from your own program (for example, a window with a progress bar), pass `-EventsPath` with a file path. The script works as usual and the log and console output stay the same, but everything it reports is also written to that file as events: one line is one JSON object in UTF-8. Lines are written immediately, and the file can be read while the build runs. With `-EventsPath` the script asks no questions, so it needs `-IsoPath` and, if the ISO has more than one edition, `-Index` or `-Edition`.
+
+```powershell
+.\LunqDebloater.ps1 -IsoPath D:\Win11.iso -Edition "Windows 11 Pro" -Force -EventsPath C:\Temp\lunq.jsonl
+```
+
+```
+{"type":"start","time":"2026-10-17T19:02:11.5+03:00","language":"en","mode":"build","pid":4120,"version":"1.10.0"}
+{"type":"step","time":"...","hint":null,"id":"Updates","index":5,"text":"Adding updates","total":17}
+{"type":"info","time":"...","text":"windows11.0-kb2-x64.cab does not apply to this image, skipping."}
+{"type":"done","time":"...","bugReport":null,"contents":null,"dismLog":"...","iso":"D:\\Win11_Lunq.iso","log":"...","ok":true,"seconds":1834.2,"warnings":0}
+```
+
+Every event has `type` and `time`. The other fields:
+
+| `type` | When | Fields |
+|---|---|---|
+| `start` | Right after start | `version`, `language`, `mode` (`build` or `list`), `pid` |
+| `log` | The log has started | `path`, `dismLog` |
+| `section` | A new output section | `text` |
+| `editions` | The ISO edition list was read | `items`: `index` and `name` of each |
+| `step` | A build step started | `index`, `total`, `id` (step name, the same in every language), `text`, `hint` |
+| `stepEnd` | A step finished | `index`, `id`, `ok`, `seconds` |
+| `check` | A check line | `status` (`ok`, `warn`, `fail`), `text`, `hint` |
+| `info` | A regular output line | `text` |
+| `warning` | A warning | `text` |
+| `result` | A step summary after the build | `kind`, `title`, `done`, `failed`, `skipped`, `notMatched`, `summary` |
+| `error` | The build stopped with an error | `text`, `where` (where it happened) |
+| `done` | The last event of the run | `ok`, `iso`, `contents` (the `-ListContents` file), `log`, `dismLog`, `bugReport`, `warnings`, `seconds` |
+
+Texts in events are in the interface language set by `-Language`. The last event is always `done`, and the `powershell.exe` exit code is not 0 on failure. The script needs administrator rights, so your program starts it with them itself, for example with `Start-Process -Verb RunAs`, and reads the events file rather than the process output: the output of a process with different rights is not available.
 
 ## Profile
 

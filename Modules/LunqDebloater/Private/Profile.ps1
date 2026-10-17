@@ -62,7 +62,7 @@ function Write-LunqUnknownFields {
     foreach ($property in $Object.PSObject.Properties) {
         if ($allowed -notcontains $property.Name) {
             $field = if ($Where) { "$Where.$($property.Name)" } else { $property.Name }
-            Write-Warning (Get-LunqText 'Profile.UnknownField' $Path $field ($allowed -join ', '))
+            Write-LunqWarning (Get-LunqText 'Profile.UnknownField' $Path $field ($allowed -join ', '))
         }
     }
 }
@@ -228,7 +228,7 @@ function Select-LunqCategories {
                 $category = $LunqProfile.Categories[$parsed - 1]
                 $category.Enabled = -not $category.Enabled
             }
-            else { Write-Warning (Get-LunqText 'Profile.NoSuchCategoryNumber' $token) }
+            else { Write-LunqWarning (Get-LunqText 'Profile.NoSuchCategoryNumber' $token) }
         }
     }
 }
@@ -288,6 +288,6 @@ function Select-LunqProfile {
         if ([int]::TryParse($answer, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $items.Count) {
             return $items[$parsed - 1].Path
         }
-        Write-Warning (Get-LunqText 'Profile.NoSuchNumber')
+        Write-LunqWarning (Get-LunqText 'Profile.NoSuchNumber')
     }
 }

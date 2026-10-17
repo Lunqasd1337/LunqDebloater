@@ -130,7 +130,7 @@ function Add-LunqUpdates {
                 $result.Skipped.Add($file.Name)
             }
             else {
-                Write-Warning (Get-LunqText 'Servicing.UpdateFailed' $file.Name $_.Exception.Message)
+                Write-LunqWarning (Get-LunqText 'Servicing.UpdateFailed' $file.Name $_.Exception.Message)
                 $result.Failed.Add($file.Name)
             }
         }
@@ -194,7 +194,7 @@ function Add-LunqDrivers {
             $result.Done.Add($relative)
         }
         catch {
-            Write-Warning (Get-LunqText 'Servicing.DriverFailed' $relative $_.Exception.Message)
+            Write-LunqWarning (Get-LunqText 'Servicing.DriverFailed' $relative $_.Exception.Message)
             $result.Failed.Add($relative)
         }
     }
@@ -295,7 +295,7 @@ function Copy-LunqSetupFiles {
             $result.Done.Add($name)
         }
         catch {
-            Write-Warning (Get-LunqText 'Servicing.SetupFileFailed' $name $_.Exception.Message)
+            Write-LunqWarning (Get-LunqText 'Servicing.SetupFileFailed' $name $_.Exception.Message)
             $result.Failed.Add($name)
         }
     }
@@ -324,7 +324,7 @@ function Copy-LunqBootManager {
             $result.Done.Add($pair[1])
         }
         catch {
-            Write-Warning (Get-LunqText 'Servicing.BootFileFailed' $pair[1] $_.Exception.Message)
+            Write-LunqWarning (Get-LunqText 'Servicing.BootFileFailed' $pair[1] $_.Exception.Message)
             $result.Failed.Add($pair[1])
         }
     }
@@ -346,7 +346,7 @@ function Add-LunqSetupDynamicUpdate {
         $code = Invoke-Native expand.exe @($file.FullName, '-F:*', $sources)
         if ($code -eq 0) { $result.Done.Add($file.Name) }
         else {
-            Write-Warning (Get-LunqText 'Servicing.ExpandFailed' $file.Name $code)
+            Write-LunqWarning (Get-LunqText 'Servicing.ExpandFailed' $file.Name $code)
             $result.Failed.Add($file.Name)
         }
     }
@@ -368,7 +368,7 @@ function Update-LunqRecovery {
 
     $inImage = Join-Path $MountPath 'Windows\System32\Recovery\Winre.wim'
     if (-not (Test-Path -LiteralPath $inImage)) {
-        Write-Warning (Get-LunqText 'Servicing.NoWinre')
+        Write-LunqWarning (Get-LunqText 'Servicing.NoWinre')
         return
     }
     $original = Get-Item -LiteralPath $inImage -Force

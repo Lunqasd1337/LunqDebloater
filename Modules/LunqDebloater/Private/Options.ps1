@@ -58,7 +58,7 @@ function Select-LunqBuildOptions {
         foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
             $parsed = 0
             if (-not ([int]::TryParse($token, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $numbered.Count)) {
-                Write-Warning (Get-LunqText 'Options.NoSuchNumber' $token)
+                Write-LunqWarning (Get-LunqText 'Options.NoSuchNumber' $token)
                 continue
             }
             $option = $numbered[$parsed - 1]
@@ -68,7 +68,7 @@ function Select-LunqBuildOptions {
                 continue
             }
             if ($option.Parent -and -not (Test-LunqOption -Options $Options -Key $option.Parent)) {
-                Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($numbers[$option.Parent]))
+                Write-LunqWarning (Get-LunqText 'Options.NeedsParent' $parsed ($numbers[$option.Parent]))
                 continue
             }
             $option.Enabled = -not $option.Enabled
@@ -208,7 +208,7 @@ function Invoke-LunqContentAction {
         $pickedCount = @(Get-LunqUpdateFiles -Path $picked).Count + @(Get-LunqUpdateFiles -Path (Join-Path $picked 'SafeOS')).Count +
             @(Get-LunqUpdateFiles -Path (Join-Path $picked 'Setup')).Count
         if ($pickedCount -eq 0) {
-            Write-Warning (Get-LunqText 'Main.UpdatesDirEmpty' $picked)
+            Write-LunqWarning (Get-LunqText 'Main.UpdatesDirEmpty' $picked)
             return $null
         }
         return [pscustomobject]@{ Kind = 'Updates'; Path = $picked }
@@ -217,7 +217,7 @@ function Invoke-LunqContentAction {
     if ($Action -eq 'pickDrivers') {
         $picked = Select-LunqFolder -Description (Get-LunqText 'Main.PickDriversTitle')
         if ($picked -and @(Get-LunqDriverFiles -Path $picked).Count -eq 0) {
-            Write-Warning (Get-LunqText 'Main.DriversDirEmpty' $picked)
+            Write-LunqWarning (Get-LunqText 'Main.DriversDirEmpty' $picked)
             $picked = $null
         }
     }
@@ -225,9 +225,9 @@ function Invoke-LunqContentAction {
         Write-Info (Get-LunqText 'Main.HostDriversExporting')
         try {
             if (@(Export-LunqHostDrivers -Destination $HostDriversDir).Count -gt 0) { $picked = $HostDriversDir }
-            else { Write-Warning (Get-LunqText 'Main.HostDriversNone') }
+            else { Write-LunqWarning (Get-LunqText 'Main.HostDriversNone') }
         }
-        catch { Write-Warning (Get-LunqText 'Main.HostDriversFailed' $_.Exception.Message) }
+        catch { Write-LunqWarning (Get-LunqText 'Main.HostDriversFailed' $_.Exception.Message) }
     }
     if (-not $picked) { return $null }
     return [pscustomobject]@{ Kind = 'Drivers'; Path = $picked }
@@ -258,7 +258,7 @@ function Select-LunqFolder {
     $path = (Read-Host ('    ' + (Get-LunqText 'Options.FolderPrompt' $Description))).Trim().Trim('"')
     if (-not $path) { return $null }
     if (-not (Test-Path -LiteralPath $path -PathType Container)) {
-        Write-Warning (Get-LunqText 'Options.FolderNotFound' $path)
+        Write-LunqWarning (Get-LunqText 'Options.FolderNotFound' $path)
         return $null
     }
     return (Resolve-Path -LiteralPath $path).Path

@@ -482,3 +482,85 @@ Describe 'Английский интерфейс' {
         ($run.Output + $run.Error.ToString()) | Should -Not -Match '[А-Яа-яЁё]'
     }
 }
+
+Describe 'События для своих программ' {
+    BeforeAll {
+        function Read-BuildEvents {
+            param([Parameter(Mandatory)][string]$Path)
+            return @(Get-Content -LiteralPath $Path -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        }
+    }
+
+    It 'сборка с -EventsPath: шаги, итог и последнее событие done' {
+        $path = Join-Path $TestDrive 'build-events.jsonl'
+        $run = Start-TestBuild -Parameters @{ EventsPath = $path }
+        $run.Error | Should -BeNullOrEmpty
+        $events = Read-BuildEvents -Path $path
+        $events[0].type | Should -Be 'start'
+        $events[0].mode | Should -Be 'build'
+        $events[0].language | Should -Be 'ru'
+        $events[-1].type | Should -Be 'done'
+        $events[-1].ok | Should -BeTrue
+        $events[-1].iso | Should -Be $script:Test.OutputIso
+        $events[-1].log | Should -Match '\.log$'
+        @($events | Where-Object { $_.type -eq 'log' }).Count | Should -Be 1
+        $editions = @($events | Where-Object { $_.type -eq 'editions' })
+        @($editions[0].items | ForEach-Object { $_.name }) | Should -Be @('Windows 11 Home', 'Windows 11 Pro')
+        # Шаги те же, что в консоли: по порядку, с одним общим числом и именем шага.
+        $steps = @($events | Where-Object { $_.type -eq 'step' })
+        $console = Get-LunqStepNumbers -Output $run.Output
+        $steps.Count | Should -Be $console.Count
+        @($steps | ForEach-Object { $_.index }) | Should -Be @(1..$steps.Count)
+        @($steps | Where-Object { $_.total -ne $steps.Count }).Count | Should -Be 0
+        $steps[0].id | Should -Be 'Prepare'
+        $steps[-1].id | Should -Be 'Iso'
+        $ends = @($events | Where-Object { $_.type -eq 'stepEnd' })
+        $ends.Count | Should -Be $steps.Count
+        @($ends | Where-Object { -not $_.ok }).Count | Should -Be 0
+        @($events | Where-Object { $_.type -eq 'result' -and $_.kind -eq 'Appx' }).Count | Should -Be 1
+        @($events | Where-Object { $_.type -eq 'check' -and $_.status -eq 'ok' }).Count | Should -BeGreaterThan 0
+    }
+
+    It 'сбой посреди сборки: событие error, затем done без ISO' {
+        $path = Join-Path $TestDrive 'fail-events.jsonl'
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; EventsPath = $path } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $events = Read-BuildEvents -Path $path
+        $failures = @($events | Where-Object { $_.type -eq 'error' })
+        $failures.Count | Should -Be 1
+        $failures[0].text | Should -Match 'DISM failure to test the rollback'
+        ($failures[0].where -join ' ') | Should -Match 'Remove-LunqAppx'
+        $last = @($events | Where-Object { $_.type -eq 'stepEnd' })[-1]
+        $last.id | Should -Be 'Appx'
+        $last.ok | Should -BeFalse
+        $events[-1].type | Should -Be 'done'
+        $events[-1].ok | Should -BeFalse
+        $events[-1].iso | Should -BeNullOrEmpty
+        $events[-1].bugReport | Should -Match '_report\.zip$'
+    }
+
+    It 'без редакции и без ISO скрипт не задаёт вопросов, а сообщает, чего не хватает' {
+        $path = Join-Path $TestDrive 'edition-events.jsonl'
+        $run = Start-TestBuild -Parameters @{ Index = 0; EventsPath = $path }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Not -Match 'Введите номер редакции'
+        $events = Read-BuildEvents -Path $path
+        @($events | Where-Object { $_.type -eq 'editions' }).Count | Should -Be 1
+        @($events | Where-Object { $_.type -eq 'error' })[0].text | Should -Match 'редакцию нужно указать заранее'
+        $events[-1].type | Should -Be 'done'
+
+        $run = Start-TestBuild -Interactive -Parameters @{ EventsPath = (Join-Path $TestDrive 'no-iso.jsonl') } -Answers @()
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Error.Exception.Message | Should -Match 'укажите и -IsoPath'
+    }
+
+    It 'без прав администратора: start, error и done, хотя лог ещё не начат' {
+        $path = Join-Path $TestDrive 'admin-events.jsonl'
+        $run = Start-TestBuild -Parameters @{ EventsPath = $path } -Prepare { $env:LUNQ_TEST_NOT_ADMIN = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $events = Read-BuildEvents -Path $path
+        @($events | ForEach-Object { $_.type }) | Should -Be @('start', 'error', 'done')
+        $events[1].text | Should -Match 'от имени администратора'
+        $events[2].ok | Should -BeFalse
+    }
+}
