@@ -43,6 +43,7 @@ param(
     [switch]$Unattend,
     [switch]$BypassRequirements,
     [switch]$LocalAccount,
+    [switch]$SkipRegion,
     [switch]$ListContents,
     [ValidatePattern('^[A-Za-z0-9_-]{1,32}$')][string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
@@ -302,7 +303,8 @@ try {
             scripts        = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
             unattend       = [bool]$withUnattend
             oobe           = [bool]$withUnattend
-            region         = [bool]$withUnattend
+            # С -SkipRegion язык, формат и часовой пояс Windows спросит при установке, как без файла ответов.
+            region         = [bool]$withUnattend -and -not $SkipRegion
             bypass         = [bool]$BypassRequirements
             localAccount   = [bool]$LocalAccount
         }
