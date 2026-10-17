@@ -495,7 +495,7 @@ Describe 'События для своих программ' {
         $path = Join-Path $TestDrive 'build-events.jsonl'
         $run = Start-TestBuild -Parameters @{ EventsPath = $path }
         $run.Error | Should -BeNullOrEmpty
-        $events = Read-BuildEvents -Path $path
+        $events = @(Read-BuildEvents -Path $path)
         $events[0].type | Should -Be 'start'
         $events[0].mode | Should -Be 'build'
         $events[0].language | Should -Be 'ru'
@@ -525,7 +525,7 @@ Describe 'События для своих программ' {
         $path = Join-Path $TestDrive 'fail-events.jsonl'
         $run = Start-TestBuild -Parameters @{ SkipApps = $true; EventsPath = $path } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
         $run.Error | Should -Not -BeNullOrEmpty
-        $events = Read-BuildEvents -Path $path
+        $events = @(Read-BuildEvents -Path $path)
         $failures = @($events | Where-Object { $_.type -eq 'error' })
         $failures.Count | Should -Be 1
         $failures[0].text | Should -Match 'DISM failure to test the rollback'
@@ -544,7 +544,7 @@ Describe 'События для своих программ' {
         $run = Start-TestBuild -Parameters @{ Index = 0; EventsPath = $path }
         $run.Error | Should -Not -BeNullOrEmpty
         $run.Output | Should -Not -Match 'Введите номер редакции'
-        $events = Read-BuildEvents -Path $path
+        $events = @(Read-BuildEvents -Path $path)
         @($events | Where-Object { $_.type -eq 'editions' }).Count | Should -Be 1
         @($events | Where-Object { $_.type -eq 'error' })[0].text | Should -Match 'редакцию нужно указать заранее'
         $events[-1].type | Should -Be 'done'
@@ -558,7 +558,7 @@ Describe 'События для своих программ' {
         $path = Join-Path $TestDrive 'admin-events.jsonl'
         $run = Start-TestBuild -Parameters @{ EventsPath = $path } -Prepare { $env:LUNQ_TEST_NOT_ADMIN = '1' }
         $run.Error | Should -Not -BeNullOrEmpty
-        $events = Read-BuildEvents -Path $path
+        $events = @(Read-BuildEvents -Path $path)
         @($events | ForEach-Object { $_.type }) | Should -Be @('start', 'error', 'done')
         $events[1].text | Should -Match 'от имени администратора'
         $events[2].ok | Should -BeFalse

@@ -37,7 +37,7 @@ Describe 'События' {
                 Write-Info 'Готово: «образ»'
                 Write-LunqWarning 'Не удалось удалить пакет'
             } 6>$null 3>$null
-            $events = Read-TestEvents -Path $path
+            $events = @(Read-TestEvents -Path $path)
         }
         finally { Stop-LunqEvents }
         @($events | ForEach-Object { $_.type }) | Should -Be @('section', 'step', 'check', 'info', 'warning')
@@ -61,7 +61,7 @@ Describe 'События' {
             $r = & (Get-Module LunqDebloater) { New-LunqResult -Title 'Драйверы' -Kind 'Drivers' }
             $r.Done.Add('net.inf')
             Send-LunqResultEvents -Results @($r, $null)
-            $events = Read-TestEvents -Path $path
+            $events = @(Read-TestEvents -Path $path)
         }
         finally { Stop-LunqEvents }
         $events.Count | Should -Be 1
