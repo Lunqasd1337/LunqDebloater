@@ -153,6 +153,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-Unattend` | Put an answer file in the ISO: no questions about the license and privacy, language, region and time zone as on this computer |
 | `-BypassRequirements` | Add a bypass of the TPM 2.0, Secure Boot and memory requirements to the answer file (turns on `-Unattend`) |
 | `-LocalAccount` | Add sign-in without a Microsoft account to the answer file (turns on `-Unattend`) |
+| `-SkipRegion` | Do not put this computer's language, region and time zone in the answer file: Setup asks for them itself |
 | `-ListContents` | Do not build an ISO, save the list of apps and components of the edition to a file instead |
 | `-SkipAppx`, `-SkipComponents`, `-SkipRegistry` | Skip the step |
 | `-Label` | Volume label of the finished ISO: Latin letters, digits, `_` and `-`, up to 32 characters. `LUNQ_WIN11` by default |
@@ -246,12 +247,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 
 ## Answer file
 
-The answer file (`autounattend.xml` in the root of the ISO) answers some of the Windows Setup questions for you. Windows Setup finds it on the USB drive by itself. In step-by-step mode it is on by default (the items under "Answer file" in the summary); with parameters you turn it on with the `-Unattend` switch. In the window it is on by default too: the "Setup without extra questions" switch under "Result" covers the first two rows of the table, and the switches under it cover `-LocalAccount` and `-BypassRequirements`.
+The answer file (`autounattend.xml` in the root of the ISO) answers some of the Windows Setup questions for you. Windows Setup finds it on the USB drive by itself. In step-by-step mode it is on by default (the items under "Answer file" in the summary); with parameters you turn it on with the `-Unattend` switch. In the window it is on by default too: the "Setup without extra questions" switch under "Result" covers the first row of the table, and the switches under it cover the language and region, `-LocalAccount` and `-BypassRequirements`.
 
 | Summary item | Switch | What it does |
 |---|---|---|
 | Do not ask about the license and privacy | `-Unattend` | The license is accepted automatically, all privacy settings (diagnostics, ads, location) are off, and their page is not shown |
-| Language, region and time zone as on this computer | `-Unattend` | The language of Setup and Windows is taken from the image, and the format, keyboard layouts and time zone from the computer that builds the ISO |
+| Language, region and time zone as on this computer | `-Unattend` without `-SkipRegion` | The language of Setup and Windows is taken from the image, and the format, keyboard layouts and time zone from the computer that builds the ISO |
 | Bypass the Windows 11 requirements | `-BypassRequirements` | Setup does not check TPM 2.0, Secure Boot and the amount of memory. For computers that Windows 11 does not install on otherwise |
 | Local account | `-LocalAccount` | Windows does not ask you to sign in with a Microsoft account and asks for the name and password of a local account right away |
 

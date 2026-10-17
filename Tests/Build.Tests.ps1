@@ -194,6 +194,22 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
     }
 
+    It 'файл ответов берёт язык и часовой пояс этого компьютера, а с -SkipRegion нет' {
+        # Каждый запуск идёт в своей папке, поэтому путь к файлу берётся после него.
+        $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
+        $run = Start-TestBuild -Parameters @{ Unattend = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $xml = [xml](Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\autounattend.xml') -Raw -Encoding UTF8)
+        @(Select-Xml -Xml $xml -XPath '//u:TimeZone' -Namespace $ns).Count | Should -Be 1
+        $run = Start-TestBuild -Parameters @{ Unattend = $true; SkipRegion = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $xml = [xml](Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\autounattend.xml') -Raw -Encoding UTF8)
+        @(Select-Xml -Xml $xml -XPath '//u:TimeZone' -Namespace $ns).Count | Should -Be 0
+        @(Select-Xml -Xml $xml -XPath '//u:UserLocale' -Namespace $ns).Count | Should -Be 0
+        # Остальное в файле ответов остаётся: лицензия и конфиденциальность не спрашиваются.
+        (Select-Xml -Xml $xml -XPath '//u:HideEULAPage' -Namespace $ns).Node.InnerText | Should -Be 'true'
+    }
+
     It 'чужой autounattend.xml в ISO останавливает сборку до её начала' {
         $run = Start-TestBuild -Parameters @{ LocalAccount = $true } -Prepare {
             param($t)

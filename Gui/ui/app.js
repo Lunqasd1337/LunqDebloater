@@ -29,7 +29,7 @@ const state = {
   driversDir: '',
   inputs: { updates: 0, drivers: 0, apps: 0, scripts: 0 },
   opts: {
-    unattend: true, localAccount: false, bypass: false,
+    unattend: true, region: true, localAccount: false, bypass: false,
     updates: true, cleanup: false, updatesToSetup: false,
     drivers: true, driversToSetup: false,
     apps: true, scripts: true
@@ -240,7 +240,8 @@ function renderSetup() {
   }
 
   // 3. Готовый образ и файл ответов.
-  $('outPath').textContent = state.output || '—';
+  // Пока ISO не выбран, путь неизвестен: объясняем, куда он ляжет, а не показываем прочерк.
+  $('outPath').textContent = state.output || t('out.none');
   $('outPath').classList.toggle('muted', !state.output);
   $('pickOut').disabled = !state.iso;
   const opts = state.opts;
@@ -248,6 +249,8 @@ function renderSetup() {
   setupBox.replaceChildren(
     toggle({ checked: opts.unattend, name: t('opt.unattend'), hint: t('opt.unattendHint'),
       onChange: (v) => { opts.unattend = v; renderSetup(); } }),
+    toggle({ nested: true, checked: opts.region, disabled: !opts.unattend, name: t('opt.region'), hint: t('opt.regionHint'),
+      onChange: (v) => { opts.region = v; } }),
     toggle({ nested: true, checked: opts.localAccount, disabled: !opts.unattend, name: t('opt.localAccount'), hint: t('opt.localAccountHint'),
       onChange: (v) => { opts.localAccount = v; } }),
     toggle({ nested: true, checked: opts.bypass, disabled: !opts.unattend, name: t('opt.bypass'), hint: t('opt.bypassHint'),
@@ -420,6 +423,7 @@ function scriptArgs(force) {
 
   if (opts.unattend) {
     args.push('-Unattend');
+    if (!opts.region) args.push('-SkipRegion');
     if (opts.localAccount) args.push('-LocalAccount');
     if (opts.bypass) args.push('-BypassRequirements');
   }
