@@ -2,7 +2,9 @@
 
 Русский: [ARCHITECTURE.md](ARCHITECTURE.md)
 
-This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
+This file is for people who change the code: where things are, in which order a build runs and how to add something without breaking it. How to use the script and the window is in [README.en.md](README.en.md), the PR rules are in [CONTRIBUTING.md](.github/CONTRIBUTING.md#contributing-in-english).
+
+The project has two parts. All the work is done by the PowerShell script `LunqDebloater.ps1` with the `Modules\LunqDebloater` module. The `LunqDebloater.exe` window (the `Gui` folder) only collects its parameters, runs it and shows the events from `-EventsPath`; it has no build logic of its own (see "The window").
 
 ## Repository layout
 
@@ -42,10 +44,10 @@ Tests\                       Pester tests and stubs
 | File | Responsible for |
 |---|---|
 | `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Write-LunqWarning`, `Read-YesNo`, `Format-Size`. Warnings go through `Write-LunqWarning`, not `Write-Warning`, otherwise they do not reach the events |
-| `Events.ps1` | Events for your own programs (`-EventsPath`): a JSON file with one event per line. `Send-LunqEvent` writes an event, the output functions in `Console.ps1` call it themselves, and without `-EventsPath` it does nothing |
+| `Events.ps1` | Events for your own programs (`-EventsPath`): a JSON file with one event per line. `Send-LunqEvent` writes an event, the output functions in `Console.ps1` call it themselves, and without `-EventsPath` it does nothing. `Send-LunqEditionsEvent` sends the list of editions, `Send-LunqResultEvents` the step results, `Send-LunqFailure` an error before the work starts |
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
 | `System.ps1` | Administrator rights, one run at a time (`Enter-LunqRunLock`), the log (`Start-LunqLog`), step markers in the DISM log and its compression at the end of the run (`Compress-LunqDismLog`), the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
-| `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
+| `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, turning categories on and off by Id (`Enable-LunqCategories` for `-IncludeCategory`, `Disable-LunqCategories` for `-SkipCategory`), merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
@@ -61,9 +63,9 @@ Tests\                       Pester tests and stubs
 
 ## How a run goes
 
-1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder.
+1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder. With `-EventsPath` the events file is opened before the rights check, so that error reaches the program too. `-ListEditions` ends right here: the ISO is mounted, the list of editions is printed (and sent as an `editions` event), and the script exits without a log, a lock or checks.
 2. **Log.** `Start-LunqLog` starts the log in `Logs` next to the script and a separate DISM log. Everything after that, including errors while choosing the ISO, goes into the log.
-3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters.
+3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters: first `-IncludeCategory` turns categories on, then `-SkipCategory` turns them off, so skipping wins when both name the same Id. With `-EventsPath` the script asks nothing, so without `-Index` or `-Edition` it stops when the ISO has several editions.
 4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found: `Find-LunqBuildInputs` finds the updates and drivers. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary with the items from `New-LunqContentOptions` lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, `Invoke-LunqContentAction` performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), and the script searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
 5. **Checks** (`Test-LunqPrerequisites`): working folder, output ISO, space, `oscdimg`. An error stops the run before the long work starts.
 6. **Edition and version.** The ISO is mounted once: list of editions, choice, version of the chosen one. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
@@ -136,7 +138,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Checks.Tests.ps1` | Working folder, output ISO, UEFI-only ISO, image and host versions, leftovers of an earlier run |
 | `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE, recognizing Dynamic Updates by their `.cab`, skipping packages that do not apply |
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
-| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders and this computer's drivers), in Russian and English |
+| `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders, this computer's drivers, `-IncludeCategory` and `-SkipCategory`), `-EventsPath` events and the `-ListEditions` mode, in Russian and English |
 | `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
@@ -152,13 +154,15 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 ## How to add
 
-**A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch.
+**A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch. If the window needs it too, add it there as described in "The window".
 
 **A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
 
 **An interface string.** Add the key to `Strings\ru\<Area>.psd1` and `Strings\en\<Area>.psd1` with the same `{0}`, `{1}`. Keys in a table are aligned to the longest one.
 
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
+
+**A setting in the window.** A switch in `renderSetup()` or `renderMore()` in `Gui\ui\app.js`, the script parameter in `scriptArgs()` and the `ru` and `en` texts in `Gui\ui\strings.js`. The window does not decide by itself what goes into the image: everything it knows about the build must reach the script as a parameter.
 
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
 
