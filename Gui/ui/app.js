@@ -240,7 +240,8 @@ function renderSetup() {
   }
 
   // 3. Готовый образ и файл ответов.
-  $('outPath').textContent = state.output || '—';
+  // Пока ISO не выбран, путь неизвестен: объясняем, куда он ляжет, а не показываем прочерк.
+  $('outPath').textContent = state.output || t('out.none');
   $('outPath').classList.toggle('muted', !state.output);
   $('pickOut').disabled = !state.iso;
   const opts = state.opts;

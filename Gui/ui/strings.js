@@ -22,6 +22,7 @@ const LUNQ_STRINGS = {
 
     'out.title': 'Готовый образ',
     'out.change': 'Изменить…',
+    'out.none': 'Сохранится рядом с исходным ISO, с _Lunq в имени. Изменить место можно после выбора ISO.',
     'opt.unattend': 'Установка без лишних вопросов',
     'opt.unattendHint': 'Без экранов лицензии и конфиденциальности.',
     'opt.region': 'Язык, регион и часовой пояс как на этом компьютере',
@@ -130,6 +131,7 @@ const LUNQ_STRINGS = {
 
     'out.title': 'Result',
     'out.change': 'Change…',
+    'out.none': 'Saved next to the source ISO, with _Lunq in the name. You can change where after choosing the ISO.',
     'opt.unattend': 'Setup without extra questions',
     'opt.unattendHint': 'Skips the license and privacy screens.',
     'opt.region': 'Language, region and time zone as on this PC',
