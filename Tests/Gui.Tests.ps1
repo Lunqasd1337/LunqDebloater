@@ -60,6 +60,22 @@ Describe 'Параметры, которые окно передаёт скри�
     }
 }
 
+Describe 'Установка из окна' {
+    It 'окно встраивает Install.ps1 и передаёт ему параметры, которые у него есть' {
+        # Exe, скачанный без скрипта, ставит LunqDebloater этим загрузчиком с -Path и -NoStart.
+        $repo = Split-Path $PSScriptRoot -Parent
+        $rust = [IO.File]::ReadAllText((Join-Path $repo 'Gui\src-tauri\src\main.rs'))
+        $embedded = [regex]::Match($rust, 'include_str!\("([^"]+)"\)').Groups[1].Value
+        $embedded | Should -Be '../../../Install.ps1'
+        Test-Path -LiteralPath (Join-Path (Join-Path $repo 'Gui\src-tauri\src') $embedded) | Should -BeTrue
+        $line = [regex]::Match($rust, '"\[Console\]::OutputEncoding[^"]*"').Value
+        $passed = @([regex]::Matches($line, ' -([A-Za-z]+)') | ForEach-Object { $_.Groups[1].Value })
+        $passed | Should -Be @('Path', 'NoStart')
+        $known = @((Get-Command (Join-Path $repo 'Install.ps1')).Parameters.Keys)
+        foreach ($name in $passed) { $known | Should -Contain $name }
+    }
+}
+
 Describe 'Версия окна' {
     It 'совпадает с версией модуля' {
         $repo = Split-Path $PSScriptRoot -Parent

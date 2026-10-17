@@ -65,7 +65,7 @@ irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1
 
 The command downloads the latest release into the `LunqDebloater` folder in your profile (`C:\Users\<name>\LunqDebloater`) and starts the script in step-by-step mode, then continue from step 3. See "One-command start" for details.
 
-If you prefer the window, put `LunqDebloater.exe` from the release in the same folder and run it (see "The window").
+If you prefer the window, download just `LunqDebloater.exe` from the [latest release](https://github.com/Lunqasd1337/LunqDebloater/releases/latest) and run it: it downloads the rest itself (see "The window"). The command above puts `LunqDebloater.exe` into the program folder too.
 
 Or by hand:
 
@@ -79,8 +79,8 @@ Or by hand:
 
 `LunqDebloater.exe` builds the ISO without the console. It is a shell over the same script: the window runs `LunqDebloater.ps1` with parameters and shows what it reports, so the checks, the build and the log are the same as in the console.
 
-1. Download `LunqDebloater.exe` from the [latest release](https://github.com/Lunqasd1337/LunqDebloater/releases/latest) and put it in the program folder next to `LunqDebloater.ps1` (after the one-command start it is `C:\Users\<name>\LunqDebloater`). The loader does not download the exe, so after updating the program take the exe from the same release too.
-2. Run it. The window asks for administrator rights right away: without them the script cannot mount the ISO.
+1. Download `LunqDebloater.exe` from the [latest release](https://github.com/Lunqasd1337/LunqDebloater/releases/latest) and run it, for example straight from Downloads. The window asks for administrator rights right away: without them the script cannot mount the ISO.
+2. On the first start there is no `LunqDebloater.ps1` next to the exe, and the window offers to download LunqDebloater into `C:\Users\<name>\LunqDebloater` ("Other folder…" changes the folder). It installs it with the same `Install.ps1` loader as the one-command start, puts `LunqDebloater.exe` there and opens from there. From then on, start the exe from that folder. The exe in Downloads works too: it opens the installed one right away, and if it is newer itself, it offers to update the folder. Your changes in `Config` stay on update.
 3. **Windows image.** Click "Choose ISO…". The window reads the list of editions and picks Pro in advance if there is one. You cannot drag the ISO into the window: Windows does not allow dragging from regular windows into windows running as administrator.
 4. **What to remove and turn off.** The categories of the `Config\Profile.json` profile with their descriptions. The ones the profile turns on are already ticked.
 5. **Result.** Where to save the ISO (next to the source one by default) and the answer file: setup without extra questions, sign-in without a Microsoft account, bypassing the TPM 2.0 and Secure Boot checks (see "Answer file").
@@ -97,9 +97,10 @@ What the window does not have, the console is still there for it: the "What is i
 `irm ... | iex` downloads and runs [Install.ps1](Install.ps1), which you can read before running it. The loader:
 
 - finds the latest release on GitHub (not the current `main`) and puts it into `C:\Users\<name>\LunqDebloater`. A folder in the profile is used because the script runs from it as administrator, and files in the root of drive C: can be changed by other users of the computer too;
+- puts the window `LunqDebloater.exe` from the same release next to it. If it is not attached to the release yet (GitHub Actions does that a few minutes after the release), the loader warns and downloads the window on the next run;
 - starts `LunqDebloater.ps1` in Windows PowerShell 5.1, even if the command was typed in PowerShell 7. The script asks for administrator rights itself.
 
-The same command updates the program. If the version is already the latest, the script just starts. On update the program folders are replaced as a whole. Files in `Config` that you changed stay, and the loader lists them. Your own files next to it (an ISO, `Logs`) are not touched. Without internet the version already downloaded starts.
+The same command updates the program together with the window. If the version is already the latest, the script just starts. On update the program folders are replaced as a whole. Files in `Config` that you changed stay, and the loader lists them. Your own files next to it (an ISO, `Logs`) are not touched. Without internet the version already downloaded starts.
 
 To use another folder:
 

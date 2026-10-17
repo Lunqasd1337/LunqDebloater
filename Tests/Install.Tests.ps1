@@ -45,6 +45,16 @@ Describe 'Install.ps1' {
         [Management.Automation.Language.Parser]::ParseFile($script:Source, [ref]$tokens, [ref]$errors) | Out-Null
         $errors | Should -BeNullOrEmpty
     }
+
+    It 'с -NoStart ошибка установки даёт код выхода 1: по нему её видит окно' {
+        # Чужая папка отклоняется до обращения к сети.
+        $foreign = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'ForeignExit')
+        Set-Content -LiteralPath (Join-Path $foreign.FullName 'photo.jpg') -Value ''
+        $shell = (Get-Process -Id $PID).Path
+        $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $script:Source -Path $foreign.FullName -NoStart 2>&1
+        $LASTEXITCODE | Should -Be 1
+        ($output -join "`n") | Should -Match 'not a LunqDebloater folder'
+    }
 }
 
 Describe 'Test-LunqInstallFolder' {
@@ -58,6 +68,13 @@ Describe 'Test-LunqInstallFolder' {
         $foreign = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'foreign')
         Set-Content -LiteralPath (Join-Path $foreign.FullName 'photo.jpg') -Value ''
         Test-LunqInstallFolder -Path $foreign.FullName | Should -BeFalse
+    }
+
+    It 'папка, где лежит только окно LunqDebloater.exe, подходит' {
+        # Пользователь положил exe в папку и дал ему скачать остальное.
+        $window = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'window')
+        Set-Content -LiteralPath (Join-Path $window.FullName 'LunqDebloater.exe') -Value ''
+        Test-LunqInstallFolder -Path $window.FullName | Should -BeTrue
     }
 
     It 'клон репозитория не принимается за прежнюю установку, а установка с файлом состояния принимается' {
@@ -119,8 +136,11 @@ Describe 'Invoke-LunqInstall' {
         New-TestRelease -Root (Join-Path $script:Archive 'LunqDebloater-1.7.0') -Version 'v1.7.0' -Config @{ 'Apps.txt' = '7zip.7zip' }
         Mock Write-Host { }
         Mock Start-LunqDebloater { }
-        Mock Get-LunqLatestRelease { [pscustomobject]@{ Tag = 'v1.7.0'; ZipUrl = 'https://example.invalid/v1.7.0.zip' } }
-        Mock Invoke-WebRequest { Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $OutFile }
+        Mock Get-LunqLatestRelease {
+            [pscustomobject]@{ Tag = 'v1.7.0'; ZipUrl = 'https://example.invalid/v1.7.0.zip'; ExeUrl = 'https://example.invalid/v1.7.0/LunqDebloater.exe' }
+        }
+        Mock Invoke-WebRequest { Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $OutFile } -ParameterFilter { $Uri -like '*.zip' }
+        Mock Invoke-WebRequest { Set-Content -LiteralPath $OutFile -Value 'window v1.7.0' } -ParameterFilter { $Uri -like '*/LunqDebloater.exe' }
     }
 
     It 'папку установки могут менять только владелец, администраторы и SYSTEM' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
@@ -138,6 +158,7 @@ Describe 'Invoke-LunqInstall' {
         Invoke-LunqInstall -Path $target
         Get-Content -LiteralPath (Join-Path $target 'LunqDebloater.ps1') | Should -Be '# v1.7.0'
         Get-Content -LiteralPath (Join-Path $target 'Config\Apps.txt') | Should -Be '7zip.7zip'
+        Get-Content -LiteralPath (Join-Path $target 'LunqDebloater.exe') | Should -Be 'window v1.7.0'
         Should -Invoke Start-LunqDebloater -Times 1 -Exactly -ParameterFilter { $Path -eq $target }
     }
 
@@ -145,8 +166,38 @@ Describe 'Invoke-LunqInstall' {
         $target = Join-Path $TestDrive 'Same'
         Invoke-LunqInstall -Path $target
         Invoke-LunqInstall -Path $target
-        Should -Invoke Invoke-WebRequest -Times 1 -Exactly
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like '*.zip' }
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like '*/LunqDebloater.exe' }
         Should -Invoke Start-LunqDebloater -Times 2 -Exactly
+    }
+
+    It 'установке без окна докачивает только окно' {
+        # Так выглядят установки до 1.10.0 и те, что прошли раньше, чем к выпуску добавился exe.
+        $target = Join-Path $TestDrive 'NoWindow'
+        Invoke-LunqInstall -Path $target
+        Remove-Item -LiteralPath (Join-Path $target 'LunqDebloater.exe')
+        Invoke-LunqInstall -Path $target
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like '*.zip' }
+        Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter { $Uri -like '*/LunqDebloater.exe' }
+        Test-Path -LiteralPath (Join-Path $target 'LunqDebloater.exe') | Should -BeTrue
+    }
+
+    It 'окна в выпуске ещё нет: скрипт ставится и запускается с предупреждением' {
+        Mock Invoke-WebRequest { throw 'Response status code does not indicate success: 404 (Not Found).' } -ParameterFilter { $Uri -like '*/LunqDebloater.exe' }
+        Mock Write-Warning { }
+        $target = Join-Path $TestDrive 'NoAsset'
+        Invoke-LunqInstall -Path $target
+        Test-Path -LiteralPath (Join-Path $target 'LunqDebloater.ps1') | Should -BeTrue
+        @(Get-ChildItem -LiteralPath $target -Filter 'LunqDebloater.exe*') | Should -BeNullOrEmpty
+        Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*LunqDebloater.exe*404*' }
+        Should -Invoke Start-LunqDebloater -Times 1 -Exactly
+    }
+
+    It '-NoStart ставит, но не запускает: так установку делает окно' {
+        $target = Join-Path $TestDrive 'FromWindow'
+        Invoke-LunqInstall -Path $target -NoStart
+        Test-Path -LiteralPath (Join-Path $target 'LunqDebloater.ps1') | Should -BeTrue
+        Should -Invoke Start-LunqDebloater -Times 0 -Exactly
     }
 
     It 'GitHub недоступен: запускает установленную версию' {
@@ -163,7 +214,7 @@ Describe 'Invoke-LunqInstall' {
         $foreign = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'Photos')
         Set-Content -LiteralPath (Join-Path $foreign.FullName 'photo.jpg') -Value ''
         { Invoke-LunqInstall -Path $foreign.FullName } | Should -Throw '*not a LunqDebloater folder*'
-        Should -Invoke Invoke-WebRequest -Times 0 -Exactly
+        Should -Invoke Invoke-WebRequest -Times 0 -Exactly -ParameterFilter { $Uri -like '*' }
         Should -Invoke Start-LunqDebloater -Times 0 -Exactly
     }
 }
@@ -177,6 +228,7 @@ Describe 'Get-LunqLatestRelease' {
         $release = Get-LunqLatestRelease
         $release.Tag | Should -Be 'v1.9.2'
         $release.ZipUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/archive/refs/tags/v1.9.2.zip'
+        $release.ExeUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/releases/download/v1.9.2/LunqDebloater.exe'
         # В PowerShell 7 адрес лежит в RequestMessage.
         Mock Invoke-WebRequest {
             [pscustomobject]@{ BaseResponse = [pscustomobject]@{ RequestMessage = [pscustomobject]@{ RequestUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.3' } } }
