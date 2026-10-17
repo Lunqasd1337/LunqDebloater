@@ -1,6 +1,6 @@
 # Изменения
 
-Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
+Версия LunqDebloater видна в заголовке консоли, рядом с названием в окне `LunqDebloater.exe`, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
 ## 1.10.0
 
