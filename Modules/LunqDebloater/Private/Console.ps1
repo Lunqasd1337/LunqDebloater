@@ -9,20 +9,24 @@ function Initialize-LunqSteps {
 }
 
 function Write-Step {
-    # Заголовок шага. -Hint выводит под ним короткое пояснение для нового пользователя.
+    # Заголовок шага. -Hint выводит под ним короткое пояснение для нового пользователя,
+    # -Id это имя шага для событий (оно не зависит от языка).
     param(
         [Parameter(Mandatory)][string]$Message,
-        [string]$Hint
+        [string]$Hint,
+        [string]$Id
     )
     Write-Host ''
     if ($script:StepTotal -gt 0) {
         $script:StepCurrent++
+        Send-LunqEvent 'step' @{ index = $script:StepCurrent; total = $script:StepTotal; id = $Id; text = $Message; hint = $Hint }
         Write-Host ('==> ' + (Get-LunqText 'Console.Step' $script:StepCurrent $script:StepTotal $Message)) -ForegroundColor Cyan -NoNewline
         # Время начала шага: по логу видно, сколько шёл каждый шаг и когда случилась ошибка.
         Write-Host ('  ' + (Get-Date -Format 'HH:mm:ss')) -ForegroundColor DarkGray
     }
     else {
         Write-Host "==> $Message" -ForegroundColor Cyan
+        Send-LunqEvent 'info' @{ text = $Message; hint = $Hint }
     }
     if ($Hint) { Write-Host "    $Hint" -ForegroundColor DarkGray }
 }
@@ -31,11 +35,13 @@ function Write-Section {
     param([Parameter(Mandatory)][string]$Title)
     Write-Host ''
     Write-Host "=== $Title ===" -ForegroundColor Yellow
+    Send-LunqEvent 'section' @{ text = $Title }
 }
 
 function Write-Info {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Message)
     Write-Host "    $Message"
+    if ($Message) { Send-LunqEvent 'info' @{ text = $Message } }
 }
 
 function Write-Check {
@@ -50,6 +56,14 @@ function Write-Check {
     # Одной строкой: Write-Host -NoNewline разбивает строку в логе надвое.
     Write-Host "    $label $Message" -ForegroundColor $color
     if ($Hint) { Write-Host "           $Hint" -ForegroundColor DarkGray }
+    Send-LunqEvent 'check' @{ status = $Status.ToLower(); text = $Message; hint = $Hint }
+}
+
+function Write-LunqWarning {
+    # Предупреждение: в консоль и лог как обычно, а с -EventsPath ещё и событием.
+    param([Parameter(Mandatory)][string]$Message)
+    Write-Warning $Message
+    Send-LunqEvent 'warning' @{ text = $Message }
 }
 
 function Read-YesNo {

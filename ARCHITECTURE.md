@@ -38,7 +38,8 @@ Tests\                       Тесты Pester и заглушки
 
 | Файл | За что отвечает |
 |---|---|
-| `Console.ps1` | Вывод: `Write-Step` («Шаг N из M»), `Write-Section`, `Write-Info`, `Write-Check`, `Read-YesNo`, `Format-Size` |
+| `Console.ps1` | Вывод: `Write-Step` («Шаг N из M»), `Write-Section`, `Write-Info`, `Write-Check`, `Write-LunqWarning`, `Read-YesNo`, `Format-Size`. Предупреждения пишутся через `Write-LunqWarning`, а не `Write-Warning`, иначе они не попадут в события |
+| `Events.ps1` | События для своих программ (`-EventsPath`): файл JSON по строке на событие. `Send-LunqEvent` пишет событие, функции вывода из `Console.ps1` вызывают его сами, без `-EventsPath` оно ничего не делает |
 | `Language.ps1` | Таблицы строк и язык: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` для текстов профиля |
 | `System.ps1` | Права администратора, один запуск за раз (`Enter-LunqRunLock`), лог (`Start-LunqLog`), метки шагов в логе DISM и его сжатие в конце запуска (`Compress-LunqDismLog`), архив для отчёта об ошибке (`New-LunqBugReport`), версия, `Invoke-Native` для внешних программ (вывод при ошибке попадает в лог), передача параметров при перезапуске |
 | `Profile.ps1` | Чтение и проверка профиля, выбор профиля и категорий, сборка общих списков из включённых категорий (`Get-LunqEffectiveConfig`) |
@@ -137,6 +138,7 @@ Tests\                       Тесты Pester и заглушки
 | `Tests\Install.Tests.ps1` | Загрузчик: раскладка релиза, обновление с сохранением правок в `Config`, работа без сети |
 | `Tests\FirstLogon.Tests.ps1` | Скрипт первого входа в отдельном процессе с ненастоящим winget, сетью и планировщиком |
 | `Tests\Registry.Tests.ps1` | Разбор значений реестра из профиля и настоящая запись в реестр (запись только в Windows) |
+| `Tests\Events.Tests.ps1` | События: вывод дублируется ими, файл читается, пока открыт, списки в итоге шагов остаются списками |
 | `Tests\Removal.Tests.ps1` | Удаление CBS-пакетов: только установленные пакеты по шаблонам профиля, ошибки и ненайденные шаблоны в итоге |
 | `Tests\TestHelpers.ps1` | Копия скрипта в `TestDrive`, переменные окружения для заглушек, запуск и разбор шагов |
 | `Tests\Mocks\Dism\Dism.psm1` | Заглушка модуля DISM: ничего не монтирует, создаёт файлы-пустышки там, где их потом ищет скрипт, в том числе драйверы для `Export-WindowsDriver` |

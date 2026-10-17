@@ -256,14 +256,20 @@ function Invoke-LunqBuild {
     $number = 0
     foreach ($step in $steps) {
         $number++
-        Write-Step $step.Title $step.Hint
+        Write-Step $step.Title $step.Hint -Id $step.Name
         Write-LunqDismMarker ('step {0}/{1}: {2}' -f $number, $steps.Count, $step.Name)
         $started = Get-Date
+        $ok = $false
         try {
             # В итог идут только результаты шагов: всё прочее, что вернули команды, отбрасывается.
             $results += @(& $step.Run $Context | Where-Object { $_ -and $_.PSObject.Properties['Kind'] })
+            $ok = $true
         }
-        finally { $Context.State.StepTimes.Add([pscustomobject]@{ Title = $step.Title; Elapsed = (Get-Date) - $started }) }
+        finally {
+            $elapsed = (Get-Date) - $started
+            $Context.State.StepTimes.Add([pscustomobject]@{ Title = $step.Title; Elapsed = $elapsed })
+            Send-LunqEvent 'stepEnd' @{ index = $number; id = $step.Name; ok = $ok; seconds = [Math]::Round($elapsed.TotalSeconds, 1) }
+        }
     }
     return , $results
 }

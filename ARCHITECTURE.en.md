@@ -38,7 +38,8 @@ Tests\                       Pester tests and stubs
 
 | File | Responsible for |
 |---|---|
-| `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Read-YesNo`, `Format-Size` |
+| `Console.ps1` | Output: `Write-Step` ("Step N of M"), `Write-Section`, `Write-Info`, `Write-Check`, `Write-LunqWarning`, `Read-YesNo`, `Format-Size`. Warnings go through `Write-LunqWarning`, not `Write-Warning`, otherwise they do not reach the events |
+| `Events.ps1` | Events for your own programs (`-EventsPath`): a JSON file with one event per line. `Send-LunqEvent` writes an event, the output functions in `Console.ps1` call it themselves, and without `-EventsPath` it does nothing |
 | `Language.ps1` | String tables and language: `Set-LunqLanguage`, `Get-LunqText`, `Get-LunqLocalized` for profile texts |
 | `System.ps1` | Administrator rights, one run at a time (`Enter-LunqRunLock`), the log (`Start-LunqLog`), step markers in the DISM log and its compression at the end of the run (`Compress-LunqDismLog`), the bug report archive (`New-LunqBugReport`), version, `Invoke-Native` for external programs (their output goes to the log on failure), passing parameters on relaunch |
 | `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
@@ -137,6 +138,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
+| `Tests\Events.Tests.ps1` | Events: output is duplicated as events, the file can be read while open, lists in step results stay lists |
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later, including drivers for `Export-WindowsDriver` |

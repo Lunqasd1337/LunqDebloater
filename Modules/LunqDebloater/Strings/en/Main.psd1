@@ -9,6 +9,8 @@
     'Main.NoAdminExit'           = 'The image cannot be built without administrator rights. Run the script again and allow it to run.'
     'Main.AlreadyRunning'        = 'Another LunqDebloater run is already in progress. Wait for it to finish or close its window: two runs at once break each other''s image.'
     'Main.PressEnter'            = 'Press Enter to close the window'
+    'Main.EventsNeedIso'         = 'With -EventsPath the script asks no questions: specify -IsoPath as well.'
+    'Main.EventsNeedEdition'     = 'With -EventsPath the edition must be given up front: -Index or -Edition. The list of editions is in the editions event.'
     'Main.Banner'                = 'LunqDebloater {0}: preconfiguring a Windows 11 ISO image'
     'Main.Intro1'                = 'The script removes unneeded apps and components from the installation image'
     'Main.Intro2'                = 'and applies registry settings. The original ISO is not changed: the result'
