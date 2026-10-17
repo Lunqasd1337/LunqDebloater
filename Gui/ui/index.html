@@ -21,6 +21,29 @@
     </div>
   </header>
 
+  <!-- Экран установки: LunqDebloater.exe скачали без скрипта. -->
+  <section id="install" class="screen hidden">
+    <div class="scroll">
+      <div class="card hero">
+        <h1 id="installTitle"></h1>
+        <p id="installText" class="muted"></p>
+        <div class="row">
+          <div id="installPath" class="path"></div>
+          <button type="button" id="pickInstall" class="btn subtle" data-t="common.folder"></button>
+        </div>
+        <div id="installState" class="state hidden"></div>
+      </div>
+      <details id="installDetails" class="card hidden">
+        <summary data-t="prog.details"></summary>
+        <pre id="installLog"></pre>
+      </details>
+    </div>
+    <footer class="actions">
+      <div class="muted small" data-t="install.hint"></div>
+      <button type="button" id="installGo" class="btn primary"></button>
+    </footer>
+  </section>
+
   <!-- Экран 1: что собрать. Одна страница сверху вниз, кнопка сборки всегда видна внизу. -->
   <section id="setup" class="screen">
     <div class="scroll">

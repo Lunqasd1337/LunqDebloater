@@ -143,7 +143,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
-| `Tests\Gui.Tests.ps1` | The window: the `ru` and `en` keys in `strings.js` match, every key used in the code exists, every parameter the window passes exists in the script, the version matches the module |
+| `Tests\Gui.Tests.ps1` | The window: the `ru` and `en` keys in `strings.js` match, every key used in the code exists, every parameter the window passes to the script and the embedded `Install.ps1` exists there, the version matches the module |
 | `Tests\Events.Tests.ps1` | Events: output is duplicated as events, the file can be read while open, lists in step results stay lists |
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
@@ -170,6 +170,8 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 `Gui\` is a shell over `LunqDebloater.ps1` and has no build logic of its own. The Rust part (`src-tauri\src\main.rs`) finds the script in the folders above the exe, runs Windows PowerShell 5.1 without a console window and reads the `-EventsPath` file: every 250 ms it reads the new lines and passes each to the page as a `lunq-event` event, and after the script exits it sends `lunq-exit` with the exit code and stderr. The list of editions comes from a run with `-ListEditions`. The `app.manifest` manifest asks for administrator rights right away, so the script starts with them and asks nothing.
 
+If there is no script in the folders above (the exe was downloaded from the release on its own), the window shows the install screen. `Install.ps1` is embedded in the exe (`include_str!`): the window runs it with `-Path` and `-NoStart`, and on failure the loader exits with code 1. After the install the window copies itself into the folder if the loader did not download the release's window, starts `LunqDebloater.exe` from there and closes. If `%USERPROFILE%\LunqDebloater` already has a release no older than the window itself, it opens the exe there right away without the screen: so the window and the script are always of the same release.
+
 The page (`ui\`) builds the script parameters in `scriptArgs()` in `app.js`: categories become `-SkipCategory` and `-IncludeCategory`, empty update and driver folders become `-SkipUpdates` and `-SkipDrivers`. The window texts are in `ui\strings.js`, and everything the script reports (steps, checks, errors) arrives already in the chosen language. To add a setting to the window: a script parameter, a switch in `renderSetup()` or `renderMore()`, the key in `scriptArgs()` and strings in both languages of `strings.js`. `Tests\Gui.Tests.ps1` checks that the script has that parameter.
 
 The window version in `Cargo.toml` and `tauri.conf.json` matches `ModuleVersion`, and a test checks that too. The `Window (Tauri)` CI job builds the exe for every PR, and `.github\workflows\window-release.yml` attaches it to every published release.
@@ -179,6 +181,8 @@ The window version in `Cargo.toml` and `tauri.conf.json` matches `ModuleVersion`
 `Install.ps1` does not depend on the module. The user gets it with `irm <raw link to main> | iex`, and the loader then downloads the archive of the latest release. So the loader itself comes from `main`, while the program comes only from a released version.
 
 Unlike the other scripts it is stored as ASCII without a BOM, which is why its messages and comments are in English. `irm` hands the file to `iex` as a string, and how Windows PowerShell 5.1 decodes it depends on the response headers. A BOM could end up at the start of the code, and Russian letters decoded with the wrong encoding can turn into "smart" quotes and break parsing. `Tests\Install.Tests.ps1` checks that the file is ASCII only.
+
+The window `LunqDebloater.exe` is not part of the source archive, it is a release file. The loader downloads it by the direct link `releases/download/<tag>/LunqDebloater.exe` when it installs a new release or when the folder has no window. A failed window download is only a warning: `window-release.yml` attaches the exe a few minutes after the release is published, and the console does not need it.
 
 Next to the program the loader keeps `.lunq-install.json` with the installed release tag and the hashes of the `Config` files it put there. A `Config` file whose hash has changed since then counts as the user's edit and is not replaced on update.
 

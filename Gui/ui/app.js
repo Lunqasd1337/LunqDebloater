@@ -14,6 +14,8 @@ const state = {
   lang: 'ru',
   info: null,
   fatal: null,
+  // Экран установки: { path, installed, busy, error }, пока рядом с окном нет скрипта.
+  install: null,
   iso: '',
   isoTicket: 0,
   loadingEditions: false,
@@ -76,6 +78,7 @@ function applyLanguage() {
     button.classList.toggle('active', button.dataset.lang === state.lang);
   }
   renderSetup();
+  if (state.install) renderInstall();
 }
 
 // ---------- Мелкие элементы ----------
@@ -109,9 +112,9 @@ function buttonLink(text, onClick) {
 }
 
 function show(screen) {
-  for (const id of ['setup', 'progress', 'finish']) $(id).classList.toggle('hidden', id !== screen);
+  for (const id of ['install', 'setup', 'progress', 'finish']) $(id).classList.toggle('hidden', id !== screen);
   // Язык меняется только до сборки: сообщения скрипта приходят на том, с которым он запущен.
-  document.querySelector('.lang').classList.toggle('hidden', screen !== 'setup');
+  document.querySelector('.lang').classList.toggle('hidden', screen !== 'setup' && screen !== 'install');
 }
 
 function setHidden(id, hidden) {
@@ -128,6 +131,59 @@ function defaultOutput(iso) {
   const dir = iso.slice(0, cut);
   const name = iso.slice(cut + 1).replace(/\.[^.]*$/, '');
   return joinPath(dir, name + '_Lunq.iso');
+}
+
+// ---------- Экран установки ----------
+// Exe скачали без скрипта: окно ставит LunqDebloater тем же Install.ps1 и открывается уже из его папки.
+
+function renderInstall() {
+  const install = state.install;
+  $('installTitle').textContent = install.installed ? t('install.updateTitle') : t('install.title');
+  $('installText').textContent = install.installed ? t('install.updateText', install.installed) : t('install.text');
+  $('installPath').textContent = install.path;
+  $('pickInstall').disabled = install.busy;
+  $('installGo').textContent = install.installed ? t('install.goUpdate') : t('install.go');
+  $('installGo').disabled = install.busy;
+  const line = $('installState');
+  line.className = 'state';
+  if (install.busy) {
+    line.classList.add('busy');
+    line.textContent = t('install.busy');
+  } else if (install.error) {
+    line.classList.add('error');
+    line.textContent = t('install.failed');
+  } else {
+    line.classList.add('hidden');
+  }
+  $('installLog').textContent = install.error;
+  setHidden('installDetails', !install.error);
+}
+
+async function loadInstall(path) {
+  state.install = Object.assign(await invoke('install_info', { path }), { busy: false, error: '' });
+}
+
+async function pickInstallFolder() {
+  const picked = await dialog.open({ directory: true, multiple: false, defaultPath: state.install.path });
+  if (!picked) return;
+  // Как у обычного установщика: в выбранной папке создаётся LunqDebloater, если она называется иначе.
+  const leaf = picked.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  await loadInstall(leaf.toLowerCase() === 'lunqdebloater' ? picked : joinPath(picked, 'LunqDebloater'));
+  renderInstall();
+}
+
+async function runInstall() {
+  state.install.busy = true;
+  state.install.error = '';
+  renderInstall();
+  try {
+    // После установки это окно закрывается само: открывается LunqDebloater.exe из папки установки.
+    await invoke('install', { path: state.install.path });
+  } catch (error) {
+    state.install.busy = false;
+    state.install.error = String(error).replace(/^INSTALL_FAILED\n?/, '');
+    renderInstall();
+  }
 }
 
 // ---------- Экран настройки ----------
@@ -625,6 +681,8 @@ async function init() {
       renderMore();
     });
   }
+  $('pickInstall').addEventListener('click', pickInstallFolder);
+  $('installGo').addEventListener('click', runInstall);
   $('pickIso').addEventListener('click', pickIso);
   $('pickOut').addEventListener('click', pickOutput);
   $('pickWorkDir').addEventListener('click', pickWorkDir);
@@ -651,7 +709,12 @@ async function init() {
     $('label').value = DEFAULT_LABEL;
     $('workDir').value = state.info.workDir;
   } catch (error) {
-    state.fatal = error;
+    if (String(error) === 'NO_SCRIPT') {
+      await loadInstall(null);
+      show('install');
+    } else {
+      state.fatal = error;
+    }
   }
   applyLanguage();
   await scanInputs();

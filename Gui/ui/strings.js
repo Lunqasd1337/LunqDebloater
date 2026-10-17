@@ -90,6 +90,16 @@ const LUNQ_STRINGS = {
     'fin.again': 'Собрать ещё',
     'fin.back': 'Назад к настройкам',
 
+    'install.title': 'Скачать LunqDebloater',
+    'install.text': 'Окну нужен сам LunqDebloater: скрипт, модуль и папка Config. Программа скачает последний выпуск с GitHub в папку ниже и откроется уже оттуда. Дальше запускайте LunqDebloater.exe из этой папки.',
+    'install.updateTitle': 'Обновить LunqDebloater',
+    'install.updateText': 'В папке ниже стоит LunqDebloater {0}. Программа обновит его до последнего выпуска с GitHub и откроется уже оттуда. Ваши изменения в Config сохранятся.',
+    'install.go': 'Скачать и открыть',
+    'install.goUpdate': 'Обновить и открыть',
+    'install.busy': 'Скачиваю LunqDebloater…',
+    'install.failed': 'Не удалось скачать LunqDebloater. Причина в подробностях ниже.',
+    'install.hint': 'Нужен интернет. Скачивается только выпуск LunqDebloater с GitHub.',
+
     'err.noScript': 'Рядом с программой нет LunqDebloater.ps1. Положите LunqDebloater.exe в папку LunqDebloater, рядом со скриптом.',
     'err.alreadyRunning': 'Сборка уже идёт.',
     'err.profile': 'Не удалось прочитать профиль: {0}',
@@ -185,6 +195,16 @@ const LUNQ_STRINGS = {
     'fin.warnings': 'Warnings: {0}',
     'fin.again': 'Build another',
     'fin.back': 'Back to settings',
+
+    'install.title': 'Download LunqDebloater',
+    'install.text': 'The window needs LunqDebloater itself: the script, the module and the Config folder. The program downloads the latest release from GitHub into the folder below and opens from there. From then on, start LunqDebloater.exe from that folder.',
+    'install.updateTitle': 'Update LunqDebloater',
+    'install.updateText': 'LunqDebloater {0} is in the folder below. The program updates it to the latest release from GitHub and opens from there. Your changes in Config are kept.',
+    'install.go': 'Download and open',
+    'install.goUpdate': 'Update and open',
+    'install.busy': 'Downloading LunqDebloater…',
+    'install.failed': 'Could not download LunqDebloater. The reason is in the details below.',
+    'install.hint': 'Needs internet. Only the LunqDebloater release is downloaded from GitHub.',
 
     'err.noScript': 'LunqDebloater.ps1 is not next to the program. Put LunqDebloater.exe in the LunqDebloater folder, next to the script.',
     'err.alreadyRunning': 'A build is already running.',

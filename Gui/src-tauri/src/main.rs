@@ -17,6 +17,9 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+// Загрузчик из корня репозитория: им окно ставит LunqDebloater, если exe скачали без скрипта.
+const INSTALLER: &str = include_str!("../../../Install.ps1");
+
 // Консоль скрипта не показываем: всё, что он сообщает, приходит событиями.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -36,6 +39,13 @@ struct AppInfo {
     version: String,
     profile: Value,
     work_dir: String,
+}
+
+#[derive(Serialize)]
+struct InstallInfo {
+    path: String,
+    // Версия LunqDebloater, которая уже стоит в этой папке.
+    installed: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -64,6 +74,42 @@ fn module_version(root: &Path) -> String {
         .and_then(|line| line.split('\'').nth(1))
         .unwrap_or_default()
         .to_string()
+}
+
+fn default_install_dir() -> PathBuf {
+    // Та же папка, что выбирает Install.ps1 без -Path.
+    std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("LunqDebloater")
+}
+
+fn version_parts(version: &str) -> Vec<u32> {
+    version.split('.').map(|part| part.trim().parse().unwrap_or(0)).collect()
+}
+
+fn launch_installed() -> bool {
+    // Exe скачали отдельно (например, в Загрузки), а LunqDebloater уже стоит в обычной папке:
+    // сразу открываем окно оттуда, чтобы окно и скрипт были одного выпуска. Если стоит более
+    // старый выпуск, показываем экран установки: он обновит папку.
+    if find_root().is_ok() {
+        return false;
+    }
+    let dir = default_install_dir();
+    let exe = dir.join("LunqDebloater.exe");
+    if !dir.join("LunqDebloater.ps1").is_file() || !exe.is_file() {
+        return false;
+    }
+    if version_parts(&module_version(&dir)) < version_parts(env!("CARGO_PKG_VERSION")) {
+        return false;
+    }
+    let current = std::env::current_exe().and_then(fs::canonicalize).ok();
+    if current.is_some() && current == fs::canonicalize(&exe).ok() {
+        return false;
+    }
+    Command::new(&exe).current_dir(&dir).spawn().is_ok()
+}
+
+fn ps_quote(path: &Path) -> String {
+    // Строка в одинарных кавычках PowerShell: внутри удваивается только сама кавычка.
+    format!("'{}'", path.display().to_string().replace('\'', "''"))
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -290,6 +336,61 @@ fn start_build(app: AppHandle, run: State<'_, Run>, args: Vec<String>) -> Result
 }
 
 #[tauri::command]
+fn install_info(path: Option<String>) -> InstallInfo {
+    let dir = path.map(PathBuf::from).unwrap_or_else(default_install_dir);
+    let installed = dir.join("LunqDebloater.ps1").is_file().then(|| module_version(&dir));
+    InstallInfo { path: dir.display().to_string(), installed }
+}
+
+#[tauri::command]
+async fn install(app: AppHandle, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = PathBuf::from(&path);
+        let script = std::env::temp_dir().join(format!("LunqDebloater_Install_{}.ps1", std::process::id()));
+        fs::write(&script, INSTALLER).map_err(|e| e.to_string())?;
+        // Вывод в UTF-8: иначе русское имя пользователя в пути придёт в кодировке консоли.
+        let line = format!(
+            "[Console]::OutputEncoding = [Text.Encoding]::UTF8; & {} -Path {} -NoStart; exit $LASTEXITCODE",
+            ps_quote(&script),
+            ps_quote(&dir)
+        );
+        let mut command = Command::new(powershell());
+        command
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &line])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let output = command.output();
+        let _ = fs::remove_file(&script);
+        let output = output.map_err(|e| e.to_string())?;
+        if !output.status.success() || !dir.join("LunqDebloater.ps1").is_file() {
+            let text = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return Err(format!("INSTALL_FAILED\n{}", tail(&text)));
+        }
+        // Install.ps1 уже скачал окно выпуска, если оно в выпуске есть. Это окно кладём, когда оно
+        // того же выпуска, что и скрипт, или когда другого окна в папке нет совсем.
+        let exe = dir.join("LunqDebloater.exe");
+        let current = std::env::current_exe().map_err(|e| e.to_string())?;
+        let same_file = exe.is_file() && fs::canonicalize(&current).ok() == fs::canonicalize(&exe).ok();
+        if !same_file && (!exe.is_file() || module_version(&dir) == env!("CARGO_PKG_VERSION")) {
+            // Запущенное окно в папке заменить нельзя, но тогда в ней уже есть что открыть.
+            if let Err(error) = fs::copy(&current, &exe) {
+                if !exe.is_file() {
+                    return Err(error.to_string());
+                }
+            }
+        }
+        Command::new(&exe).current_dir(&dir).spawn().map_err(|e| e.to_string())?;
+        app.exit(0);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn path_exists(path: String) -> bool {
     Path::new(&path).exists()
 }
@@ -316,6 +417,9 @@ fn close_anyway(window: tauri::Window, run: State<'_, Run>) {
 }
 
 fn main() {
+    if launch_installed() {
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Run::default())
@@ -324,6 +428,8 @@ fn main() {
             scan_inputs,
             list_editions,
             start_build,
+            install_info,
+            install,
             path_exists,
             reveal,
             open_path,
