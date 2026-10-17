@@ -40,6 +40,8 @@
 html, body {
   margin: 0;
   height: 100%;
+  /* Прокручивается только середина экрана, сама страница стоит на месте. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -48,7 +50,6 @@ html, body {
 body {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   user-select: none;
 }
 
@@ -159,11 +160,14 @@ select:focus, input[type="text"]:focus { outline: none; border-bottom: 2px solid
   padding: 9px 0;
   border-top: 1px solid var(--line);
   cursor: pointer;
+  /* Скрытый флажок держится внутри строки: иначе он стоит вне прокручиваемой области,
+     и при фокусе браузер прокручивает к нему всю страницу вместе с шапкой. */
+  position: relative;
 }
 .list > .toggle:first-child { border-top: 0; }
 .toggle.nested { padding-left: 52px; border-top: 0; padding-top: 4px; }
 .toggle.disabled { cursor: default; opacity: 0.55; }
-.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 .switch {
   flex: none; position: relative; margin-top: 1px;
   width: 40px; height: 20px; border-radius: 10px;
