@@ -31,6 +31,37 @@ AfterAll {
     Remove-Module LunqDebloater, Dism -Force -ErrorAction SilentlyContinue
 }
 
+Describe 'Get-LunqInventorySteps' {
+    It 'режим «Что в образе»: четыре шага, образ монтируется только для чтения' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $names = @(Get-LunqInventorySteps -Context @{ WorkDir = 'work' } | Where-Object { $_.When } | ForEach-Object { $_.Name })
+            $names | Should -Be @('Prepare', 'CopyEdition', 'OpenImage', 'Inventory')
+            $context = @{
+                State = @{ Mounted = $false; WorkDirOwned = $false }; WorkDir = (Join-Path $Root 'inv'); MountPaths = @('mount')
+                MountDir = (Join-Path $Root 'inv\mount'); WimPath = (Join-Path $Root 'inv\iso\sources\install.wim'); IsoPath = 'Win11.iso'; Index = 5
+                Profile = [pscustomobject]@{ Name = 'p' }; ContentsPath = (Join-Path $Root 'contents.txt'); Header = @('header')
+            }
+            Mock Reset-LunqWorkDir { }
+            Mock Mount-IsoImage { [pscustomobject]@{ Root = $Root } }
+            Mock Dismount-IsoImage { }
+            Mock Get-InstallImagePath { 'install.esd' }
+            Mock Export-WindowsImage { }
+            Mock Mount-WindowsImage { }
+            Mock Dismount-WindowsImage { }
+            Mock Write-LunqInventory { [pscustomobject]@{ Appx = 3 } }
+            Mock Write-Step { }
+            $null = Invoke-LunqBuild -Context $context -Inventory
+            Should -Invoke Mount-WindowsImage -Times 1 -Exactly -ParameterFilter { $ReadOnly }
+            Should -Invoke Export-WindowsImage -Times 1 -Exactly -ParameterFilter { $SourceIndex -eq 5 -and $CompressionType -eq 'Fast' }
+            Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+            $context.State.Inventory.Appx | Should -Be 3
+            $context.State.Mounted | Should -BeFalse
+            $context.State.StepTimes.Count | Should -Be 4
+        }
+    }
+}
+
 Describe 'Get-LunqBuildSteps' {
     It 'без обновлений, драйверов и первого входа: обязательные шаги и профиль' {
         InModuleScope LunqDebloater -Parameters @{ Context = (New-TestContext) } {

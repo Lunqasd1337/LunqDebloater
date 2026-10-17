@@ -3,14 +3,20 @@
 $script:WindowsUpdatePattern = '(?i)^windows1[01]\.0-kb'
 
 function Get-LunqUpdateFiles {
-    # Находит .msu и .cab в папке и упорядочивает их по номеру KB: более старые
-    # (например, контрольные накопительные обновления) устанавливаются раньше.
+    # Находит .msu и .cab в папке и упорядочивает их, как в инструкции Microsoft по обновлению
+    # образа: сначала пакеты без номера KB (языковые пакеты и компоненты по запросу), потом
+    # обновления Windows, последними обновления .NET. Языковой пакет, поставленный после
+    # накопительного обновления, остаётся в исходной версии. Внутри группы порядок по номеру KB:
+    # более старые (например, контрольные накопительные обновления) устанавливаются раньше.
     param([Parameter(Mandatory)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
     $files = @(Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in '.msu', '.cab' })
     $sorted = $files | Sort-Object @{ Expression = {
-            if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]::MaxValue }
+            if ($_.Name -notmatch '(?i)kb\d+') { 0 } elseif ($_.Name -match '(?i)ndp') { 2 } else { 1 }
+        }
+    }, @{ Expression = {
+            if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]0 }
         }
     }, Name
     return , @($sorted)
@@ -78,7 +84,7 @@ function Split-LunqDynamicUpdates {
 function Test-CumulativeUpdate {
     # Похоже ли хотя бы одно обновление на накопительное для самой Windows (а не, например, для .NET).
     param($Files)
-    return [bool](@($Files) | Where-Object { $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' })
+    return (Select-LunqPEUpdates $Files).Count -gt 0
 }
 
 function Write-UpdateList {
@@ -199,12 +205,19 @@ function Select-LunqPEDrivers {
     # Для установщика и WinRE отбираются только драйверы контроллеров дисков (классы SCSIAdapter
     # и HDC): ради них драйверы туда и добавляют. Все драйверы сразу сильно раздули бы boot.wim,
     # а он при загрузке с флешки целиком распаковывается в память.
-    param($InfFiles)
+    # -Cache (путь, размер и время файла): ответы по уже прочитанным .inf. Сводка показывается
+    # заново после каждого действия, и без кэша сотни .inf драйверов этого компьютера читались бы
+    # целиком каждый раз.
+    param($InfFiles, [hashtable]$Cache = @{})
     $diskClasses = @('SCSIAdapter', 'HDC')
     $selected = foreach ($inf in @($InfFiles)) {
-        # Get-Content сам распознаёт .inf в UTF-16 по метке BOM.
-        $text = Get-Content -LiteralPath $inf.FullName -Raw -ErrorAction SilentlyContinue
-        if ($text -and $text -match '(?im)^\s*Class\s*=\s*"?([A-Za-z0-9_]+)' -and $diskClasses -contains $Matches[1]) { $inf }
+        $key = '{0}|{1}|{2}' -f $inf.FullName, $inf.Length, $inf.LastWriteTimeUtc.Ticks
+        if (-not $Cache.ContainsKey($key)) {
+            # Get-Content сам распознаёт .inf в UTF-16 по метке BOM.
+            $text = Get-Content -LiteralPath $inf.FullName -Raw -ErrorAction SilentlyContinue
+            $Cache[$key] = [bool]($text -and $text -match '(?im)^\s*Class\s*=\s*"?([A-Za-z0-9_]+)' -and $diskClasses -contains $Matches[1])
+        }
+        if ($Cache[$key]) { $inf }
     }
     return , @($selected)
 }
@@ -229,7 +242,8 @@ function Update-LunqPEImage {
         $SafeOS = @(),
         $Drivers = @(),
         [string]$DriversRoot,
-        [string]$ExportSetupTo
+        [string]$ExportSetupTo,
+        [string]$BootFilesTo
     )
 
     $results = @()
@@ -256,6 +270,8 @@ function Update-LunqPEImage {
             $null = Invoke-LunqComponentCleanup -MountPath $MountPath -ScratchDir $ScratchDir
         }
         if ($ExportSetupTo) { $results += Copy-LunqSetupFiles -MountPath $MountPath -Destination $ExportSetupTo }
+        # Загрузчик меняется только обновлениями: после одних драйверов он тот же, что на ISO.
+        if ($BootFilesTo -and $updated -gt 0) { $results += Copy-LunqBootManager -MountPath $MountPath -IsoRoot $BootFilesTo }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
     }
     catch {
@@ -284,6 +300,36 @@ function Copy-LunqSetupFiles {
         }
     }
     if ($result.Done.Count -gt 0 -and $result.Failed.Count -eq 0) { $result.Summary = Get-LunqText 'Servicing.SetupFilesDone' ($result.Done -join ', ') }
+    return $result
+}
+
+function Copy-LunqBootManager {
+    # Загрузчик UEFI на ISO берётся из обновлённого boot.wim, как в инструкции Microsoft по
+    # обновлению носителя: иначе на ISO остаётся загрузчик RTM, который Secure Boot может отозвать
+    # (CVE-2023-24932). Заменяются только файлы, которые на ISO уже есть.
+    param([Parameter(Mandatory)][string]$MountPath, [Parameter(Mandatory)][string]$IsoRoot)
+
+    $pairs = @(
+        @('Windows\Boot\EFI\bootmgfw.efi', 'efi\boot\bootx64.efi'),
+        @('Windows\Boot\EFI\bootmgfw.efi', 'efi\boot\bootaa64.efi'),
+        @('Windows\Boot\EFI\bootmgr.efi', 'bootmgr.efi')
+    )
+    $result = New-LunqResult (Get-LunqText 'Servicing.BootFilesTitle') 'BootFiles'
+    foreach ($pair in $pairs) {
+        $source = Join-Path $MountPath $pair[0]
+        $target = Join-Path $IsoRoot $pair[1]
+        if (-not (Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath $target)) { continue }
+        try {
+            Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
+            $result.Done.Add($pair[1])
+        }
+        catch {
+            Write-Warning (Get-LunqText 'Servicing.BootFileFailed' $pair[1] $_.Exception.Message)
+            $result.Failed.Add($pair[1])
+        }
+    }
+    if ($result.Done.Count + $result.Failed.Count -eq 0) { return }
+    if ($result.Failed.Count -eq 0) { $result.Summary = Get-LunqText 'Servicing.BootFilesDone' ($result.Done -join ', ') }
     return $result
 }
 
@@ -347,7 +393,9 @@ function Update-LunqRecovery {
 function Update-LunqSetup {
     # Установщик: boot.wim, образ 2 («Установка Windows»), с которого загружается флешка.
     # Setup Dynamic Update распаковывается в sources, затем setup.exe и setuphost.exe
-    # копируются туда же из обновлённого boot.wim, чтобы версии совпадали.
+    # копируются туда же из обновлённого boot.wim, чтобы версии совпадали. Этот порядок взят
+    # из инструкции Microsoft. Если для boot.wim нет ни обновлений, ни драйверов, он не трогается:
+    # иначе он пересжимался бы впустую, а setup.exe из Setup Dynamic Update заменялся бы старым.
     param(
         [Parameter(Mandatory)][string]$IsoRoot,
         [Parameter(Mandatory)][string]$WorkDir,
@@ -362,10 +410,11 @@ function Update-LunqSetup {
     if (-not (Test-Path -LiteralPath $bootWim)) { throw (Get-LunqText 'Servicing.NoBootWim') }
     $results = @()
     if (@($SetupUpdates).Count -gt 0) { $results += Add-LunqSetupDynamicUpdate -IsoRoot $IsoRoot -Files $SetupUpdates }
+    if (@($Updates).Count + @($Drivers).Count -eq 0) { return $results }
     $before = (Get-Item -LiteralPath $bootWim).Length
     $results += Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
         -Where (Get-LunqText 'Servicing.WhereSetup') -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot `
-        -ExportSetupTo (Join-Path $IsoRoot 'sources')
+        -ExportSetupTo (Join-Path $IsoRoot 'sources') -BootFilesTo $IsoRoot
     Write-Info (Get-LunqText 'Servicing.Recompressing' 'boot.wim')
     Optimize-LunqWim -Path $bootWim -BootIndex 2
     Write-Info (Get-LunqText 'Servicing.SizeChange' 'boot.wim' (Format-Size $before) (Format-Size (Get-Item -LiteralPath $bootWim).Length))

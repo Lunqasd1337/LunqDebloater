@@ -1,18 +1,23 @@
 ﻿function Export-SingleEdition {
     # Экспортирует одну редакцию в новый install.wim (заодно конвертирует ESD в WIM).
+    # -CompressionType Fast для первого экспорта: после обслуживания образ всё равно пересжимается
+    # в Max, и первое сжатие Max только тратило бы минуты. -KeepSource: источник на подключённом
+    # ISO, удалять его нельзя.
     param(
         [Parameter(Mandatory)][string]$SourceImage,
         [Parameter(Mandatory)][int]$SourceIndex,
-        [Parameter(Mandatory)][string]$DestinationImage
+        [Parameter(Mandatory)][string]$DestinationImage,
+        [ValidateSet('Max', 'Fast')][string]$CompressionType = 'Max',
+        [switch]$KeepSource
     )
 
     $temp = "$DestinationImage.tmp"
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
 
     Export-WindowsImage -SourceImagePath $SourceImage -SourceIndex $SourceIndex `
-        -DestinationImagePath $temp -CompressionType Max -CheckIntegrity | Out-Null
+        -DestinationImagePath $temp -CompressionType $CompressionType -CheckIntegrity | Out-Null
 
-    Remove-Item -LiteralPath $SourceImage -Force
+    if (-not $KeepSource) { Remove-Item -LiteralPath $SourceImage -Force }
     if (Test-Path -LiteralPath $DestinationImage) { Remove-Item -LiteralPath $DestinationImage -Force }
     Move-Item -LiteralPath $temp -Destination $DestinationImage
 }
@@ -56,7 +61,11 @@ function Find-Oscdimg {
     param([string]$Path)
 
     if ($Path) {
-        if (Test-Path -LiteralPath $Path) { return $Path }
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { return $Path }
+        # Вместо файла часто указывают папку Oscdimg из ADK: тогда oscdimg.exe ищется в ней.
+        # Без этого папка проходила проверку и ошибка всплывала только на последнем шаге.
+        $inFolder = Join-Path $Path 'oscdimg.exe'
+        if ((Test-Path -LiteralPath $Path -PathType Container) -and (Test-Path -LiteralPath $inFolder -PathType Leaf)) { return $inFolder }
         throw (Get-LunqText 'Image.OscdimgNotFoundAt' $Path)
     }
 
@@ -104,8 +113,17 @@ function New-BootableIso {
     }
     if ($hasBios) { $bootData = '2#p0,e,b{0}#pEF,e,b{1}' -f $bios, $uefi }
     else { $bootData = '1#pEF,e,b{0}' -f $uefi }
+    # oscdimg пишет во временный файл рядом: при сбое прошлый ISO остаётся целым, а недописанный
+    # файл не выглядит готовым образом.
+    $partial = [IO.Path]::ChangeExtension($OutputPath, '.partial.iso')
+    if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
     if ($location) { Push-Location -LiteralPath $location }
-    try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $OutputPath) -ShowOutput }
+    try { $code = Invoke-Native $Oscdimg @('-m', '-o', '-u2', '-udfver102', "-l$Label", "-bootdata:$bootData", $source, $partial) -ShowOutput }
     finally { if ($location) { Pop-Location } }
-    if ($code -ne 0) { throw (Get-LunqText 'Image.OscdimgFailed' $code) }
+    if ($code -ne 0 -or -not (Test-Path -LiteralPath $partial -PathType Leaf)) {
+        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+        throw (Get-LunqText 'Image.OscdimgFailed' $code)
+    }
+    try { Move-Item -LiteralPath $partial -Destination $OutputPath -Force -ErrorAction Stop }
+    catch { throw (Get-LunqText 'Image.IsoReplaceFailed' $OutputPath $_.Exception.Message $partial) }
 }

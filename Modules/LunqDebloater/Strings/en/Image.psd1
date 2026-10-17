@@ -6,4 +6,5 @@
     'Image.BootFileMissing'    = 'Boot file not found: {0}'
     'Image.FolderNameHasSpace' = 'The folder name {0} contains a space, oscdimg cannot build the ISO.'
     'Image.OscdimgFailed'      = 'oscdimg exited with code {0}'
+    'Image.IsoReplaceFailed'   = 'The image is built, but {0} could not be replaced: {1} The finished image is in {2}.'
 }

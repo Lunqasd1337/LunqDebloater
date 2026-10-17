@@ -8,6 +8,9 @@
 }
 
 $script:WorkDirMarker = '.lunqdebloater'
+# Что скрипт создаёт в рабочей папке. Папка по умолчанию без метки годится, только если в ней нет
+# ничего другого: её мог оставить запуск версии, которая ещё не ставила метку.
+$script:WorkDirItems = @('iso', 'mount', 'bootmount', 'remount', 'scratch', 'winre.wim')
 
 function Test-LunqWorkDir {
     # Рабочая папка удаляется целиком, поэтому годится только новая, пустая или уже
@@ -27,8 +30,10 @@ function Test-LunqWorkDir {
         }
     }
     if ((Test-Path -LiteralPath $WorkDir -PathType Leaf)) { return (Get-LunqText 'Checks.WorkDirIsFile') }
-    if ((Test-Path -LiteralPath $WorkDir) -and -not $IsDefault -and -not (Test-Path -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker))) {
-        if (@(Get-ChildItem -LiteralPath $WorkDir -Force).Count -gt 0) {
+    if ((Test-Path -LiteralPath $WorkDir) -and -not (Test-Path -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker))) {
+        $items = @(Get-ChildItem -LiteralPath $WorkDir -Force)
+        if ($IsDefault) { $items = @($items | Where-Object { $script:WorkDirItems -notcontains $_.Name }) }
+        if ($items.Count -gt 0) {
             return (Get-LunqText 'Checks.WorkDirNotEmpty')
         }
     }
@@ -67,8 +72,11 @@ function Reset-LunqWorkDir {
     param([Parameter(Mandatory)][string]$WorkDir, [Parameter(Mandatory)][string[]]$MountPaths)
     # Если прошлый запуск прервали на шаге реестра, его кусты остались загружены,
     # и DISM не сможет отключить образ, пока они открыты.
-    Dismount-OfflineHives
-    foreach ($leftover in (Get-LunqMountedPaths -Paths $MountPaths)) {
+    Dismount-OfflineHives -Strict
+    $mounted = Get-LunqMountedPaths -Paths $MountPaths
+    # DISM не ответил: папку нельзя удалять, в ней может быть смонтирован образ.
+    if ($null -eq $mounted) { throw (Get-LunqText 'Checks.MountQueryFailed' $WorkDir) }
+    foreach ($leftover in $mounted) {
         Write-Info (Get-LunqText 'Checks.LeftoverMount' $leftover)
         Dismount-WindowsImage -Path $leftover -Discard | Out-Null
     }
@@ -77,11 +85,20 @@ function Reset-LunqWorkDir {
 }
 
 function Get-LunqMountedPaths {
-    # Какие из указанных папок сейчас заняты смонтированным образом DISM.
+    # Какие из указанных папок сейчас заняты смонтированным образом DISM. Если DISM не ответил,
+    # возвращает $null, а не пустой список: «не знаю» нельзя считать «ничего не смонтировано».
     param([string[]]$Paths)
     try { $mountedImages = @(Get-WindowsImage -Mounted -ErrorAction Stop) }
-    catch { return , @() }
+    catch { return $null }
     return , @($mountedImages | Where-Object { $Paths -contains $_.Path } | ForEach-Object { $_.Path })
+}
+
+function Test-LunqAnyMounted {
+    # Занята ли хоть одна из папок образом. Если DISM не ответил, считается, что занята:
+    # так рабочая папка остаётся на диске, а не удаляется вместе со смонтированным образом.
+    param([string[]]$Paths)
+    $mounted = Get-LunqMountedPaths -Paths $Paths
+    return ($null -eq $mounted) -or ($mounted.Count -gt 0)
 }
 
 function Test-LunqOutputPath {
@@ -99,6 +116,12 @@ function Test-LunqOutputPath {
         Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
     }
     catch { return (Get-LunqText 'Checks.OutputNotWritable' $folder) }
+    # Прошлый ISO, подключённый в Проводнике как диск, не даст его заменить. Без этой проверки
+    # сборка узнала бы об этом только на последнем шаге, через час работы.
+    if (Test-Path -LiteralPath $OutputIso -PathType Leaf) {
+        try { [IO.File]::Open($OutputIso, 'Open', 'ReadWrite', 'None').Dispose() }
+        catch { return (Get-LunqText 'Checks.OutputLocked' $OutputIso) }
+    }
     return $null
 }
 
@@ -114,10 +137,10 @@ function Get-LunqHostWarning {
 }
 
 function Get-LunqDriveInfo {
-    # Диск, на котором лежит путь: имя, файловая система и свободное место.
+    # Диск, на котором лежит путь: имя, тип (Fixed, Removable, Network), файловая система и свободное место.
     param([Parameter(Mandatory)][string]$Path)
     $drive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($Path))
-    return [pscustomobject]@{ Name = $drive.Name; DriveFormat = $drive.DriveFormat; AvailableFreeSpace = $drive.AvailableFreeSpace }
+    return [pscustomobject]@{ Name = $drive.Name; DriveType = [string]$drive.DriveType; DriveFormat = $drive.DriveFormat; AvailableFreeSpace = $drive.AvailableFreeSpace }
 }
 
 function Test-LunqPrerequisites {
@@ -180,6 +203,12 @@ function Test-LunqPrerequisites {
         return $result
     }
     $workDrive = Get-LunqDriveInfo -Path $WorkDir
+    # Подключённый сетевой диск (Z:\Work) отвечает, что он NTFS, но DISM на нём образ не монтирует.
+    if ($workDrive.DriveType -eq 'Network') {
+        Write-Check Fail (Get-LunqText 'Checks.WorkDirNetwork' $WorkDir) (Get-LunqText 'Checks.WorkDirNetworkHint')
+        $result.Errors++
+        return $result
+    }
     $outDrive = $null
     if ($OutputIso.StartsWith('\\')) {
         Write-Info (Get-LunqText 'Checks.OutputNetwork')

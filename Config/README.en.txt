@@ -58,6 +58,8 @@ the log are accessible to administrators only. When everything is
 done, the copies of the scripts and the files next to them are deleted from the disk (they
 may contain passwords); Apps.txt and the log remain:
 C:\Windows\Setup\Scripts\Lunq\FirstLogon.log
+In the ISO itself the scripts are not protected: anyone who gets the ISO or the flash drive
+can read them.
 
 Scripts in UTF-8 without a BOM are saved again with a BOM during the build: otherwise
 Windows PowerShell 5.1 reads them as ANSI, and non-English text in quotes breaks the script.

@@ -60,8 +60,18 @@ Describe 'Сборка с параметрами' {
         # После обновления boot.wim setup.exe в sources берётся из него, иначе версии не совпадут.
         $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы из boot.wim в sources'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\sources\setup.exe') | Should -Be 'from boot.wim'
+        # Загрузчик на ISO тоже из обновлённого boot.wim, как в инструкции Microsoft.
+        $run.Output | Should -Match 'Загрузчик на ISO: efi\\boot\\bootx64\.efi, bootmgr\.efi обновлены из boot\.wim'
+        Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
+        Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\bootmgr.efi') | Should -Be 'bootmgr.efi from boot.wim'
 
         $native = Get-Content -LiteralPath $t.NativeLog -Encoding UTF8
+        # install.esd не копируется в рабочую папку: редакция экспортируется прямо с ISO, сначала
+        # быстро (Fast), а сжатие Max делается один раз, после обслуживания.
+        @($native | Where-Object { $_ -like 'robocopy.exe|*|/XF|install.wim|install.esd|/A-:R|*' }).Count | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $t.WorkDir 'iso\sources\install.esd') | Should -BeFalse
+        $run.Output | Should -Match 'export \S*isoroot\S*install\.esd index 5 compression Fast'
+        $run.Output | Should -Match 'export \S*install\.wim index 1 compression Max'
         # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
         @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 3
         $registry = Get-Content -LiteralPath $t.RegLog -Encoding UTF8
@@ -128,6 +138,10 @@ Describe 'Сборка с параметрами' {
         Assert-Steps -Output $run.Output -Expected 12
         $run.Output | Should -Not -Match 'Среда восстановления \(WinRE\)'
         $run.Output | Should -Match 'Setup Dynamic Update: установлено 1'
+        # Для boot.wim нет ни обновлений, ни драйверов: он не монтируется и не пересжимается,
+        # и setup.exe из Setup Dynamic Update не заменяется старым из boot.wim.
+        $run.Output | Should -Not -Match 'mount .*boot\.wim'
+        $run.Output | Should -Not -Match 'Файлы установщика:'
     }
 
     It 'Safe OS и Setup Dynamic Update без -UpdatesToSetup не встраиваются' {
@@ -180,6 +194,28 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
     }
 
+    It 'чужой autounattend.xml в ISO останавливает сборку до её начала' {
+        $run = Start-TestBuild -Parameters @{ LocalAccount = $true } -Prepare {
+            param($t)
+            # Подключённый ISO изображает папка isoroot (заглушка Mount-IsoImage).
+            New-Item -ItemType Directory -Path (Join-Path $t.Root 'isoroot') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $t.Root 'isoroot\autounattend.xml') -Value '<unattend />'
+        }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'В ISO уже есть autounattend\.xml'
+        $run.Output | Should -Not -Match 'Шаг 1 из'
+    }
+
+    It 'чужой Sysprep\unattend.xml в образе останавливает сборку сразу после монтирования' {
+        $run = Start-TestBuild -Prepare { $env:LUNQ_TEST_SYSPREP_UNATTEND = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'В образе уже есть Windows\\System32\\Sysprep\\unattend\.xml'
+        # Монтирование образа это шаг 4, дальше сборка не идёт.
+        $run.Output | Should -Match 'Шаг 4 из'
+        $run.Output | Should -Not -Match 'Шаг 5 из'
+        $run.Output | Should -Match 'discard=True'
+    }
+
     It 'режим «Что в образе» сохраняет список и ничего не собирает' {
         $run = Start-TestBuild -Parameters @{ ListContents = $true }
         $run.Error | Should -BeNullOrEmpty
@@ -192,6 +228,13 @@ Describe 'Сборка с параметрами' {
 }
 
 Describe 'Ошибки и предупреждения' {
+    It 'рабочая папка на подключённом сетевом диске: остановка до сборки' {
+        $run = Start-TestBuild -Prepare { $env:LUNQ_TEST_NETWORK_DRIVE = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match '\[FAIL\] Рабочая папка .* на сетевом диске'
+        Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
+    }
+
     It 'нет папки для итогового ISO: остановка до сборки' {
         $run = Start-TestBuild -Parameters @{ OutputIso = (Join-Path $TestDrive 'missing\out.iso') }
         $run.Error | Should -Not -BeNullOrEmpty
@@ -224,6 +267,36 @@ Describe 'Ошибки и предупреждения' {
         $expand = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'expand.exe|*' })
         $expand.Count | Should -Be 2
         ($expand -join "`n") | Should -Not -Match '\.msu'
+    }
+
+    It 'второй запуск во время сборки останавливается сразу и ничего не трогает' {
+        $ready = New-Object System.Threading.ManualResetEvent($false)
+        $release = New-Object System.Threading.ManualResetEvent($false)
+        # Идущую сборку изображает другой поток, который держит мьютекс запуска.
+        $other = [powershell]::Create()
+        $null = $other.AddScript({
+                param($Ready, $Release)
+                $m = New-Object System.Threading.Mutex($false, 'Global\LunqDebloater')
+                $null = $m.WaitOne()
+                $null = $Ready.Set()
+                $null = $Release.WaitOne(60000)
+                $m.ReleaseMutex()
+                $m.Dispose()
+            }).AddArgument($ready).AddArgument($release)
+        $handle = $other.BeginInvoke()
+        try {
+            $null = $ready.WaitOne(10000)
+            $run = Start-TestBuild -Parameters @{ SkipApps = $true }
+        }
+        finally {
+            $null = $release.Set()
+            $other.EndInvoke($handle)
+            $other.Dispose()
+        }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Error.Exception.Message | Should -Match 'Уже идёт другой запуск'
+        $run.Output | Should -Not -Match 'Шаг 1'
+        Test-Path -LiteralPath $script:Test.WorkDir | Should -BeFalse
     }
 
     It 'сбой посреди сборки: образ отключается без сохранения, ISO не создаётся' {
@@ -348,6 +421,8 @@ Describe 'Пошаговый режим' {
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
+            # Выгруженные драйверы не остаются в TEMP после сборки.
+            Test-Path -LiteralPath $hostDrivers | Should -BeFalse
         }
         finally { Remove-Item -LiteralPath $hostDrivers -Recurse -Force -ErrorAction SilentlyContinue }
     }

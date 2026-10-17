@@ -7,6 +7,14 @@ BeforeAll {
     Import-Module (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1') -Force
     # Проверки сверяют русский текст.
     Set-LunqLanguage -Language ru
+
+    # Внутренние функции модуля под теми же именами: снаружи модуля они не видны.
+    function Get-LunqUpdateFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqUpdateFiles -Path $p } $Path }
+    function Get-LunqDriverFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqDriverFiles -Path $p } $Path }
+    function Split-LunqDynamicUpdates {
+        param($Files, $TempDir, $Cache)
+        & (Get-Module LunqDebloater) { param($f, $t, $c) Split-LunqDynamicUpdates -Files $f -TempDir $t -Cache $c } $Files $TempDir $Cache
+    }
 }
 
 AfterAll {
@@ -22,12 +30,25 @@ Describe 'Обновления и драйверы' {
         @($files | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb5079999-x64.msu', 'windows11.0-kb5080000-x64.msu')
     }
 
+    It 'языковые пакеты идут до накопительных обновлений, а .NET после них' {
+        $dir = Join-Path $TestDrive 'order'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $names = 'windows11.0-kb5080002-x64-ndp481.msu', 'windows11.0-kb5080000-x64.msu', 'Microsoft-Windows-Client-Language-Pack_x64_ru-ru.cab',
+        'windows11.0-kb5079999-x64-ndp481.msu', 'Microsoft-Windows-LanguageFeatures-Basic-ru-ru-Package~31bf3856ad364e35~amd64~~.cab', 'windows11.0-kb5080001-x64.msu'
+        foreach ($name in $names) { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        @(Get-LunqUpdateFiles -Path $dir | ForEach-Object { $_.Name }) | Should -Be @(
+            'Microsoft-Windows-Client-Language-Pack_x64_ru-ru.cab', 'Microsoft-Windows-LanguageFeatures-Basic-ru-ru-Package~31bf3856ad364e35~amd64~~.cab',
+            'windows11.0-kb5080000-x64.msu', 'windows11.0-kb5080001-x64.msu',
+            'windows11.0-kb5079999-x64-ndp481.msu', 'windows11.0-kb5080002-x64-ndp481.msu')
+    }
+
     It 'пакет для другого образа (0x800f081e) пропускается, а не считается ошибкой' {
         $dir = Join-Path $TestDrive 'na'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         foreach ($name in 'windows11.0-kb1-x64.msu', 'windows11.0-kb2-x64_notapplicable.cab', 'windows11.0-kb3-x64-broken.msu') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
         $files = Get-LunqUpdateFiles -Path $dir
-        $output = & { $script:r = Add-LunqUpdates -MountPath $dir -Files $files -ScratchDir (Join-Path $TestDrive 'scratch') } *>&1 | Out-String
+        $scratch = Join-Path $TestDrive 'scratch'
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($d, $f, $s) Add-LunqUpdates -MountPath $d -Files $f -ScratchDir $s } $dir $files $scratch } *>&1 | Out-String
         $script:r.Done | Should -Be @('windows11.0-kb1-x64.msu')
         $script:r.Skipped | Should -Be @('windows11.0-kb2-x64_notapplicable.cab')
         $script:r.Failed | Should -Be @('windows11.0-kb3-x64-broken.msu')
@@ -89,5 +110,22 @@ Describe 'Обновления и драйверы' {
         $infs = Get-LunqDriverFiles -Path $dir
         $infs.Count | Should -Be 3
         @(Select-LunqPEDrivers $infs | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('hdc.inf', 'rst.inf')
+    }
+
+    It 'с кэшем каждый .inf читается один раз' {
+        $dir = Join-Path $TestDrive 'pecache'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'rst.inf') -Value "[Version]`r`nClass = SCSIAdapter"
+        Set-Content -LiteralPath (Join-Path $dir 'net.inf') -Value "[Version]`r`nClass = Net"
+        $infs = Get-LunqDriverFiles -Path $dir
+        $cache = @{}
+        (Select-LunqPEDrivers $infs -Cache $cache).Count | Should -Be 1
+        $cache.Count | Should -Be 2
+        # Повторный вызов берёт ответ из кэша, а заменённый файл читается заново.
+        foreach ($key in @($cache.Keys)) { if ($key -like '*rst.inf|*') { $cache[$key] = $false } }
+        (Select-LunqPEDrivers $infs -Cache $cache).Count | Should -Be 0
+        Set-Content -LiteralPath (Join-Path $dir 'net.inf') -Value "[Version]`r`nClass = HDC"
+        (Get-Item -LiteralPath (Join-Path $dir 'net.inf')).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(1)
+        @(Select-LunqPEDrivers (Get-LunqDriverFiles -Path $dir) -Cache $cache | ForEach-Object { $_.Name }) | Should -Be @('net.inf')
     }
 }

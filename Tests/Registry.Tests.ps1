@@ -65,6 +65,45 @@ Describe 'ConvertTo-LunqRegValue' {
     }
 }
 
+Describe 'Dismount-OfflineHives' {
+    It 'куст, который не выгружается, останавливает сборку только с -Strict' {
+        InModuleScope LunqDebloater {
+            # reg query находит куст, а reg unload каждый раз отказывает.
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 0 } else { 1 } }
+            Mock Start-Sleep { }
+            Mock Write-Warning { }
+            { Dismount-OfflineHives } | Should -Not -Throw
+            { Dismount-OfflineHives -Strict } | Should -Throw '*HKLM\LUNQ_SOFTWARE*сборка остановлена*'
+            # 3 куста по 5 попыток при каждом из двух вызовов.
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'unload' } -Times 30 -Exactly
+        }
+    }
+
+    It 'выгруженные кусты не мешают -Strict' {
+        InModuleScope LunqDebloater {
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 1 } else { 0 } }
+            { Dismount-OfflineHives -Strict } | Should -Not -Throw
+        }
+    }
+}
+
+Describe 'Set-LunqBuildStamp' {
+    It 'загружает только куст SOFTWARE' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Invoke-Native { if ($Arguments[0] -eq 'query') { 1 } else { 0 } }
+            Mock Set-LunqRegistryValue { }
+            Mock Write-Info { }
+            Mock Write-Warning { }
+            Set-LunqBuildStamp -MountPath $Root -Values ([ordered]@{ Version = '1.9.2' })
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'load' } -Times 1 -Exactly
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'load' -and $Arguments[1] -eq 'HKLM\LUNQ_SOFTWARE' } -Times 1 -Exactly
+            Should -Invoke Set-LunqRegistryValue -ParameterFilter { $Key -eq 'HKLM\LUNQ_SOFTWARE\LunqDebloater' -and $Name -eq 'Version' } -Times 1 -Exactly
+            Should -Invoke Write-Warning -Times 0 -Exactly
+        }
+    }
+}
+
 Describe 'Запись в реестр' -Skip:(-not $script:OnWindows) {
     It 'типы значений записываются как в профиле' {
         $entries = @(

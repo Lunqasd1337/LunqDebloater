@@ -14,7 +14,9 @@ function Get-LunqHostBuild {
 function Get-LunqDriveInfo {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
-    return [pscustomobject]@{ Name = 'T:\'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
+    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске.
+    $type = if ($env:LUNQ_TEST_NETWORK_DRIVE) { 'Network' } else { 'Fixed' }
+    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
 }
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
@@ -46,7 +48,12 @@ function Invoke-Native {
     switch -Wildcard ($FilePath) {
         'robocopy.exe' {
             $destination = $Arguments[1]
-            foreach ($file in 'sources\install.esd', 'sources\boot.wim', 'sources\setup.exe', 'boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin') {
+            # Как robocopy с /XF: исключённые файлы не копируются.
+            $files = @('sources\install.esd', 'sources\boot.wim', 'sources\setup.exe', 'boot\etfsboot.com', 'efi\microsoft\boot\efisys.bin', 'efi\boot\bootx64.efi', 'bootmgr.efi')
+            $skip = @()
+            $xf = [array]::IndexOf($Arguments, '/XF')
+            if ($xf -ge 0) { for ($i = $xf + 1; $i -lt $Arguments.Count -and -not $Arguments[$i].StartsWith('/'); $i++) { $skip += $Arguments[$i] } }
+            foreach ($file in @($files | Where-Object { $skip -notcontains ($_ -replace '^.*\\', '') })) {
                 $path = Join-Path $destination $file
                 New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
                 Set-Content -LiteralPath $path -Value 'x'

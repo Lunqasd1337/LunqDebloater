@@ -38,6 +38,13 @@ Describe 'Рабочая папка и итоговый ISO' {
             Initialize-LunqWorkDir -WorkDir $own
             Set-Content -LiteralPath (Join-Path $own 'leftover.txt') -Value 'x'
             Test-LunqWorkDir -WorkDir $own | Should -BeNullOrEmpty
+
+            # Папка по умолчанию без метки: остаток старой версии годится, чужие файлы нет.
+            $old = Join-Path $Root 'LunqWork'
+            New-Item -ItemType Directory -Path (Join-Path $old 'iso'), (Join-Path $old 'mount') -Force | Out-Null
+            Test-LunqWorkDir -WorkDir $old -IsDefault | Should -BeNullOrEmpty
+            Set-Content -LiteralPath (Join-Path $old 'photo.jpg') -Value 'x'
+            Test-LunqWorkDir -WorkDir $old -IsDefault | Should -Be 'папка не пустая и создана не этим скриптом'
         }
     }
 
@@ -48,9 +55,43 @@ Describe 'Рабочая папка и итоговый ISO' {
             $efi = Join-Path $isoRoot 'efi\microsoft\boot\efisys.bin'
             New-Item -ItemType Directory -Path (Split-Path $efi) -Force | Out-Null
             Set-Content -LiteralPath $efi -Value 'x'
-            Mock Invoke-Native { 0 }
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'iso'; 0 }
             New-BootableIso -IsoRoot $isoRoot -OutputPath (Join-Path $Root 'arm64.iso') -Oscdimg 'oscdimg.exe'
             Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter { $Arguments -contains "-bootdata:1#pEF,e,b$efi" }
+            Test-Path -LiteralPath (Join-Path $Root 'arm64.iso') | Should -BeTrue
+        }
+    }
+
+    It 'занятый прошлый ISO обнаруживается до сборки' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $out = Join-Path $Root 'locked_Lunq.iso'
+            Set-Content -LiteralPath $out -Value 'old'
+            Test-LunqOutputPath -OutputIso $out -IsoPath (Join-Path $Root 'Win11.iso') | Should -BeNullOrEmpty
+            # Так держит файл подключённый в Проводнике ISO.
+            $lock = [IO.File]::Open($out, 'Open', 'Read', 'None')
+            try { Test-LunqOutputPath -OutputIso $out -IsoPath (Join-Path $Root 'Win11.iso') | Should -BeLike '*занят другой программой*' }
+            finally { $lock.Dispose() }
+        }
+    }
+
+    It 'oscdimg с ошибкой не портит прошлый ISO и не оставляет недописанный файл' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $isoRoot = Join-Path $Root 'failiso'
+            $efi = Join-Path $isoRoot 'efi\microsoft\boot\efisys.bin'
+            New-Item -ItemType Directory -Path (Split-Path $efi) -Force | Out-Null
+            Set-Content -LiteralPath $efi -Value 'x'
+            $out = Join-Path $Root 'fail_Lunq.iso'
+            Set-Content -LiteralPath $out -Value 'old'
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'half'; 5 }
+            { New-BootableIso -IsoRoot $isoRoot -OutputPath $out -Oscdimg 'oscdimg.exe' } | Should -Throw '*кодом 5*'
+            Get-Content -LiteralPath $out | Should -Be 'old'
+            Test-Path -LiteralPath (Join-Path $Root 'fail_Lunq.partial.iso') | Should -BeFalse
+            Mock Invoke-Native { Set-Content -LiteralPath $Arguments[-1] -Value 'new'; 0 }
+            New-BootableIso -IsoRoot $isoRoot -OutputPath $out -Oscdimg 'oscdimg.exe'
+            Get-Content -LiteralPath $out | Should -Be 'new'
+            Test-Path -LiteralPath (Join-Path $Root 'fail_Lunq.partial.iso') | Should -BeFalse
         }
     }
 
@@ -73,6 +114,30 @@ Describe 'Рабочая папка и итоговый ISO' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
             param($Root)
             Test-LunqOutputPath -OutputIso (Join-Path $Root 'out.iso') -IsoPath (Join-Path $Root 'in.iso') | Should -BeNullOrEmpty
+        }
+    }
+}
+
+Describe 'Смонтированные образы' {
+    It 'DISM не ответил: считается, что образ смонтирован, и рабочая папка не удаляется' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Get-WindowsImage { throw 'DISM is busy' } -ParameterFilter { $Mounted }
+            Mock Dismount-OfflineHives { }
+            $work = Join-Path $Root 'busywork'
+            New-Item -ItemType Directory -Path $work -Force | Out-Null
+            Get-LunqMountedPaths -Paths @(Join-Path $work 'mount') | Should -BeNullOrEmpty
+            Test-LunqAnyMounted -Paths @(Join-Path $work 'mount') | Should -BeTrue
+            { Reset-LunqWorkDir -WorkDir $work -MountPaths @(Join-Path $work 'mount') } | Should -Throw '*DISM не ответил*'
+            Test-Path -LiteralPath $work | Should -BeTrue
+        }
+    }
+
+    It 'DISM ответил: занятые папки из списка и пустой список, если ничего не смонтировано' {
+        InModuleScope LunqDebloater {
+            Mock Get-WindowsImage { @([pscustomobject]@{ Path = 'C:\W\mount' }, [pscustomobject]@{ Path = 'C:\Other' }) } -ParameterFilter { $Mounted }
+            @(Get-LunqMountedPaths -Paths 'C:\W\mount', 'C:\W\remount') | Should -Be @('C:\W\mount')
+            Test-LunqAnyMounted -Paths 'C:\W\remount' | Should -BeFalse
         }
     }
 }
@@ -121,7 +186,7 @@ Describe 'Test-LunqPrerequisites: остатки прошлого запуска
         $work = Join-Path $TestDrive 'w'
         $iso = Join-Path $TestDrive 'in.iso'
         Set-Content -LiteralPath $iso -Value 'iso'
-        Mock -ModuleName LunqDebloater Get-LunqDriveInfo { [pscustomobject]@{ Name = 'T:\'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB } }
+        Mock -ModuleName LunqDebloater Get-LunqDriveInfo { [pscustomobject]@{ Name = 'T:\'; DriveType = 'Fixed'; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB } }
         Mock -ModuleName LunqDebloater Find-Oscdimg { 'oscdimg.exe' }
         Mock -ModuleName LunqDebloater Write-Host { }
     }

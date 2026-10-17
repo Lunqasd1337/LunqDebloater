@@ -6,9 +6,12 @@ $script:HiveMap = [ordered]@{
 }
 
 function Mount-OfflineHives {
-    param([Parameter(Mandatory)][string]$MountPath)
+    # -Hives: имена из HiveMap, по умолчанию все. Каждый куст загружается и выгружается секунды,
+    # поэтому лишние не трогаются.
+    param([Parameter(Mandatory)][string]$MountPath, [string[]]$Hives = @($script:HiveMap.Keys))
 
-    foreach ($hive in $script:HiveMap.Values) {
+    foreach ($name in $Hives) {
+        $hive = $script:HiveMap[$name]
         $file = Join-Path $MountPath $hive.File
         if ((Invoke-Native reg.exe @('load', $hive.Key, $file)) -ne 0) {
             throw (Get-LunqText 'Registry.HiveLoadFailed' $file)
@@ -18,6 +21,11 @@ function Mount-OfflineHives {
 
 function Dismount-OfflineHives {
     # Выгружает кусты; повторяет попытку, если какой-то процесс ещё держит дескриптор.
+    # -Strict: куст, который так и не выгрузился, останавливает сборку. С подключённым кустом
+    # DISM не сохранит и не отключит образ, и сборка потерялась бы на шаге сохранения.
+    # Без -Strict только предупреждение: так вызывается при разборе уже случившейся ошибки.
+    param([switch]$Strict)
+    $stuck = @()
     foreach ($hive in $script:HiveMap.Values) {
         # Код 1 значит, что куст не подключён: выгружать нечего.
         if ((Invoke-Native reg.exe @('query', $hive.Key) -SuccessCodes 0, 1) -ne 0) { continue }
@@ -29,8 +37,12 @@ function Dismount-OfflineHives {
             $unloaded = ((Invoke-Native reg.exe @('unload', $hive.Key)) -eq 0)
             if (-not $unloaded) { Start-Sleep -Seconds 2 }
         }
-        if (-not $unloaded) { Write-Warning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key) }
+        if (-not $unloaded) {
+            Write-Warning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key)
+            $stuck += $hive.Key
+        }
     }
+    if ($Strict -and $stuck.Count -gt 0) { throw (Get-LunqText 'Registry.HivesStillLoaded' ($stuck -join ', ')) }
 }
 
 function ConvertTo-LunqRegValue {
@@ -137,6 +149,10 @@ $script:RegistryActions = 'Set', 'DeleteValue', 'DeleteKey'
 function Test-LunqRegistryEntry {
     # Проверяет запись профиля ещё при чтении, а не через полчаса сборки. Возвращает текст проблемы или $null.
     param([Parameter(Mandatory)]$Entry)
+    # Ключ с HKLM\ в начале или CurrentControlSet в офлайн-кусте записался бы, но никогда бы не сработал.
+    $path = [string](Get-ConfigValue $Entry 'Path')
+    if ($path -match '^(?i)(HKLM|HKCU|HKU|HKCR|HKCC|HKEY_[A-Z_]+)(\\|:|$)') { return (Get-LunqText 'Registry.PathHasHive' $Matches[1]) }
+    if ([string](Get-ConfigValue $Entry 'Hive') -eq 'SYSTEM' -and $path -match '^(?i)CurrentControlSet(\\|$)') { return (Get-LunqText 'Registry.PathCurrentControlSet') }
     $action = [string](Get-ConfigValue $Entry 'Action')
     if (-not $action) { $action = 'Set' }
     if ($script:RegistryActions -notcontains $action) {
@@ -184,7 +200,7 @@ function Set-LunqBuildStamp {
 
     $key = "$($script:HiveMap.SOFTWARE.Key)\LunqDebloater"
     try {
-        Mount-OfflineHives -MountPath $MountPath
+        Mount-OfflineHives -MountPath $MountPath -Hives SOFTWARE
         $failed = @()
         foreach ($name in $Values.Keys) {
             $data = [string]$Values[$name]
@@ -196,7 +212,7 @@ function Set-LunqBuildStamp {
         else { Write-Info (Get-LunqText 'Registry.StampWritten') }
     }
     catch { Write-Warning (Get-LunqText 'Registry.StampFailed' $_.Exception.Message) }
-    finally { Dismount-OfflineHives }
+    finally { Dismount-OfflineHives -Strict }
 }
 
 function Set-LunqRegistry {
@@ -231,6 +247,6 @@ function Set-LunqRegistry {
         return $result
     }
     finally {
-        Dismount-OfflineHives
+        Dismount-OfflineHives -Strict
     }
 }

@@ -59,6 +59,16 @@ Describe 'Test-LunqInstallFolder' {
         Set-Content -LiteralPath (Join-Path $foreign.FullName 'photo.jpg') -Value ''
         Test-LunqInstallFolder -Path $foreign.FullName | Should -BeFalse
     }
+
+    It 'клон репозитория не принимается за прежнюю установку, а установка с файлом состояния принимается' {
+        # В клоне тоже есть LunqDebloater.ps1, но папки релиза заменились бы целиком вместе с несохранённой работой.
+        $clone = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'clone')
+        Set-Content -LiteralPath (Join-Path $clone.FullName 'LunqDebloater.ps1') -Value ''
+        New-Item -ItemType Directory -Path (Join-Path $clone.FullName '.git') | Out-Null
+        Test-LunqInstallFolder -Path $clone.FullName | Should -BeFalse
+        Set-Content -LiteralPath (Join-Path $clone.FullName '.lunq-install.json') -Value '{}'
+        Test-LunqInstallFolder -Path $clone.FullName | Should -BeTrue
+    }
 }
 
 Describe 'Install-LunqFiles' {
@@ -113,6 +123,16 @@ Describe 'Invoke-LunqInstall' {
         Mock Invoke-WebRequest { Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $OutFile }
     }
 
+    It 'папку установки могут менять только владелец, администраторы и SYSTEM' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        $target = Join-Path $TestDrive 'Protected'
+        Protect-LunqInstallFolder -Path $target
+        $acl = Get-Acl -LiteralPath $target
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+        $expected = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-32-544', 'S-1-5-18') | Sort-Object -Unique
+        $sids | Should -Be $expected
+    }
+
     It 'скачивает релиз, раскладывает его и запускает LunqDebloater' {
         $target = Join-Path $TestDrive 'Fresh'
         Invoke-LunqInstall -Path $target
@@ -145,5 +165,25 @@ Describe 'Invoke-LunqInstall' {
         { Invoke-LunqInstall -Path $foreign.FullName } | Should -Throw '*not a LunqDebloater folder*'
         Should -Invoke Invoke-WebRequest -Times 0 -Exactly
         Should -Invoke Start-LunqDebloater -Times 0 -Exactly
+    }
+}
+
+Describe 'Get-LunqLatestRelease' {
+    It 'API GitHub отказал (лимит запросов): версия берётся со страницы релизов' {
+        Mock Invoke-RestMethod { throw 'Response status code does not indicate success: 403 (rate limit exceeded).' }
+        Mock Invoke-WebRequest {
+            [pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.2' } }
+        } -ParameterFilter { $Uri -like '*/releases/latest' }
+        $release = Get-LunqLatestRelease
+        $release.Tag | Should -Be 'v1.9.2'
+        $release.ZipUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/archive/refs/tags/v1.9.2.zip'
+        # В PowerShell 7 адрес лежит в RequestMessage.
+        Mock Invoke-WebRequest {
+            [pscustomobject]@{ BaseResponse = [pscustomobject]@{ RequestMessage = [pscustomobject]@{ RequestUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.3' } } }
+        } -ParameterFilter { $Uri -like '*/releases/latest' }
+        (Get-LunqLatestRelease).Tag | Should -Be 'v1.9.3'
+        # Страница не дала тега: видна исходная ошибка API.
+        Mock Invoke-WebRequest { [pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [uri]'https://github.com/login' } } } -ParameterFilter { $Uri -like '*/releases/latest' }
+        { Get-LunqLatestRelease } | Should -Throw '*403*'
     }
 }

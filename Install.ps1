@@ -14,11 +14,39 @@ param(
 
 function Test-LunqInstallFolder {
     # Files are copied into the folder, so only a new or empty folder or an earlier install will do.
+    # Release folders are replaced as a whole, so a git clone (it has LunqDebloater.ps1 too) is
+    # refused: uncommitted work in Modules or Tests would be lost.
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $true }
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $Path '.lunq-install.json')) { return $true }
+    if (Test-Path -LiteralPath (Join-Path $Path '.git')) { return $false }
     if (Test-Path -LiteralPath (Join-Path $Path 'LunqDebloater.ps1')) { return $true }
     return -not (Get-ChildItem -LiteralPath $Path -Force | Select-Object -First 1)
+}
+
+function Protect-LunqInstallFolder {
+    # LunqDebloater runs as administrator from this folder, so only its owner, administrators and
+    # SYSTEM may change the files. A new folder in the root of a drive (D:\LunqDebloater) inherits
+    # a rule that lets every signed-in user change it, and their code would then run as administrator.
+    param([Parameter(Mandatory)][string]$Path)
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    # NTFS rights exist only on Windows; the tests on Linux set $env:OS, so the platform itself is checked.
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
+    try {
+        # A new security object changes only the access rules, not the owner of the folder.
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        foreach ($sid in @($owner, (New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'), (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    }
+    catch {
+        # FAT32 and exFAT drives have no access rules at all.
+        Write-Warning "Could not limit access to $Path to you and administrators: $($_.Exception.Message)"
+    }
 }
 
 function Get-LunqInstallState {
@@ -34,10 +62,26 @@ function Get-LunqLatestRelease {
     # The latest published release, not main: main may be in the middle of changes.
     $repo = 'Lunqasd1337/LunqDebloater'
     $headers = @{ 'User-Agent' = 'LunqDebloater-Install'; 'Accept' = 'application/vnd.github+json' }
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers -UseBasicParsing
+    try { $tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers -UseBasicParsing).tag_name }
+    catch {
+        # Without a token the API allows 60 requests an hour per IP address, so behind a shared NAT
+        # (a school, an office) it answers 403. The releases page has no such limit: it redirects
+        # to the page of the latest tag.
+        $apiError = $_
+        try {
+            $response = Invoke-WebRequest -Uri "https://github.com/$repo/releases/latest" -Headers @{ 'User-Agent' = 'LunqDebloater-Install' } -UseBasicParsing
+            # Windows PowerShell 5.1 and PowerShell 7 keep the final address in different places.
+            $base = $response.BaseResponse
+            if ($base.PSObject.Properties['ResponseUri']) { $finalUri = [string]$base.ResponseUri }
+            else { $finalUri = [string]$base.RequestMessage.RequestUri }
+        }
+        catch { throw $apiError }
+        if ($finalUri -notmatch '/releases/tag/([^/?#]+)') { throw $apiError }
+        $tag = [uri]::UnescapeDataString($Matches[1])
+    }
     return [pscustomobject]@{
-        Tag    = $release.tag_name
-        ZipUrl = "https://github.com/$repo/archive/refs/tags/$($release.tag_name).zip"
+        Tag    = $tag
+        ZipUrl = "https://github.com/$repo/archive/refs/tags/$tag.zip"
     }
 }
 
@@ -126,6 +170,8 @@ function Invoke-LunqInstall {
         Write-Warning "Could not check for a new version ($($_.Exception.Message)). Starting the installed one."
         $release = $null
     }
+    # Earlier installs get the same rights too: before 1.9.2 they kept the rights of the parent folder.
+    Protect-LunqInstallFolder -Path $Path
 
     if ($release -and $installed -and $state -and $state.Tag -eq $release.Tag) {
         Write-Host "LunqDebloater $($release.Tag) is up to date: $Path" -ForegroundColor Green

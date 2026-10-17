@@ -27,7 +27,13 @@ function Get-LunqBuildSteps {
             Title = Get-LunqText 'Main.StepExport'; Hint = Get-LunqText 'Main.StepExportHint'
             Run = {
                 param($c)
-                Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $c.IsoDir) -SourceIndex $c.Index -DestinationImage $c.WimPath
+                # Редакция берётся прямо с подключённого ISO: install.esd не копируется в рабочую папку.
+                $iso = Mount-IsoImage -IsoPath $c.IsoPath
+                try {
+                    Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $iso.Root) -SourceIndex $c.Index -DestinationImage $c.WimPath `
+                        -CompressionType Fast -KeepSource
+                }
+                finally { Dismount-IsoImage -Iso $iso }
                 # Сведения об образе нужны позже: язык для файла ответов.
                 $c.State.ImageInfo = Get-WindowsImage -ImagePath $c.WimPath -Index 1
                 Write-Info (Get-LunqText 'Main.ExportedInfo' $c.State.ImageInfo.ImageName $c.State.ImageInfo.Version)
@@ -40,6 +46,11 @@ function Get-LunqBuildSteps {
                 param($c)
                 Mount-WindowsImage -ImagePath $c.WimPath -Index 1 -Path $c.MountDir | Out-Null
                 $c.State.Mounted = $true
+                # Sysprep\unattend.xml в образе помешал бы первому входу: лучше узнать об этом сразу,
+                # а не после обновлений, драйверов и WinRE.
+                if ($c.FirstLogon -and (Test-Path -LiteralPath (Join-Path $c.MountDir 'Windows\System32\Sysprep\unattend.xml'))) {
+                    throw (Get-LunqText 'PostInstall.UnattendExists')
+                }
             }
         },
         @{
@@ -147,6 +158,58 @@ function Get-LunqBuildSteps {
     )
 }
 
+function Get-LunqInventorySteps {
+    # Шаги режима «Что в образе»: редакция копируется и монтируется только для чтения, а опись
+    # сохраняется в ContentsPath. Идут через Invoke-LunqBuild, как и сборка: время шагов и метки
+    # в логе DISM у них те же. Опись шаг кладёт в State.Inventory.
+    param([Parameter(Mandatory)][hashtable]$Context)
+    $c = $Context
+    return @(
+        @{
+            Name = 'Prepare'; When = $true
+            Title = Get-LunqText 'Main.StepPrepare'; Hint = Get-LunqText 'Main.StepPrepareHint' $c.WorkDir
+            Run = {
+                param($c)
+                Reset-LunqWorkDir -WorkDir $c.WorkDir -MountPaths $c.MountPaths
+                $c.State.WorkDirOwned = $true
+                New-Item -ItemType Directory -Path $c.MountDir, (Split-Path $c.WimPath -Parent) -Force | Out-Null
+            }
+        },
+        @{
+            Name = 'CopyEdition'; When = $true
+            Title = Get-LunqText 'Main.StepCopyEdition'; Hint = Get-LunqText 'Main.StepCopyEditionHint'
+            Run = {
+                param($c)
+                $iso = Mount-IsoImage -IsoPath $c.IsoPath
+                try {
+                    Export-WindowsImage -SourceImagePath (Get-InstallImagePath -IsoRoot $iso.Root) -SourceIndex $c.Index `
+                        -DestinationImagePath $c.WimPath -CompressionType Fast | Out-Null
+                }
+                finally { Dismount-IsoImage -Iso $iso }
+            }
+        },
+        @{
+            Name = 'OpenImage'; When = $true
+            Title = Get-LunqText 'Main.StepOpenImage'; Hint = Get-LunqText 'Main.StepOpenImageHint'
+            Run = {
+                param($c)
+                Mount-WindowsImage -ImagePath $c.WimPath -Index 1 -Path $c.MountDir -ReadOnly | Out-Null
+                $c.State.Mounted = $true
+            }
+        },
+        @{
+            Name = 'Inventory'; When = $true
+            Title = Get-LunqText 'Main.StepReadInventory'; Hint = Get-LunqText 'Main.StepReadInventoryHint'
+            Run = {
+                param($c)
+                $c.State.Inventory = Write-LunqInventory -MountPath $c.MountDir -LunqProfile $c.Profile -Path $c.ContentsPath -Header $c.Header
+                Dismount-WindowsImage -Path $c.MountDir -Discard | Out-Null
+                $c.State.Mounted = $false
+            }
+        }
+    )
+}
+
 function Get-LunqBuildStampValues {
     # Что записывается в HKLM\SOFTWARE\LunqDebloater собранного образа: чем и как он собран.
     param([Parameter(Mandatory)][hashtable]$Context)
@@ -182,8 +245,10 @@ function Get-LunqBuildStampValues {
 
 function Invoke-LunqBuild {
     # Выполняет нужные шаги по порядку и возвращает их результаты для итога.
-    param([Parameter(Mandatory)][hashtable]$Context)
-    $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When })
+    # -Inventory: шаги режима «Что в образе» вместо сборки.
+    param([Parameter(Mandatory)][hashtable]$Context, [switch]$Inventory)
+    if ($Inventory) { $steps = @(Get-LunqInventorySteps -Context $Context | Where-Object { $_.When }) }
+    else { $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When }) }
     Initialize-LunqSteps -Total $steps.Count
     $results = @()
     # Сколько шёл каждый шаг: итог показывает самые долгие.

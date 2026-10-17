@@ -106,6 +106,7 @@ function Test-LunqImageRequirements {
 
 function Copy-IsoContent {
     # Монтирует ISO, копирует его содержимое в рабочую папку и снимает атрибут «только чтение».
+    # install.wim и install.esd (4-7 ГБ) не копируются: шаг Export берёт редакцию прямо с ISO.
     param(
         [Parameter(Mandatory)][string]$IsoPath,
         [Parameter(Mandatory)][string]$Destination
@@ -118,14 +119,12 @@ function Copy-IsoContent {
 
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
         # robocopy возвращает коды < 8 при успехе.
-        $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') -SuccessCodes (0..7)
+        $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/XF', 'install.wim', 'install.esd', '/A-:R', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') -SuccessCodes (0..7)
         if ($code -ge 8) { throw (Get-LunqText 'Iso.RobocopyFailed' $code) }
     }
     finally {
         Dismount-IsoImage -Iso $iso
     }
-
-    Get-ChildItem -LiteralPath $Destination -Recurse -File | ForEach-Object { $_.IsReadOnly = $false }
 }
 
 function Get-InstallImagePath {

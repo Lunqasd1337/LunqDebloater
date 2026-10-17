@@ -39,6 +39,32 @@ Describe 'Манифест и версия' {
             Get-Command -Module LunqDebloater -Name $name -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty -Because $name
         }
     }
+
+    It 'скрипты и README в Config сохранены в UTF-8 с BOM' {
+        # Без BOM Windows PowerShell 5.1 читает русский текст как ANSI. Install.ps1 исключение:
+        # он только в ASCII, его проверяет Tests\Install.Tests.ps1.
+        $repo = Split-Path $PSScriptRoot -Parent
+        # Расширение проверяется в Where-Object: в 5.1 -Include вместе с -LiteralPath не действует.
+        $files = @(Get-ChildItem -LiteralPath $repo -Recurse -File |
+                Where-Object { '.ps1', '.psm1', '.psd1' -contains $_.Extension -and $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -ne 'Install.ps1' })
+        $files += @(Get-ChildItem -LiteralPath (Join-Path $repo 'Config') -File -Filter 'README*.txt')
+        $files.Count | Should -BeGreaterThan 30
+        $noBom = @($files | Where-Object {
+                $bytes = New-Object byte[] 3
+                $stream = [IO.File]::OpenRead($_.FullName)
+                try { $read = $stream.Read($bytes, 0, 3) } finally { $stream.Dispose() }
+                -not ($read -eq 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            } | ForEach-Object { $_.FullName.Substring($repo.Length + 1) })
+        $noBom | Should -BeNullOrEmpty
+    }
+
+    It 'наружу видны только функции, которые вызывает LunqDebloater.ps1' {
+        $repo = Split-Path $PSScriptRoot -Parent
+        $manifest = Import-PowerShellDataFile (Join-Path $repo 'Modules\LunqDebloater\LunqDebloater.psd1')
+        $script = Get-Content -LiteralPath (Join-Path $repo 'LunqDebloater.ps1') -Raw
+        $unused = @($manifest.FunctionsToExport | Where-Object { $script -notmatch ('(?<![\w-])' + [regex]::Escape($_) + '(?![\w-])') })
+        $unused | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Справка скрипта' {
@@ -121,6 +147,38 @@ Describe 'Лог' {
         $text | Should -Match ([regex]::Escape('Путь: %USERPROFILE%\Downloads\Win11.iso'))
         $text | Should -Match 'Компьютер <computer>, пользователь <user>, папка Users'
         Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_1_dism.log') -Raw | Should -Match ([regex]::Escape('%USERPROFILE%\work'))
+    }
+}
+
+Describe 'Один запуск за раз' {
+    It 'второй запуск не получает мьютекс, пока первый его держит' {
+        $name = 'Global\LunqDebloaterTest_' + [guid]::NewGuid().ToString('N')
+        $ready = New-Object System.Threading.ManualResetEvent($false)
+        $release = New-Object System.Threading.ManualResetEvent($false)
+        # Первый запуск изображает другой поток: мьютекс принадлежит потоку, а не процессу.
+        $other = [powershell]::Create()
+        $null = $other.AddScript({
+                param($Name, $Ready, $Release)
+                $m = New-Object System.Threading.Mutex($false, $Name)
+                $null = $m.WaitOne()
+                $null = $Ready.Set()
+                $null = $Release.WaitOne(30000)
+                $m.ReleaseMutex()
+                $m.Dispose()
+            }).AddArgument($name).AddArgument($ready).AddArgument($release)
+        $handle = $other.BeginInvoke()
+        try {
+            $ready.WaitOne(10000) | Should -BeTrue
+            Enter-LunqRunLock -Name $name | Should -BeNullOrEmpty
+        }
+        finally {
+            $null = $release.Set()
+            $other.EndInvoke($handle)
+            $other.Dispose()
+        }
+        $lock = Enter-LunqRunLock -Name $name
+        $lock | Should -Not -BeNullOrEmpty
+        Exit-LunqRunLock -Lock $lock
     }
 }
 

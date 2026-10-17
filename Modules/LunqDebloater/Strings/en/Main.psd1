@@ -7,6 +7,7 @@
     'Main.AskElevate'            = 'Restart the script as administrator?'
     'Main.ElevateDenied'         = 'Administrator rights were not granted (was "No" clicked in the UAC window?).'
     'Main.NoAdminExit'           = 'The image cannot be built without administrator rights. Run the script again and allow it to run.'
+    'Main.AlreadyRunning'        = 'Another LunqDebloater run is already in progress. Wait for it to finish or close its window: two runs at once break each other''s image.'
     'Main.PressEnter'            = 'Press Enter to close the window'
     'Main.Banner'                = 'LunqDebloater {0}: preconfiguring a Windows 11 ISO image'
     'Main.Intro1'                = 'The script removes unneeded apps and components from the installation image'

@@ -85,7 +85,7 @@ To use another folder:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1))) -Path D:\LunqDebloater
 ```
 
-The loader puts nothing into a non-empty folder that has no LunqDebloater in it.
+The loader puts nothing into a non-empty folder that has no LunqDebloater in it. Only you, administrators and SYSTEM can change the files in the program folder: the loader sets these rights itself, so a folder in the root of a drive is safe too. A FAT32 or exFAT flash drive has no access rights, and the loader warns about it.
 
 ### Desktop shortcut
 
@@ -119,7 +119,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
 | `-Index` / `-Edition` | Edition by number or name |
 | `-WorkDir` | Working folder. The script clears it completely, so only a new or empty folder (or one it created before) will do, not a drive root and not the folder with the ISO. Only administrators can access it |
-| `-OscdimgPath` | Path to `oscdimg.exe` if the ADK is not in its standard folder |
+| `-OscdimgPath` | Path to `oscdimg.exe` or the folder that holds it, if the ADK is not in its standard folder |
 | `-UpdatesPath` | Folder with `.msu`/`.cab` updates instead of `Config\Updates` (the `SafeOS` and `Setup` subfolders are looked up in it too) |
 | `-DriversPath` | Folder with drivers (`.inf`, subfolders are fine) instead of `Config\Drivers` |
 | `-DriversToSetup` | Also add disk controller drivers to Windows Setup (`boot.wim`) and the recovery environment (WinRE) if they do not see the disk |
@@ -143,7 +143,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 1. The ISO is mounted and its contents are copied to the working folder.
 2. The selected edition is exported to a separate `install.wim` (an ESD is converted to WIM on the way).
 3. `install.wim` is mounted, the updates and drivers are added to it (if selected), WinRE is updated if you asked for it, and the first sign-in script is added. The answer file goes to the root of the ISO if it is turned on. Then the profile is applied: Appx, components, registry.
-4. The image is saved. If selected, Windows Setup is updated: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe` and `setuphost.exe` are copied out of it. Then `install.wim` is recompressed and `oscdimg` builds the bootable ISO.
+4. The image is saved. If selected, Windows Setup is updated: Setup Dynamic Update is expanded into `sources`, `boot.wim` is serviced, and `setup.exe`, `setuphost.exe` and the UEFI boot manager are copied out of it. If there are no updates or drivers for `boot.wim`, it is left as is. Then `install.wim` is recompressed and `oscdimg` builds the bootable ISO.
 
 All steps in order and the conditions under which they run are described in [ARCHITECTURE.en.md](ARCHITECTURE.en.md#build-steps).
 
@@ -177,7 +177,7 @@ The catalog shows Safe OS and Setup Dynamic Update packages in the same search a
 
 The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. If there are none, for example in Downloads, the Dynamic Updates can stay next to the other updates: the script recognizes them by the contents of the `.cab`. A Setup Dynamic Update has no DISM package (`.mum` file) in it, and a Safe OS Dynamic Update is named `Package_for_SafeOSDU`. The summary marks such files. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
-Updates are installed right after the image is mounted, in ascending KB number order, before apps and components are removed. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
+Updates are installed right after the image is mounted, before apps and components are removed. The order follows Microsoft: first packages without a KB number (language packs and features on demand), then Windows updates in ascending KB order, and .NET updates (`ndp` in the name) last. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
 
 ## Drivers
 
@@ -196,7 +196,7 @@ Besides the system itself, the ISO contains two more images based on Windows PE:
 - **Windows Setup** (`sources\boot.wim`, image 2), which the USB drive boots from;
 - the **recovery environment** (WinRE, `Windows\System32\Recovery\Winre.wim` inside the system), which opens when Windows fails to start and from Settings > System > Recovery.
 
-By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. The UEFI boot manager on the ISO (`efi\boot\bootx64.efi` and `bootmgr.efi`) is taken from there too. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
 
 ## After installation
 
@@ -206,7 +206,7 @@ You can have the programs you need installed and your scripts run at the first s
 2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
-At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
+At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only, and if setting these rights failed, the log says so. In the ISO itself and on the flash drive they are not protected inside `install.wim`: anyone who gets the ISO can read them, so do not give others an ISO with passwords in its scripts. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
 
 You can save scripts in any editor. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as ANSI, and non-English text in quotes (for example, Russian) breaks the whole script. That is why such files are saved again as UTF-8 with BOM during the build; you can see this in the output of the step.
 

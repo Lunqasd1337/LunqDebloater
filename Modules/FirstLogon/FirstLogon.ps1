@@ -24,6 +24,7 @@ $texts = @{
         Header         = 'LunqDebloater: первичная настройка Windows'
         DoNotClose     = 'Не закрывайте это окно, оно закроется само.'
         TaskFailed     = 'Не удалось создать задание для повторной попытки: {0}'
+        ProtectFailed  = 'Не удалось закрыть {0} от других пользователей: {1}'
         AppsHeader     = '==> Установка программ ({0})'
         WaitInternet   = 'Жду подключения к интернету (до 5 минут)...'
         WaitWinget     = 'Жду, пока Windows зарегистрирует winget (до 10 минут)...'
@@ -49,6 +50,7 @@ $texts = @{
         Header         = 'LunqDebloater: initial Windows setup'
         DoNotClose     = 'Do not close this window, it will close by itself.'
         TaskFailed     = 'Could not create the task for another attempt: {0}'
+        ProtectFailed  = 'Could not hide {0} from other users: {1}'
         AppsHeader     = '==> Installing apps ({0})'
         WaitInternet   = 'Waiting for an internet connection (up to 5 minutes)...'
         WaitWinget     = 'Waiting for Windows to register winget (up to 10 minutes)...'
@@ -108,7 +110,8 @@ function Protect-Path([string]$Path) {
         }
         Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
     }
-    catch { }   # права не поменять: работа идёт как раньше
+    # Работа идёт дальше, но в логе видно, что пароли и ключи рядом со скриптами остались доступны.
+    catch { Write-Host ('    ' + (Get-Text 'ProtectFailed' $Path $_.Exception.Message)) -ForegroundColor Yellow }
 }
 
 Start-Transcript -Path $log -Append | Out-Null
@@ -118,8 +121,13 @@ Protect-Path $userDir
 function Write-Line([string]$Text, [string]$Color = 'Gray') { Write-Host "    $Text" -ForegroundColor $Color }
 
 function Test-Internet {
-    try { return ((Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 5).Content -eq 'Microsoft Connect Test') }
-    catch { return $false }
+    try { if ((Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 5).Content -eq 'Microsoft Connect Test') { return $true } }
+    catch { }   # не ответил: проверяется второй адрес
+    # msftconnecttest.com бывает закрыт фильтром (Pi-hole, корпоративная сеть), и тогда каждый вход
+    # ждал бы 5 минут. Второй адрес это сервер, откуда winget и так берёт каталог программ.
+    # Ответ с кодом ошибки HTTP тоже значит, что сеть есть.
+    try { $null = Invoke-WebRequest -Uri 'https://cdn.winget.microsoft.com/cache/source.msix' -Method Head -UseBasicParsing -TimeoutSec 5; return $true }
+    catch { return [bool]$_.Exception.Response }
 }
 
 function Wait-For([scriptblock]$Condition, [int]$Seconds, [string]$Message) {
@@ -134,14 +142,21 @@ function Wait-For([scriptblock]$Condition, [int]$Seconds, [string]$Message) {
     }
 }
 
+function Test-Winget([string]$Path) {
+    # В первые минуты после установки Магазин часто обновляет App Installer: winget.exe уже есть,
+    # но не запускается, и все программы этой попытки не поставились бы.
+    try { & $Path --version *> $null; return $LASTEXITCODE -eq 0 }
+    catch { return $false }
+}
+
 function Find-Winget {
     $command = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
+    if ($command -and (Test-Winget $command.Source)) { return $command.Source }
     # Сразу после установки App Installer может быть ещё не зарегистрирован для пользователя.
     # Если регистрация не удалась, winget просто ищется ещё раз в Wait-For.
-    try { Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop } catch { }
+    if (-not $command) { try { Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop } catch { } }
     $command = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
+    if ($command -and (Test-Winget $command.Source)) { return $command.Source }
     return $null
 }
 
