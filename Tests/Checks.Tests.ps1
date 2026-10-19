@@ -355,6 +355,32 @@ Describe 'Редакции в ISO' {
         InModuleScope LunqDebloater {
             Get-WindowsReleaseName -Build 26100 | Should -Be 'Windows 11 24H2'
             Get-WindowsReleaseName -Build 12345 | Should -Be ''
+            # Windows 10 в таблице только ради пакета включения: названия у неё нет, как и раньше.
+            Get-WindowsReleaseName -Build 19045 | Should -Be ''
+        }
+    }
+
+    It 'Data\Releases.psd1: сборки не повторяются, KB записаны цифрами, сборка профиля по умолчанию известна' {
+        $repo = Split-Path $PSScriptRoot -Parent
+        $releases = @((Import-PowerShellDataFile -LiteralPath (Join-Path $repo 'Modules\LunqDebloater\Data\Releases.psd1')).Releases)
+        $releases.Count | Should -BeGreaterThan 0
+        @($releases | ForEach-Object { $_.Build } | Select-Object -Unique).Count | Should -Be $releases.Count
+        foreach ($release in $releases) {
+            $release.Build | Should -BeOfType [int]
+            $release.Product | Should -BeIn @('Windows 10', 'Windows 11')
+            $release.Name | Should -Match '^\d{2}H\d$'
+            [string]$release.Enablement | Should -Match '^(\d{7})?$'
+        }
+        $profileBuild = [int](Get-Content -LiteralPath (Join-Path $repo 'Config\Profile.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Requirements.Build
+        @($releases | Where-Object { $_.Build -eq $profileBuild -and $_.Product -eq 'Windows 11' }).Count | Should -Be 1
+    }
+
+    It 'пакеты включения узнаются по номерам из Data\Releases.psd1' {
+        InModuleScope LunqDebloater {
+            Test-LunqEnablementUpdate 'windows11.0-kb5054156-x64.msu' | Should -BeTrue
+            Test-LunqEnablementUpdate 'windows10.0-kb5015684-x64.cab' | Should -BeTrue
+            Test-LunqEnablementUpdate 'windows11.0-kb5090000-x64.msu' | Should -BeFalse
+            Test-LunqEnablementUpdate 'windows11.0-x64.msu' | Should -BeFalse
         }
     }
 

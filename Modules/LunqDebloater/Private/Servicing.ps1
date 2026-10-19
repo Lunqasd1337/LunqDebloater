@@ -2,14 +2,13 @@
 # называются так же, только с ndp в имени, их отсекают отдельно.
 $script:WindowsUpdatePattern = '(?i)^windows1[01]\.0-kb'
 
-# Пакеты включения (enablement) переключают версию Windows и ставятся только поверх нужного
-# накопительного обновления. Имя у них такое же, как у накопительных, поэтому их узнают по номеру KB.
-# KB5054156: Windows 11 25H2, KB5027397: Windows 11 23H2, KB5015684: Windows 10 22H2.
-$script:EnablementUpdates = @('5054156', '5027397', '5015684')
-
 function Test-LunqEnablementUpdate {
+    # Пакеты включения (enablement) переключают версию Windows и ставятся только поверх нужного
+    # накопительного обновления. Имя у них такое же, как у накопительных, поэтому их узнают по номеру
+    # KB из Data\Releases.psd1.
     param([Parameter(Mandatory)][string]$Name)
-    return $Name -match '(?i)kb(\d+)' -and $script:EnablementUpdates -contains $Matches[1]
+    $numbers = @($script:LunqReleases | ForEach-Object { [string]$_.Enablement } | Where-Object { $_ })
+    return $Name -match '(?i)kb(\d+)' -and $numbers -contains $Matches[1]
 }
 
 function Get-LunqUpdateFiles {

@@ -25,6 +25,7 @@ Modules\
     LunqDebloater.psd1       Manifest: version and exported functions
     LunqDebloater.psm1       Loads Private\*.ps1 and picks the language
     Private\*.ps1            Functions by topic (table below)
+    Data\Releases.psd1       Windows releases: build names and enablement packages
     Strings\ru\*.psd1        Interface texts in Russian
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
@@ -170,6 +171,8 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 **An interface string.** Add the key to `Strings\ru\<Area>.psd1` and `Strings\en\<Area>.psd1` with the same `{0}`, `{1}`. Keys in a table are aligned to the longest one.
 
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
+
+**A new Windows release.** Add a line to `Modules\LunqDebloater\Data\Releases.psd1`: the build, the product, the release name and the KB number of its enablement package, if there is one. The script uses this table to name the build, search the catalog for updates and install the enablement package separately from the cumulative updates. Build and KB numbers are not written anywhere else.
 
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
 
