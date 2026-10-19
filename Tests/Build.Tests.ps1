@@ -276,6 +276,17 @@ Describe 'Ошибки и предупреждения' {
         Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
     }
 
+    It 'мало места: без вопросов сборка не начинается, с -IgnoreSpace идёт' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare { $env:LUNQ_TEST_FREE_SPACE = [string](5GB) }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match '\[ !! \] Мало места на T:'
+        $run.Output | Should -Match 'Без вопросов сборка с нехваткой места не начинается'
+        Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; IgnoreSpace = $true } -Prepare { $env:LUNQ_TEST_FREE_SPACE = [string](5GB) }
+        $run.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
+    }
+
     It 'нет папки для итогового ISO: остановка до сборки' {
         $run = Start-TestBuild -Parameters @{ OutputIso = (Join-Path $TestDrive 'missing\out.iso') }
         $run.Error | Should -Not -BeNullOrEmpty

@@ -74,16 +74,31 @@ function Add-LunqRestoreItem {
 
 function Add-LunqRestoreRegistry {
     # Прежнее значение реестра в виде записи профиля: Set с прежним значением или DeleteValue.
+    # Если значение уже запомнено (его пишут две категории), остаётся первая запись: вторая
+    # увидела бы то, что записала первая категория, а не то, что было до сборки.
     param([Parameter(Mandatory)]$Restore, [string]$Category, [Parameter(Mandatory)]$Entry)
     if (-not $Category) { $Category = 'profile' }
+    if (Test-LunqRestoreHasItem -Restore $Restore -Kind 'Registry' -Item $Entry) { return }
     (Get-LunqRestoreCategory -Restore $Restore -Id $Category).Registry.Add($Entry)
 }
 
 function Add-LunqRestoreRegistryKey {
-    # Ключ, удалённый целиком: его текст из reg export.
+    # Ключ, удалённый целиком: его текст из reg export. Повтор ключа не записывается, как и у значений.
     param([Parameter(Mandatory)]$Restore, [string]$Category, [Parameter(Mandatory)][string]$Hive, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Export)
     if (-not $Category) { $Category = 'profile' }
-    (Get-LunqRestoreCategory -Restore $Restore -Id $Category).RegistryKeys.Add([pscustomobject]@{ Hive = $Hive; Path = $Path; Export = $Export })
+    $item = [pscustomobject]@{ Hive = $Hive; Path = $Path; Export = $Export }
+    if (Test-LunqRestoreHasItem -Restore $Restore -Kind 'RegistryKeys' -Item $item) { return }
+    (Get-LunqRestoreCategory -Restore $Restore -Id $Category).RegistryKeys.Add($item)
+}
+
+function Test-LunqRestoreHasItem {
+    # Есть ли такая запись в любой категории данных для отката.
+    param([Parameter(Mandatory)]$Restore, [Parameter(Mandatory)][string]$Kind, [Parameter(Mandatory)]$Item)
+    $key = Get-LunqRestoreItemKey -Kind $Kind -Item $Item
+    foreach ($category in $Restore.Categories) {
+        foreach ($existing in $category.$Kind) { if ((Get-LunqRestoreItemKey -Kind $Kind -Item $existing) -eq $key) { return $true } }
+    }
+    return $false
 }
 
 function Get-LunqRestoreItemKey {
@@ -147,9 +162,13 @@ function Save-LunqRestoreData {
             $all.Categories.Add($target)
         }
         foreach ($kind in @($script:RestoreKinds + 'Registry', 'RegistryKeys')) {
-            $known = @($target.$kind | ForEach-Object { Get-LunqRestoreItemKey -Kind $kind -Item $_ })
+            # Значения и ключи реестра сверяются со всеми категориями: одно значение может писать
+            # и другая категория, и его исходное состояние уже записано там.
+            $scope = if ($kind -eq 'Registry' -or $kind -eq 'RegistryKeys') { @($all.Categories) } else { @($target) }
+            $known = New-Object 'System.Collections.Generic.HashSet[string]'
+            foreach ($c in $scope) { foreach ($existing in $c.$kind) { [void]$known.Add((Get-LunqRestoreItemKey -Kind $kind -Item $existing)) } }
             foreach ($item in $category.$kind) {
-                if ($known -notcontains (Get-LunqRestoreItemKey -Kind $kind -Item $item)) { $target.$kind.Add($item) }
+                if ($known.Add((Get-LunqRestoreItemKey -Kind $kind -Item $item))) { $target.$kind.Add($item) }
             }
         }
     }
@@ -234,9 +253,21 @@ function Import-LunqRegistryText {
 }
 
 function Add-LunqAppxBack {
-    # Возвращает приложение: регистрирует его, если файлы пакета ещё на диске. Обёртка для тестов.
+    # Возвращает приложение: регистрирует его текущему пользователю, если файлы пакета ещё на диске,
+    # и снова подготавливает (provisioning) для новых пользователей: -Online снимал и то, и другое.
+    # $true: приложение вернулось и новым пользователям, $false: только текущему. Обёртка для тестов.
     param([Parameter(Mandatory)][string]$PackageFamilyName)
     Add-AppxPackage -RegisterByFamilyName -MainPackage $PackageFamilyName -ErrorAction Stop
+    $package = @(Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }) | Select-Object -First 1
+    if (-not $package -or -not $package.InstallLocation) { return $false }
+    try {
+        Add-AppxProvisionedPackage -Online -FolderPath $package.InstallLocation -SkipLicense -ErrorAction Stop | Out-Null
+        return $true
+    }
+    catch {
+        Write-Verbose $_.Exception.Message
+        return $false
+    }
 }
 
 function Restore-LunqCategory {
@@ -254,11 +285,16 @@ function Restore-LunqCategory {
         $family = [string](Get-ConfigValue $app 'PackageFamilyName')
         Write-Info (Get-LunqText 'Restore.Appx' $app.Name)
         $back = $false
+        $everyone = $false
         if ($family) {
-            try { Add-LunqAppxBack -PackageFamilyName $family; $back = $true }
-            catch { }   # файлов пакета на диске нет: остаётся Microsoft Store
+            try { $everyone = [bool](Add-LunqAppxBack -PackageFamilyName $family); $back = $true }
+            catch { Write-Verbose $_.Exception.Message }   # файлов пакета на диске нет: остаётся Microsoft Store
         }
-        if ($back) { $result.Done.Add($app.Name) }
+        if ($back) {
+            $result.Done.Add($app.Name)
+            # Запись всё равно убирается: повтор вернул бы его опять только этому пользователю.
+            if (-not $everyone) { Write-Warning (Get-LunqText 'Restore.AppxOnlyYou' $app.Name "ms-windows-store://pdp/?PFN=$family") }
+        }
         else {
             # Приложение из образа удалено вместе с файлами. Microsoft Store находит его по имени семейства.
             if ($family) { $storeLinks.Add("ms-windows-store://pdp/?PFN=$family") }

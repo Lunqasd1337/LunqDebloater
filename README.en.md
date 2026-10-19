@@ -141,6 +141,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
+| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run from a recipe or on schedule stops when space is short, and step-by-step mode asks |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
 | `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates every month") |
 | `-Recipe` | Repeat the build from the recipe `<ISO name>.lunq.json`. Parameters you pass win over the recipe (see "Build recipe and report") |

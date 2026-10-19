@@ -49,6 +49,7 @@ param(
     [switch]$SkipRegistry,
     [switch]$CleanupComponents,
     [switch]$SkipVersionCheck,
+    [switch]$IgnoreSpace,
     [switch]$KeepWorkDir,
     [switch]$Force,
     [ValidateSet('ru', 'en')][string]$Language,
@@ -572,6 +573,9 @@ try {
         -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:(-not $PSBoundParameters.ContainsKey('WorkDir')) `
         -ExtraSize $extraSize -SkipOscdimg:$listMode -SkipOutputCheck:$listMode -OwnMountPaths $allMountDirs
     if ($check.Errors -gt 0) { throw (Get-LunqText 'Main.FixErrors') }
+    # Без вопросов (рецепт, расписание) никто не ответит на предупреждение, а многочасовая сборка на
+    # почти полном диске упадёт посередине. Поэтому нехватка места там останавливает запуск.
+    if ($check.SpaceLow -and -not $interactive -and -not $listMode -and -not $IgnoreSpace) { throw (Get-LunqText 'Main.SpaceLowStop') }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo (Get-LunqText 'Main.AskContinueWarnings'))) { return }
     $contentsDir = $null
     if ($listMode) { $contentsDir = Get-LunqContentsDir -IsoPath $IsoPath -FallbackDir (Split-Path $lunqLog.Path -Parent) }

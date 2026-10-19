@@ -69,6 +69,31 @@ Describe 'Запись данных для отката' {
         }
     }
 
+    It 'значение, которое пишут две категории, запоминается один раз: исходное, до первой из них' {
+        # Значения не было, news ставит 1, tools ставит 2. Откат должен удалить значение, а не вернуть 1.
+        $path = Join-Path $TestDrive 'r2b\Restore.json'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; P = $script:TestProfile } {
+            param($Path, $P)
+            $data = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreRegistry -Restore $data -Category 'news' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'V'; Action = 'DeleteValue' })
+            Add-LunqRestoreRegistry -Restore $data -Category 'tools' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'a'; Name = 'v'; Type = 'DWord'; Value = 1 })
+            Add-LunqRestoreRegistryKey -Restore $data -Category 'news' -Hive 'SOFTWARE' -Path 'K' -Export 'first'
+            Add-LunqRestoreRegistryKey -Restore $data -Category 'tools' -Hive 'SOFTWARE' -Path 'K' -Export 'second'
+            Save-LunqRestoreData -Restore $data -Path $Path
+            # Повторный -Online: то же значение под другой категорией тоже не добавляется.
+            $second = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreRegistry -Restore $second -Category 'tools' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'V'; Type = 'DWord'; Value = 2 })
+            Save-LunqRestoreData -Restore $second -Path $Path -Merge
+            $back = Read-LunqRestoreData -Path $Path
+            $news = @($back.Categories | Where-Object { $_.Id -eq 'news' })[0]
+            @($news.Registry).Count | Should -Be 1
+            $news.Registry[0].Action | Should -Be 'DeleteValue'
+            @($news.RegistryKeys).Count | Should -Be 1
+            $news.RegistryKeys[0].Export | Should -Be 'first'
+            @($back.Categories | Where-Object { $_.Id -eq 'tools' }).Count | Should -Be 0
+        }
+    }
+
     It 'файл пишется через временный, прошлая версия остаётся в .bak, а испорченный файл откладывается' {
         $dir = Join-Path $TestDrive 'r-atomic'
         $path = Join-Path $dir 'Restore.json'
@@ -168,7 +193,7 @@ Describe 'Откат категории' {
         InModuleScope LunqDebloater {
             Mock Write-Info { }
             Mock Write-Warning { }
-            Mock Add-LunqAppxBack { if ($PackageFamilyName -like 'Gone*') { throw 'package files are gone' } }
+            Mock Add-LunqAppxBack { if ($PackageFamilyName -like 'Gone*') { throw 'package files are gone' }; $PackageFamilyName -notlike 'Mine*' }
             Mock Add-WindowsCapability { if ($Name -like 'Broken*') { throw 'source files not found' } }
             Mock Enable-WindowsOptionalFeature { }
             Mock Invoke-RegistryEntry { 'Applied' }
@@ -203,6 +228,17 @@ Describe 'Откат категории' {
             $category.RegistryKeys.Count | Should -Be 0
             Should -Invoke Enable-WindowsOptionalFeature -Times 1 -ParameterFilter { $Online -and $All -and $NoRestart }
             Should -Invoke Invoke-RegistryEntry -Times 1 -ParameterFilter { $Root -eq 'HKLM\SOFTWARE' }
+        }
+    }
+
+    It 'приложение вернулось только текущему пользователю: предупреждение со ссылкой на Store' {
+        InModuleScope LunqDebloater {
+            $category = New-LunqRestoreCategory -Id 'news' -Name 'News'
+            $category.Appx.Add([pscustomobject]@{ Name = 'Mine.App'; PackageFamilyName = 'Mine.App_8wekyb3d8bbwe' })
+            $r = Restore-LunqCategory -Category $category
+            @($r.Done) | Should -Be @('Mine.App')
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -match 'Mine\.App вернулось только вам.*PFN=Mine\.App_8wekyb3d8bbwe' }
+            $category.Appx.Count | Should -Be 0
         }
     }
 

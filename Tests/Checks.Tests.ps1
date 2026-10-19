@@ -137,6 +137,45 @@ Describe 'Set-LunqAdminOnlyAccess' {
     }
 }
 
+Describe 'Ссылки в рабочей папке' {
+    BeforeAll {
+        # Junction в Windows создаётся без прав администратора, symlink в Linux тоже.
+        $script:LinkType = if ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'Junction' } else { 'SymbolicLink' }
+    }
+
+    It 'ссылка вместо рабочей папки не годится' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive"; LinkType = $script:LinkType } {
+            param($Root, $LinkType)
+            $target = Join-Path $Root 'target-a'
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            $link = Join-Path $Root 'LinkWork'
+            New-Item -ItemType $LinkType -Path $link -Value $target | Out-Null
+            Test-LunqWorkDir -WorkDir $link -IsDefault | Should -Be 'это ссылка (junction или symlink) на другую папку'
+        }
+    }
+
+    It 'пересоздание рабочей папки удаляет ссылку внутри, но не то, на что она указывает' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive"; LinkType = $script:LinkType } {
+            param($Root, $LinkType)
+            Mock Get-WindowsImage { @() } -ParameterFilter { $Mounted }
+            Mock Dismount-OfflineHives { }
+            $target = Join-Path $Root 'target-b'
+            New-Item -ItemType Directory -Path (Join-Path $target 'Windows') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $target 'Windows\keep.txt') -Value 'x'
+            $work = Join-Path $Root 'OldWork'
+            New-Item -ItemType Directory -Path (Join-Path $work 'iso\sources') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $work 'iso\sources\install.wim') -Value 'x'
+            New-Item -ItemType $LinkType -Path (Join-Path $work 'iso\link') -Value $target | Out-Null
+            Test-LunqWorkDir -WorkDir $work -IsDefault | Should -BeNullOrEmpty
+
+            Reset-LunqWorkDir -WorkDir $work -MountPaths @(Join-Path $work 'mount')
+            Test-Path -LiteralPath (Join-Path $target 'Windows\keep.txt') | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $work 'iso') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $work '.lunqdebloater') | Should -BeTrue
+        }
+    }
+}
+
 Describe 'Смонтированные образы' {
     It 'DISM не ответил: считается, что образ смонтирован, и рабочая папка не удаляется' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

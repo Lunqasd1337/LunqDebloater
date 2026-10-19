@@ -3,6 +3,7 @@
     'Checks.WorkDirIsRoot'       = 'it is the root of a drive'
     'Checks.WorkDirContainsPath' = 'it contains {0}, which would be deleted'
     'Checks.WorkDirIsFile'       = 'it is a file, not a folder'
+    'Checks.WorkDirIsLink'       = 'it is a link (junction or symlink) to another folder'
     'Checks.WorkDirNotEmpty'     = 'the folder is not empty and was not created by this script'
     'Checks.WorkDirMarker'       = 'LunqDebloater working folder. It is deleted after the build.'
     'Checks.LeftoverMount'       = 'Found an image still mounted at {0} from an earlier run, unmounting it without saving.'

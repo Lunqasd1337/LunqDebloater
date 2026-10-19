@@ -14,9 +14,10 @@ function Get-LunqHostBuild {
 function Get-LunqDriveInfo {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
-    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске.
+    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске, LUNQ_TEST_FREE_SPACE: свободно байт.
     $type = if ($env:LUNQ_TEST_NETWORK_DRIVE) { 'Network' } else { 'Fixed' }
-    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
+    $free = if ($env:LUNQ_TEST_FREE_SPACE) { [long]$env:LUNQ_TEST_FREE_SPACE } else { [long]500GB }
+    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = $free }
 }
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
@@ -70,6 +71,10 @@ function Invoke-Native {
                 $text = Get-Content -LiteralPath $Arguments[0] -Raw
                 if ($text -match 'safeos') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_SafeOSDU" />' }
                 elseif ($text -match 'rollup') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_RollupFix" />' }
+            }
+            # Файлы установщика есть только в Setup Dynamic Update.
+            if ($Arguments[1] -eq '-F:setup*.exe' -and (Get-Content -LiteralPath $Arguments[0] -Raw) -match 'setup') {
+                Set-Content -LiteralPath (Join-Path $Arguments[2] 'setupprep.exe') -Value 'exe'
             }
             return 0
         }
@@ -159,6 +164,7 @@ function Add-LunqAppxBack {
     param([Parameter(Mandatory)][string]$PackageFamilyName)
     if ($env:LUNQ_TEST_APPX_GONE) { throw 'package files not found' }
     Write-Host "    [mock] register $PackageFamilyName"
+    return $true
 }
 
 # Подпись Microsoft: у файлов-пустышек её нет, поэтому неподписанным считается только файл со словом unsigned.

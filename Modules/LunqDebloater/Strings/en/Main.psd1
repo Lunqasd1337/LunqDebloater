@@ -79,6 +79,7 @@
     'Main.SectionSystem'         = 'System check'
     'Main.FixErrors'             = 'Fix the errors marked [FAIL] and run the script again.'
     'Main.AskContinueWarnings'   = 'There are warnings. Continue anyway?'
+    'Main.SpaceLowStop'          = 'Not enough free space for the build (see above). Without questions a build does not start short of space: free some space, point -WorkDir to another drive or add -IgnoreSpace.'
     'Main.OutputExists'          = 'The file {0} already exists.'
     'Main.AskOverwrite'          = 'Overwrite it?'
     'Main.OutputExistsThrow'     = 'The file {0} already exists. Specify a different -OutputIso or add -Force.'
