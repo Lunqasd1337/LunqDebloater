@@ -203,8 +203,10 @@ Describe 'Get-LunqOnlineSteps' {
             foreach ($name in 'Remove-LunqAppx', 'Remove-LunqCapabilities', 'Disable-LunqFeatures', 'Remove-LunqPackages', 'Set-LunqRegistry') {
                 Should -Invoke $name -Times 1 -Exactly -ParameterFilter { $Online -and -not $MountPath -and $null -ne $Restore }
             }
-            # Повторный -Online дописывает к файлу, а не заменяет то, что было до первого запуска.
-            Should -Invoke Save-LunqRestoreData -Times 1 -Exactly -ParameterFilter { $Merge -and $Path -like '*Restore.json' }
+            # Данные записываются после каждого из четырёх шагов и ещё раз в конце. Запись всегда
+            # дописывает к файлу, а не заменяет то, что было до первого запуска.
+            Should -Invoke Save-LunqRestoreData -Times 5 -Exactly -ParameterFilter { $Merge -and $Path -like '*Restore.json' }
+            Should -Invoke Save-LunqRestoreData -Times 0 -Exactly -ParameterFilter { -not $Merge }
             $context.State.StepTimes.Count | Should -Be 5
         }
     }
@@ -271,6 +273,28 @@ Describe 'Invoke-LunqBuild' {
             $text = Get-Content -LiteralPath $log -Raw
             $text | Should -Match '===== LunqDebloater \d{4}-\d\d-\d\d \d\d:\d\d:\d\d: step 1/2: Updates ====='
             $text | Should -Match 'step 2/2: Iso'
+        }
+    }
+}
+
+Describe 'Invoke-LunqBuild -Online' {
+    It 'данные для отката записываются после каждого шага, и после упавшего тоже' {
+        $path = Join-Path $TestDrive 'online\Restore.json'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; Context = (New-TestContext -Values @{ RestorePath = $path }) } {
+            param($Path, $Context)
+            Mock Write-Step { }
+            $Context.Restore = New-LunqRestoreData -LunqProfile ([pscustomobject]@{ Name = 'Test'; Categories = @() }) -Source Online
+            Mock Get-LunqOnlineSteps {
+                @(
+                    @{ Name = 'Appx'; When = $true; Title = 'Appx'; Hint = ''; Run = { param($c) Add-LunqRestoreItem -Restore $c.Restore -Kind Appx -Name 'Microsoft.BingNews' } },
+                    @{ Name = 'Features'; When = $true; Title = 'Features'; Hint = ''; Run = { param($c) Add-LunqRestoreItem -Restore $c.Restore -Kind Features -Name 'Recall'; throw 'step failed' } },
+                    @{ Name = 'SaveRestore'; When = $true; Title = 'Save'; Hint = ''; Run = { throw 'не должен выполняться' } })
+            }
+            { Invoke-LunqBuild -Context $Context -Online } | Should -Throw '*step failed*'
+            # Удалённое до ошибки и на упавшем шаге можно вернуть через -Restore.
+            $saved = Read-LunqRestoreData -Path $Path
+            @($saved.Categories[0].Appx | ForEach-Object { $_.Name }) | Should -Be @('Microsoft.BingNews')
+            @($saved.Categories[0].Features | ForEach-Object { $_.Name }) | Should -Be @('Recall')
         }
     }
 }

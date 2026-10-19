@@ -101,7 +101,24 @@ function Read-LunqRestoreData {
     # Данные для отката из файла. Нет файла: $null.
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
-    $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    try {
+        $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+        if (-not $text -or -not $text.Trim()) { throw (Get-LunqText 'Restore.EmptyFile') }
+        $json = $text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        # Файл испорчен (например, запись оборвалась). Он откладывается рядом, чтобы его можно было
+        # разобрать вручную, а данные берутся из прошлой версии файла, если она есть. Прошлая версия
+        # переносится, а не копируется: если испорчена и она, чтение на ней и закончится.
+        $corrupt = '{0}.corrupt-{1}' -f $Path, (Get-Date -Format 'yyyyMMdd-HHmmss')
+        Move-Item -LiteralPath $Path -Destination $corrupt -Force
+        Write-Warning (Get-LunqText 'Restore.Corrupt' $Path $_.Exception.Message $corrupt)
+        $backup = "$Path.bak"
+        if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) { return $null }
+        Move-Item -LiteralPath $backup -Destination $Path -Force
+        Write-Warning (Get-LunqText 'Restore.FromBackup' $backup)
+        return (Read-LunqRestoreData -Path $Path)
+    }
     if ([string](Get-ConfigValue $json 'Kind') -ne 'LunqDebloaterRestore') { throw (Get-LunqText 'Restore.NotRestoreFile' $Path) }
     $data = New-LunqRestoreData -Source ([string](Get-ConfigValue $json 'Source'))
     foreach ($raw in (Get-ConfigList $json 'Categories')) {
@@ -138,7 +155,7 @@ function Save-LunqRestoreData {
     }
     $categories = @($all.Categories | Where-Object { Test-LunqRestoreCategoryHasItems $_ })
     if ($categories.Count -eq 0) {
-        if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
+        foreach ($file in @($Path, "$Path.bak")) { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force } }
         return
     }
     $out = [ordered]@{
@@ -155,7 +172,12 @@ function Save-LunqRestoreData {
             })
     }
     New-Item -ItemType Directory -Path (Split-Path $Path -Parent) -Force | Out-Null
-    [IO.File]::WriteAllText($Path, ($out | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+    # Сначала во временный файл, потом подмена: если запись оборвётся, прежний файл останется целым,
+    # а его прошлая версия сохраняется в .bak на случай, если испорчен окажется он сам.
+    $temp = "$Path.tmp"
+    [IO.File]::WriteAllText($temp, ($out | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temp, $Path, "$Path.bak") }
+    else { [IO.File]::Move($temp, $Path) }
 }
 
 function Test-LunqRestoreCategoryHasItems {
@@ -349,9 +371,10 @@ function Invoke-LunqRestore {
         $completed = $true
     }
     finally {
-        Dismount-OfflineHives -Strict:$completed
-        # Вернувшееся убирается из файла и тогда, когда откат прервался на середине.
-        Save-LunqRestoreData -Restore $Restore -Path $Path
+        # Вернувшееся убирается из файла и тогда, когда откат прервался на середине. Файл пишется до
+        # выгрузки кустов: куст, который не выгрузился, не должен помешать его записать.
+        try { Save-LunqRestoreData -Restore $Restore -Path $Path }
+        finally { Dismount-OfflineHives -Strict:$completed }
     }
     return , $results
 }

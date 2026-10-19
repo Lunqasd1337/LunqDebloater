@@ -311,8 +311,10 @@ function Update-LunqPEImage {
 
     $results = @()
     New-Item -ItemType Directory -Path $MountPath -Force | Out-Null
-    Mount-WindowsImage -ImagePath $ImagePath -Index $Index -Path $MountPath | Out-Null
+    $saved = $false
     try {
+        # Монтирование внутри try: образ, смонтированный наполовину, тоже отбрасывается.
+        Mount-WindowsImage -ImagePath $ImagePath -Index $Index -Path $MountPath | Out-Null
         $updated = 0
         if (@($Updates).Count -gt 0) {
             $r = Add-LunqUpdates -MountPath $MountPath -Files $Updates -ScratchDir $ScratchDir -Title (Get-LunqText 'Servicing.UpdatesIn' $Where) -Kind "Updates$KindSuffix"
@@ -336,10 +338,14 @@ function Update-LunqPEImage {
         # Загрузчик меняется только обновлениями: после одних драйверов он тот же, что на ISO.
         if ($BootFilesTo -and $updated -gt 0) { $results += Copy-LunqBootManager -MountPath $MountPath -IsoRoot $BootFilesTo }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
+        $saved = $true
     }
-    catch {
-        Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction SilentlyContinue | Out-Null
-        throw
+    finally {
+        # Не catch, а finally: при Ctrl+C catch не выполняется, и образ остался бы смонтированным.
+        if (-not $saved) {
+            try { Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null }
+            catch { Write-Verbose $_.Exception.Message }
+        }
     }
     return $results
 }

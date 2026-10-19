@@ -14,4 +14,7 @@
     'Restore.StoreLinks'     = 'These apps were removed together with their files. Their Microsoft Store pages (paste a link into Win+R):'
     'Restore.Reboot'         = 'Restart the computer for all changes to take effect. Whatever was not restored stays in the restore file: you can run -Restore again.'
     'Restore.SaveFailed'     = 'Could not write the restore data: {0}'
+    'Restore.EmptyFile'      = 'the file is empty'
+    'Restore.Corrupt'        = 'The restore file {0} is damaged ({1}). It is kept as {2}.'
+    'Restore.FromBackup'     = 'The restore data comes from the previous version of the file {0}: the latest changes may be missing from it.'
 }

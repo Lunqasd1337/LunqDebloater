@@ -346,7 +346,16 @@ function Invoke-LunqBuild {
             # В итог идут только результаты шагов: всё прочее, что вернули команды, отбрасывается.
             $results += @(& $step.Run $Context | Where-Object { $_ -and $_.PSObject.Properties['Kind'] })
         }
-        finally { $Context.State.StepTimes.Add([pscustomobject]@{ Title = $step.Title; Elapsed = (Get-Date) - $started }) }
+        finally {
+            $Context.State.StepTimes.Add([pscustomobject]@{ Title = $step.Title; Elapsed = (Get-Date) - $started })
+            # -Online меняет эту Windows сразу, поэтому то, что было до шага, записывается после каждого
+            # шага, а не только в конце: после ошибки, Ctrl+C или закрытого окна -Restore вернёт уже
+            # удалённое. Записанное раньше при этом не заменяется, поэтому запись можно повторять.
+            if ($Online -and $step.Name -ne 'SaveRestore') {
+                try { Save-LunqRestoreData -Restore $Context.Restore -Path $Context.RestorePath -Merge }
+                catch { Write-Warning (Get-LunqText 'Restore.SaveFailed' $_.Exception.Message) }
+            }
+        }
     }
     return , $results
 }
