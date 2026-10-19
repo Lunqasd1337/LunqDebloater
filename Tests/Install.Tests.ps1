@@ -168,6 +168,43 @@ Describe 'Invoke-LunqInstall' {
     }
 }
 
+Describe 'Get-LunqForeignItems' {
+    BeforeAll {
+        # В PowerShell на Linux нет Get-Acl, а заглушке нужна команда, которую она подменит.
+        if (-not (Get-Command Get-Acl -ErrorAction SilentlyContinue)) {
+            function script:Get-Acl { param([string]$LiteralPath) }
+        }
+    }
+
+    It 'находит папку и файлы, владелец которых не вы и не администраторы, и файлы, права которых не прочитать' {
+        $root = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'Owned') -Force
+        New-Item -ItemType Directory -Path (Join-Path $root.FullName 'Modules') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $root.FullName 'LunqDebloater.ps1') -Value ''
+        Set-Content -LiteralPath (Join-Path $root.FullName 'Modules\planted.ps1') -Value ''
+        Set-Content -LiteralPath (Join-Path $root.FullName 'Modules\locked.ps1') -Value ''
+        Mock Get-Acl {
+            if ($LiteralPath -like '*locked.ps1') { throw 'Access denied' }
+            $sid = if ($LiteralPath -like '*planted.ps1') { 'S-1-5-21-1-2-3-1002' } else { 'S-1-5-21-1-2-3-1001' }
+            [pscustomobject]@{ Sid = $sid } | Add-Member -MemberType ScriptMethod -Name GetOwner -Value { param($type) [pscustomobject]@{ Value = $this.Sid } } -PassThru
+        }
+        $foreign = Get-LunqForeignItems -Path $root.FullName -Trusted @('S-1-5-21-1-2-3-1001', 'S-1-5-32-544')
+        @($foreign | ForEach-Object { Split-Path $_ -Leaf } | Sort-Object) | Should -Be @('locked.ps1', 'planted.ps1')
+        # Новой папки ещё нет: проверять нечего.
+        (Get-LunqForeignItems -Path (Join-Path $TestDrive 'Missing') -Trusted @('S-1-5-32-544')).Count | Should -Be 0
+    }
+
+    It 'папка другого пользователя на диске с правами NTFS: установка отказывается' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        $target = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'Planted') -Force
+        Mock Write-Host { }
+        Mock Start-LunqDebloater { }
+        Mock Get-LunqLatestRelease { throw 'не должен вызываться' }
+        Mock Test-LunqAclDrive { $true }
+        Mock Get-LunqForeignItems { , @('C:\Planted\LunqDebloater.ps1') }
+        { Invoke-LunqInstall -Path $target.FullName } | Should -Throw '*belongs to another user*'
+        Should -Invoke Start-LunqDebloater -Times 0 -Exactly
+    }
+}
+
 Describe 'Get-LunqLatestRelease' {
     It 'API GitHub отказал (лимит запросов): версия берётся со страницы релизов' {
         Mock Invoke-RestMethod { throw 'Response status code does not indicate success: 403 (rate limit exceeded).' }

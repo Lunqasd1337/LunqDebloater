@@ -118,6 +118,25 @@ Describe 'Рабочая папка и итоговый ISO' {
     }
 }
 
+Describe 'Set-LunqAdminOnlyAccess' {
+    BeforeDiscovery {
+        $script:CanSetAcl = $false
+        if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
+            $script:CanSetAcl = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        }
+    }
+
+    It 'владелец Administrators, доступ только у администраторов и SYSTEM, наследование выключено' -Skip:(-not $script:CanSetAcl) {
+        $dir = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'admin-only') -Force
+        InModuleScope LunqDebloater -Parameters @{ Dir = $dir.FullName } { param($Dir) Set-LunqAdminOnlyAccess -Path $Dir }
+        $acl = Get-Acl -LiteralPath $dir.FullName
+        $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value | Should -Be 'S-1-5-32-544'
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+        $sids | Should -Be @('S-1-5-18', 'S-1-5-32-544')
+    }
+}
+
 Describe 'Смонтированные образы' {
     It 'DISM не ответил: считается, что образ смонтирован, и рабочая папка не удаляется' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

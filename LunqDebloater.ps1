@@ -175,8 +175,12 @@ try {
         if (-not $Recipe) { throw (Get-LunqText 'Main.ScheduleNeedsRecipe') }
         if ($Schedule -eq 'Off') { Unregister-LunqSchedule -RecipePath $Recipe }
         else {
-            $null = Read-LunqRecipe -Path $Recipe
-            $null = Register-LunqSchedule -ScriptPath $PSCommandPath -RecipePath $Recipe -TempDir $lunqTempDir
+            $scheduleRecipe = Read-LunqRecipe -Path $Recipe
+            # Настройки те же, что при повторе рецепта: из командной строки, иначе из рецепта.
+            $scheduleConfig = $ConfigPath
+            $recipeConfig = [string](Get-ConfigValue $scheduleRecipe 'ConfigPath')
+            if (-not $PSBoundParameters.ContainsKey('ConfigPath') -and $recipeConfig -and (Test-Path -LiteralPath $recipeConfig -PathType Container)) { $scheduleConfig = $recipeConfig }
+            $null = Register-LunqSchedule -SourceRoot $PSScriptRoot -ConfigPath $scheduleConfig -RecipePath $Recipe
         }
         return
     }
@@ -843,7 +847,7 @@ try {
         Write-Info ''
         Write-Info (Get-LunqText 'Main.ScheduleOffer')
         if (Read-YesNo (Get-LunqText 'Main.AskSchedule')) {
-            try { $null = Register-LunqSchedule -ScriptPath $PSCommandPath -RecipePath $recipePath -TempDir $lunqTempDir }
+            try { $null = Register-LunqSchedule -SourceRoot $PSScriptRoot -ConfigPath $ConfigPath -RecipePath $recipePath }
             catch { Write-Warning $_.Exception.Message }
         }
     }

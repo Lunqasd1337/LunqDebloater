@@ -25,6 +25,33 @@ function Test-LunqInstallFolder {
     return -not (Get-ChildItem -LiteralPath $Path -Force | Select-Object -First 1)
 }
 
+function Get-LunqForeignItems {
+    # The folder itself and the files and folders in it that belong to someone not in $Trusted.
+    # The owner of a file can always change its access rules, so a folder another user created
+    # first (D:\LunqDebloater) would stay under their control after Protect-LunqInstallFolder,
+    # and their code would then run as administrator.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string[]]$Trusted)
+    if (-not (Test-Path -LiteralPath $Path)) { return , @() }
+    $items = @(Get-Item -LiteralPath $Path -Force) + @(Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue)
+    $foreign = @()
+    foreach ($item in $items) {
+        # A file whose rules cannot even be read was not made by this user either.
+        $owner = $null
+        try { $owner = (Get-Acl -LiteralPath $item.FullName).GetOwner([Security.Principal.SecurityIdentifier]).Value }
+        catch { $owner = $null }
+        if (-not $owner -or $Trusted -notcontains $owner) { $foreign += $item.FullName }
+    }
+    return , $foreign
+}
+
+function Test-LunqAclDrive {
+    # Only NTFS and ReFS keep owners and access rules; on FAT32 and exFAT there is nothing to check.
+    param([Parameter(Mandatory)][string]$Path)
+    try { $format = (New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($Path))).DriveFormat }
+    catch { return $false }
+    return @('NTFS', 'ReFS') -contains $format
+}
+
 function Protect-LunqInstallFolder {
     # LunqDebloater runs as administrator from this folder, so only its owner, administrators and
     # SYSTEM may change the files. A new folder in the root of a drive (D:\LunqDebloater) inherits
@@ -158,6 +185,15 @@ function Invoke-LunqInstall {
     $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     if (-not (Test-LunqInstallFolder -Path $Path)) {
         throw "$Path is not empty and is not a LunqDebloater folder. Choose another folder with -Path."
+    }
+    if ([Environment]::OSVersion.Platform -eq 'Win32NT' -and (Test-LunqAclDrive -Path $Path)) {
+        # You, administrators, SYSTEM and TrustedInstaller.
+        $trusted = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-32-544', 'S-1-5-18',
+            'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+        $foreign = Get-LunqForeignItems -Path $Path -Trusted $trusted
+        if ($foreign.Count -gt 0) {
+            throw "$($foreign[0]) belongs to another user, who could change LunqDebloater and run their code as administrator. Choose another folder with -Path, or delete this one."
+        }
     }
     # Without TLS 1.2 older Windows PowerShell 5.1 setups cannot connect to GitHub.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

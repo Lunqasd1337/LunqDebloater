@@ -89,7 +89,7 @@ To use another folder:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Lunqasd1337/LunqDebloater/main/Install.ps1))) -Path D:\LunqDebloater
 ```
 
-The loader puts nothing into a non-empty folder that has no LunqDebloater in it. Only you, administrators and SYSTEM can change the files in the program folder: the loader sets these rights itself, so a folder in the root of a drive is safe too. A FAT32 or exFAT flash drive has no access rights, and the loader warns about it.
+The loader puts nothing into a non-empty folder that has no LunqDebloater in it. Only you, administrators and SYSTEM can change the files in the program folder: the loader sets these rights itself, so a folder in the root of a drive is safe too. The loader does not take a folder that another user of the computer created, or one with their files in it: the owner of a file can always take its rights back. A FAT32 or exFAT flash drive has no access rights, and the loader warns about it.
 
 ### Desktop shortcut
 
@@ -269,7 +269,7 @@ An ISO built with downloading can be rebuilt every month without you. In step-by
 .\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
 ```
 
-The task `LunqDebloater\<ISO name>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. Its log is in `Logs`, as for a normal run.
+The task `LunqDebloater\<ISO name>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<ISO name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 

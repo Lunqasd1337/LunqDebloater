@@ -59,7 +59,7 @@ Tests\                       Тесты Pester и заглушки
 | `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) и значения отметки о сборке |
 | `Report.ps1` | Общий формат результата шага (`New-LunqResult`) и итог сборки (`Write-LunqReport`) |
 | `Catalog.ps1` | Свежие обновления из каталога Центра обновления: разбор страницы поиска и окна скачивания, выбор самого нового, скачивание с проверкой SHA-1 и кэшем (`Save-LunqCatalogUpdates`). Сеть только через `Invoke-LunqWebRequest`, тесты подменяют её |
-| `Schedule.ps1` | Задание планировщика для пересборки по рецепту каждый месяц (`Register-LunqSchedule`, `Unregister-LunqSchedule`, через `schtasks.exe /XML`) |
+| `Schedule.ps1` | Задание планировщика для пересборки по рецепту каждый месяц (`Register-LunqSchedule`, `Unregister-LunqSchedule`, через `schtasks.exe /XML`). Задание идёт от SYSTEM и запускает копию программы, `Config` и рецепта в `Program Files\LunqDebloater-Schedule` (`Copy-LunqScheduleFiles`), а не папку пользователя |
 | `Recipe.ps1` | Рецепт сборки `<имя ISO>.lunq.json`: запись (`New-LunqRecipe`), чтение и проверка, параметры для повтора (`Get-LunqRecipeParameters`), сверка обновлений, отчёт «до и после» в HTML (`Write-LunqHtmlReport`) |
 | `Restore.ps1` | Данные для отката: что удалено и как было в реестре, по категориям профиля (`New-LunqRestoreData`, `Add-LunqRestoreItem`), файл `Windows\LunqDebloater\Restore.json` и откат на этой Windows (`Invoke-LunqRestore`) |
 | `Host.ps1` | Копия этого компьютера: программы из `winget export` (`Export-LunqHostApps`, `Merge-LunqAppsList`) и сети Wi-Fi (`Export-LunqHostWifi`) |
