@@ -42,6 +42,7 @@ param(
     [switch]$Unattend,
     [switch]$BypassRequirements,
     [switch]$LocalAccount,
+    [string]$LocalAccountName,
     [switch]$ListContents,
     [ValidatePattern('^[A-Za-z0-9_-]{1,32}$')][string]$Label = 'LUNQ_WIN11',
     [switch]$SkipAppx,
@@ -218,6 +219,13 @@ try {
         if (-not $IsoPath) { throw (Get-LunqText 'Main.RecipeNoIso' $Recipe) }
         if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw (Get-LunqText 'Main.RecipeIsoMissing' $IsoPath) }
         if ((Get-Item -LiteralPath $IsoPath).Length -ne [long]$recipeData.Iso.Size) { Write-Warning (Get-LunqText 'Main.RecipeIsoChanged' $IsoPath) }
+    }
+
+    # Имя учётной записи проверяется сразу: ошибка в нём иначе всплыла бы только при установке Windows.
+    if ($LocalAccountName) {
+        $nameProblem = Test-LunqAccountName -Name $LocalAccountName
+        if ($nameProblem) { throw $nameProblem }
+        $LocalAccount = [switch]$true
     }
 
     # ---------- Подготовка: всё, что можно проверить до долгой работы ----------
@@ -494,6 +502,12 @@ try {
         }
     }
     if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
+    # Учётная запись, которую создаст файл ответов. Без имени её, как раньше, создаёт сама установка.
+    $accountName = ''
+    if (-not $listMode -and $useUnattend -and $useLocalAccount) {
+        if ($interactive -and -not $LocalAccountName) { $LocalAccountName = Read-LunqAccountName -Default $env:USERNAME }
+        $accountName = [string]$LocalAccountName
+    }
     $HostDrivers = [switch]($useDrivers -and $foundDrivers.Count -gt 0 -and $driversDir -eq $hostDriversDir)
     # Microsoft требует, чтобы с загрузчиком 2023 года был обновлён и boot.wim.
     if ($BootCA2023) { $UpdatesToSetup = [switch]$true }
@@ -553,19 +567,21 @@ try {
     $firstLogon = $null
     # Программы из поля Uninstall включённых категорий: их удаляет первый вход.
     $uninstall = Get-ConfigList $config 'Uninstall'
-    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0 -or $uninstall.Count -gt 0)) {
+    # Учётной записи без пароля первый вход предложит его задать, даже если программ и скриптов нет.
+    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0 -or $uninstall.Count -gt 0 -or $accountName)) {
         $logonApps = @()
         if ($useApps) { $logonApps = $foundLogon.Apps }
         $logonScripts = @()
         if ($useScripts) { $logonScripts = $foundLogon.Scripts }
         $firstLogon = [pscustomobject]@{
-            AppsPath    = $foundLogon.AppsPath
-            Apps        = $logonApps
-            ScriptsPath = $foundLogon.ScriptsPath
-            Scripts     = $logonScripts
-            Wifi        = $wifiNames
-            WifiPath    = $hostWifiDir
-            Uninstall   = $uninstall
+            AppsPath     = $foundLogon.AppsPath
+            Apps         = $logonApps
+            ScriptsPath  = $foundLogon.ScriptsPath
+            Scripts      = $logonScripts
+            Wifi         = $wifiNames
+            WifiPath     = $hostWifiDir
+            Uninstall    = $uninstall
+            LocalAccount = $accountName
         }
     }
 
@@ -576,6 +592,7 @@ try {
             Region       = $(if ($useRegion) { $hostRegion } else { $null })
             Bypass       = [bool]$useBypass
             LocalAccount = [bool]$useLocalAccount
+            AccountName  = $accountName
         }
     }
 
@@ -763,7 +780,10 @@ try {
         Write-Info (Get-LunqText 'Main.PlanFirstLogon' (Format-FirstLogonSummary -FirstLogon $firstLogon))
     }
     else { Write-Info (Get-LunqText 'Main.PlanFirstLogonNone') }
-    if ($setupAnswers) { Write-Info (Get-LunqText 'Main.PlanUnattend' (Format-LunqUnattendSummary -Unattend $setupAnswers)) }
+    if ($setupAnswers) {
+        Write-Info (Get-LunqText 'Main.PlanUnattend' (Format-LunqUnattendSummary -Unattend $setupAnswers))
+        if ($accountName) { Write-Warning (Get-LunqText 'Main.AccountNoPassword' $accountName) }
+    }
     else { Write-Info (Get-LunqText 'Main.PlanUnattendNone') }
     $enabledCount = @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count
     Write-Info (Get-LunqText 'Main.PlanCategories' $enabledCount $lunqProfile.Categories.Count)
@@ -863,7 +883,7 @@ try {
             DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
             Apps = $recipeApps; HostApps = $HostApps; Scripts = $(if ($firstLogon) { $firstLogon.Scripts } else { @() }); HostWifi = ($wifiNames.Count -gt 0)
             SetupAnswers = [bool]$setupAnswers; BypassRequirements = $useBypass -and [bool]$setupAnswers; LocalAccount = $useLocalAccount -and [bool]$setupAnswers
-            BootCA2023 = $BootCA2023; SplitWim = $SplitWim
+            BootCA2023 = $BootCA2023; SplitWim = $SplitWim; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
         }
         Save-LunqRecipe -Recipe $newRecipe -Path $recipePath
         Write-LunqHtmlReport -Path $htmlPath -Results $results -LunqProfile $lunqProfile -StepTimes $state['StepTimes'] -Info @{

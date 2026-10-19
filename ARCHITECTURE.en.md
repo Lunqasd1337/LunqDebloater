@@ -49,13 +49,13 @@ Tests\                       Pester tests and stubs
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
-| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
+| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), splitting `install.wim` for FAT32 (`Split-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
 | `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
 | `Uninstall.ps1` | Programs from the profile's `Uninstall` field that DISM cannot remove from the image: the table of scripts from `ThirdParty` (`$script:LunqUninstallers`), running them on this Windows (`Remove-LunqPrograms`, restore through `Invoke-LunqUninstaller -Action Restore`) and putting them into the image with `Uninstall.json` for the first sign-in (`Copy-LunqUninstallers`) |
 | `Registry.ps1` | Offline registry hives, setting and deleting values and keys, the build stamp in `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
-| `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
+| `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account (with `-LocalAccountName` it is created in specialize, the group by SID) and its name check |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
 | `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
@@ -97,7 +97,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Updates | Installs updates in ascending KB order | there are updates |
 | Drivers | Adds drivers one `.inf` at a time | there are drivers |
 | Recovery | Services `Winre.wim` inside the system: updates, Safe OS DU, disk drivers | `-UpdatesToSetup` or `-DriversToSetup`, and there is something for WinRE |
-| FirstLogon | Puts programs, scripts, the uninstall scripts from `Uninstall` and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts or `Uninstall` in the enabled categories |
+| FirstLogon | Puts programs, scripts, the uninstall scripts from `Uninstall` and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts, `Uninstall` in the enabled categories or an account from `-LocalAccountName` (the first sign-in offers it a password) |
 | Unattend | Puts `autounattend.xml` into the ISO root | answer file is on |
 | Appx | Removes the profile's Appx | without `-SkipAppx` |
 | Capabilities | Removes capabilities | without `-SkipComponents` |

@@ -64,6 +64,14 @@ $texts = @{
         WifiAdded       = 'Добавлено сетей: {0}'
         WifiLater       = 'Сети, которые не добавились, будут добавлены при следующем входе.'
         AppTimeout      = 'Установка {0} не закончилась за {1} минут и прервана'
+        PasswordHeader  = '==> Пароль для {0}'
+        PasswordHint    = 'Учётная запись создана без пароля. Пока пароль не задан, войти может любой, кто сидит за компьютером.'
+        PasswordPrompt  = 'Новый пароль (Enter: оставить без пароля)'
+        PasswordRepeat  = 'Ещё раз'
+        PasswordSet     = 'Пароль задан.'
+        PasswordSkipped = 'Пароль не задан. Его можно задать в «Параметры → Учётные записи → Варианты входа».'
+        PasswordDiffer  = 'Пароли не совпали.'
+        PasswordFailed  = 'Не удалось задать пароль: {0}'
     }
     en = @{
         NoAdmin         = 'Initial setup skipped: administrator rights are required.'
@@ -101,6 +109,14 @@ $texts = @{
         WifiAdded       = 'Networks added: {0}'
         WifiLater       = 'Networks that were not added will be added at the next sign-in.'
         AppTimeout      = 'Installing {0} did not finish in {1} minutes and was stopped'
+        PasswordHeader  = '==> Password for {0}'
+        PasswordHint    = 'The account was created without a password. Until a password is set, anyone at the computer can sign in.'
+        PasswordPrompt  = 'New password (Enter: leave without a password)'
+        PasswordRepeat  = 'Once more'
+        PasswordSet     = 'The password is set.'
+        PasswordSkipped = 'No password set. You can set one in Settings > Accounts > Sign-in options.'
+        PasswordDiffer  = 'The passwords do not match.'
+        PasswordFailed  = 'Could not set the password: {0}'
     }
 }
 $language = ''
@@ -316,6 +332,36 @@ if (-not $task -and -not $lastAttempt) {
         $retryScheduled = $true
     }
     catch { Write-Line (Get-Text 'TaskFailed' $_.Exception.Message) 'Yellow' }
+}
+
+# Учётная запись из файла ответов создана без пароля: в ISO пароль не хранится. Задать его
+# предлагается один раз. Отметка удаляется после ответа, поэтому, если окно закрыли, вопрос
+# повторится при следующем входе: задание для него уже создано выше.
+$accountFile = Join-Path $root 'LocalAccount.txt'
+if (Test-Path -LiteralPath $accountFile) {
+    $account = ([string](Get-Content -LiteralPath $accountFile -TotalCount 1 -Encoding UTF8)).Trim()
+    Write-Host ''
+    Write-Host (Get-Text 'PasswordHeader' $account) -ForegroundColor Cyan
+    Write-Line (Get-Text 'PasswordHint') 'Yellow'
+    $passwordSet = $false
+    for ($try = 1; $try -le 3 -and -not $passwordSet; $try++) {
+        $first = Read-Host -AsSecureString ('    ' + (Get-Text 'PasswordPrompt'))
+        if (-not $first -or $first.Length -eq 0) { break }
+        $second = Read-Host -AsSecureString ('    ' + (Get-Text 'PasswordRepeat'))
+        # Сравнение без вывода пароля: NetworkCredential раскрывает SecureString только в памяти.
+        if ((New-Object Net.NetworkCredential('', $first)).Password -cne (New-Object Net.NetworkCredential('', $second)).Password) {
+            Write-Line (Get-Text 'PasswordDiffer') 'Yellow'
+            continue
+        }
+        # Set-LocalUser, а не net user: пароль не попадает в командную строку процесса.
+        try {
+            Set-LocalUser -Name $account -Password $first -ErrorAction Stop
+            $passwordSet = $true
+        }
+        catch { Write-Line (Get-Text 'PasswordFailed' $_.Exception.Message) 'Yellow' }
+    }
+    if ($passwordSet) { Write-Line (Get-Text 'PasswordSet') } else { Write-Line (Get-Text 'PasswordSkipped') 'Yellow' }
+    Remove-Item -LiteralPath $accountFile -Force -ErrorAction SilentlyContinue
 }
 
 # Без задания следующего входа не будет: эта попытка последняя, и откладывать ничего нельзя.

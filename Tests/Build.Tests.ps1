@@ -229,6 +229,29 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
     }
 
+    It '-LocalAccountName: учётная запись создаётся файлом ответов, пароль предложит первый вход' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; LocalAccountName = 'Иван' }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Установка:\s+файл ответов, .*локальная учётная запись Иван без пароля'
+        $run.Output | Should -Match 'Учётная запись Иван будет без пароля'
+        $xml = [xml](Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\autounattend.xml') -Raw -Encoding UTF8)
+        $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
+        @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns)[-1].Node.InnerText | Should -BeLike "*New-LocalUser -Name 'Иван'*"
+        # Программ и скриптов нет, а первый вход в образе есть: он спросит пароль.
+        (Select-Xml -Xml $xml -XPath '//u:FirstLogonCommands//u:CommandLine' -Namespace $ns).Node.InnerText | Should -BeLike '*FirstLogon.ps1*'
+        Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq\LocalAccount.txt') -Encoding UTF8 | Should -Be 'Иван'
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Unattend.LocalAccountName | Should -Be 'Иван'
+        $recipe.Unattend.LocalAccount | Should -BeTrue
+    }
+
+    It 'недопустимое имя учётной записи останавливает запуск сразу' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; LocalAccountName = 'a/b' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'недопустимые символы'
+        $run.Output | Should -Not -Match 'Шаг 1 из'
+    }
+
     It 'чужой autounattend.xml в ISO останавливает сборку до её начала' {
         $run = Start-TestBuild -Parameters @{ LocalAccount = $true } -Prepare {
             param($t)

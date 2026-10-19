@@ -128,6 +128,24 @@ function global:Add-AppxPackage { }
 $global:NetshLog = Join-Path $State 'netsh.log'
 $global:WifiFails = [bool]$WifiFails
 function global:netsh { Add-Content -LiteralPath $global:NetshLog -Value ($args -join ' '); if ($global:WifiFails) { $global:LASTEXITCODE = 1 } else { $global:LASTEXITCODE = 0 } }
+# Ответы на вопрос о пароле по строке из answers.txt, дальше пустой ответ (Enter). Set-LocalUser
+# пишет, кому и какой пароль задан бы был.
+$global:Answers = New-Object System.Collections.Generic.Queue[string]
+$answersFile = Join-Path $State 'answers.txt'
+if (Test-Path -LiteralPath $answersFile) { foreach ($a in @(Get-Content -LiteralPath $answersFile)) { $global:Answers.Enqueue($a) } }
+$global:SetUserLog = Join-Path $State 'setuser.log'
+function global:Read-Host {
+    param($Prompt, [switch]$AsSecureString)
+    $answer = if ($global:Answers.Count -gt 0) { $global:Answers.Dequeue() } else { '' }
+    Write-Host "$Prompt> [$($answer -replace '.', '*')]"
+    if (-not $answer) { return (New-Object Security.SecureString) }
+    return (ConvertTo-SecureString -String $answer -AsPlainText -Force)
+}
+function global:Set-LocalUser {
+    param($Name, $Password, $ErrorAction)
+    if ($Name -eq 'Сломан') { throw 'учётная запись не найдена' }
+    Add-Content -LiteralPath $global:SetUserLog -Value ('{0}|{1}' -f $Name, (New-Object Net.NetworkCredential('', $Password)).Password) -Encoding UTF8
+}
 & (Join-Path $Lunq 'FirstLogon.ps1')
 '@
         Set-Content -LiteralPath (Join-Path $root 'wrapper.ps1') -Value $wrapper -Encoding UTF8
@@ -271,6 +289,36 @@ Describe 'Скрипт первого входа' {
         $out = Invoke-FirstLogon -Test $t
         $out | Should -Match 'Установлено программ: 1'
         Test-Path -LiteralPath $t.Task | Should -BeFalse
+    }
+
+    It 'учётная запись без пароля: пароль спрашивается дважды и задаётся, вопрос больше не повторяется' {
+        $t = New-FirstLogonTest
+        [IO.File]::WriteAllText((Join-Path $t.Lunq 'LocalAccount.txt'), 'Иван', (New-Object Text.UTF8Encoding($false)))
+        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value @('секрет1', 'другой', 'секрет2', 'секрет2')
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Пароль для Иван'
+        $out | Should -Match 'Пароли не совпали'
+        $out | Should -Match 'Пароль задан'
+        $out | Should -Not -Match 'секрет'
+        Get-Lines (Join-Path $t.Root 'setuser.log') | Should -Be @('Иван|секрет2')
+        Test-Path -LiteralPath (Join-Path $t.Lunq 'LocalAccount.txt') | Should -BeFalse
+    }
+
+    It 'Enter вместо пароля оставляет учётную запись без пароля' {
+        $t = New-FirstLogonTest
+        [IO.File]::WriteAllText((Join-Path $t.Lunq 'LocalAccount.txt'), 'Иван', (New-Object Text.UTF8Encoding($false)))
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Пароль не задан'
+        Test-Path -LiteralPath (Join-Path $t.Root 'setuser.log') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $t.Lunq 'LocalAccount.txt') | Should -BeFalse
+    }
+
+    It 'без отметки пароль не спрашивается' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value 'секрет'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Not -Match 'Пароль для'
+        Test-Path -LiteralPath (Join-Path $t.Root 'setuser.log') | Should -BeFalse
     }
 
     It 'по-английски, если в Language.txt записано en' {

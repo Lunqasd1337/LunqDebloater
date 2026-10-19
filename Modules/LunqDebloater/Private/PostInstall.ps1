@@ -30,6 +30,8 @@ function Format-FirstLogonSummary {
     # Uninstall есть, только если его дали категории профиля.
     $uninstall = Get-ConfigList $FirstLogon 'Uninstall'
     if ($uninstall.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Uninstall' (($uninstall | ForEach-Object { Get-LunqUninstallTitle $_ }) -join ', ') }
+    $account = Get-LunqFirstLogonAccount $FirstLogon
+    if ($account) { $parts += Get-LunqText 'PostInstall.Password' $account }
     return ($parts -join ', ')
 }
 
@@ -38,6 +40,13 @@ function Get-LunqFirstLogonWifi {
     param([Parameter(Mandatory)]$FirstLogon)
     if (-not $FirstLogon.PSObject.Properties['Wifi'] -or -not $FirstLogon.Wifi) { return , @() }
     return , @($FirstLogon.Wifi)
+}
+
+function Get-LunqFirstLogonAccount {
+    # Учётная запись из файла ответов, которой первый вход предложит задать пароль, или пустая строка.
+    param([Parameter(Mandatory)]$FirstLogon)
+    if (-not $FirstLogon.PSObject.Properties['LocalAccount']) { return '' }
+    return [string]$FirstLogon.LocalAccount
 }
 
 # Команда первого входа: и в Sysprep\unattend.xml в образе, и в autounattend.xml в корне ISO.
@@ -129,6 +138,11 @@ function Install-LunqFirstLogon {
         # Программы из профиля, которые DISM из образа не удалит: их удаляет первый вход.
         Copy-LunqUninstallers -Destination (Join-Path $target 'Uninstall') -Names $uninstall
         if ($Restore) { foreach ($name in $uninstall) { Add-LunqRestoreItem -Restore $Restore -Kind Uninstall -Name $name } }
+    }
+    $account = Get-LunqFirstLogonAccount $FirstLogon
+    if ($account) {
+        # Отметка для первого входа: учётная запись создана без пароля, его нужно предложить задать.
+        [IO.File]::WriteAllText((Join-Path $target 'LocalAccount.txt'), $account, (New-Object Text.UTF8Encoding($false)))
     }
     Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
     # Скрипт первого входа работает без модуля, поэтому язык интерфейса ему передаётся файлом.

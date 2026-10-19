@@ -49,13 +49,13 @@ Tests\                       Тесты Pester и заглушки
 | `Options.ps1` | Сводка «Что войдёт в образ» в пошаговом режиме: поиск обновлений и драйверов (`Find-LunqBuildInputs`), пункты по найденному (`New-LunqContentOptions`), их зависимости, переключение по номеру, пункты-действия (`Invoke-LunqContentAction`) и окно выбора папки (`Select-LunqFolder`) |
 | `Iso.ps1` | Подключение ISO, список редакций, версия образа и проверка требований профиля, копирование содержимого ISO |
 | `Checks.ps1` | Проверки до сборки: рабочая папка, итоговый ISO, место на дисках, остатки прошлого запуска, версия Windows на компьютере |
-| `Image.ps1` | Экспорт редакции, пересжатие WIM (`Optimize-LunqWim`), очистка хранилища компонентов, поиск `oscdimg` и сборка ISO |
+| `Image.ps1` | Экспорт редакции, пересжатие WIM (`Optimize-LunqWim`), разделение `install.wim` для FAT32 (`Split-LunqWim`), очистка хранилища компонентов, поиск `oscdimg` и сборка ISO |
 | `Servicing.ps1` | Обновления и драйверы: в систему, в WinRE (`Update-LunqRecovery`) и в установщик (`Update-LunqSetup`), Safe OS и Setup Dynamic Update и их распознавание по содержимому `.cab` (`Split-LunqDynamicUpdates`), выгрузка драйверов этого компьютера (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Удаление Appx, компонентов (capabilities), отключение функций и удаление CBS-пакетов |
 | `Uninstall.ps1` | Программы из поля `Uninstall` профиля, которые DISM не удалит из образа: таблица скриптов из `ThirdParty` (`$script:LunqUninstallers`), их запуск на этой Windows (`Remove-LunqPrograms`, откат через `Invoke-LunqUninstaller -Action Restore`) и раскладка в образ с `Uninstall.json` для первого входа (`Copy-LunqUninstallers`) |
 | `Registry.ps1` | Офлайн-кусты реестра, запись и удаление значений и ключей, отметка о сборке в `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | Программы и скрипты первого входа: копирование в образ, `unattend.xml` в Sysprep |
-| `Unattend.ps1` | `autounattend.xml` в корне ISO: регион, обход требований, локальная учётная запись |
+| `Unattend.ps1` | `autounattend.xml` в корне ISO: регион, обход требований, локальная учётная запись (с `-LocalAccountName` она создаётся в specialize, группа по SID) и проверка её имени |
 | `Inventory.ps1` | Режим «Что в образе»: список Appx, компонентов и функций с пометками категорий профиля |
 | `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) и значения отметки о сборке |
 | `Report.ps1` | Общий формат результата шага (`New-LunqResult`) и итог сборки (`Write-LunqReport`) |
@@ -97,7 +97,7 @@ Tests\                       Тесты Pester и заглушки
 | Updates | Ставит обновления по возрастанию KB | есть обновления |
 | Drivers | Добавляет драйверы по одному `.inf` | есть драйверы |
 | Recovery | Обслуживает `Winre.wim` внутри системы: обновления, Safe OS DU, драйверы дисков | `-UpdatesToSetup` или `-DriversToSetup`, и есть что ставить в WinRE |
-| FirstLogon | Кладёт программы, скрипты, скрипты удаления из `Uninstall` и `FirstLogon.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы, скрипты или `Uninstall` во включённых категориях |
+| FirstLogon | Кладёт программы, скрипты, скрипты удаления из `Uninstall` и `FirstLogon.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы, скрипты, `Uninstall` во включённых категориях или учётная запись из `-LocalAccountName` (первый вход предложит ей пароль) |
 | Unattend | Кладёт `autounattend.xml` в корень ISO | файл ответов включён |
 | Appx | Удаляет Appx из профиля | без `-SkipAppx` |
 | Capabilities | Удаляет компоненты | без `-SkipComponents` |

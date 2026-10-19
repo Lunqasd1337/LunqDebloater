@@ -8,4 +8,5 @@
     'PostInstall.Added'          = 'Добавлено: {0}. Запустится при первом входе в Windows.'
     'PostInstall.Wifi'           = 'сетей Wi-Fi: {0}'
     'PostInstall.Uninstall'      = 'удаление: {0}'
+    'PostInstall.Password'       = 'пароль для {0}'
 }

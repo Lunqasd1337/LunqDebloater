@@ -31,6 +31,45 @@ function Get-LunqImageLanguage {
     return $null
 }
 
+# Имена, которые Windows уже занимает сама.
+$script:ReservedAccountNames = 'Administrator', 'Guest', 'DefaultAccount', 'WDAGUtilityAccount', 'defaultuser0', 'Администратор', 'Гость'
+
+function Test-LunqAccountName {
+    # Что не так с именем локальной учётной записи, или $null. Правила Windows: до 20 символов,
+    # без "/\[]:;|=,+*?<>@, не из одних точек и пробелов. Апостроф и % тоже запрещены: имя
+    # подставляется в команду PowerShell в файле ответов, а Setup раскрывает в ней переменные.
+    param([AllowEmptyString()][string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return Get-LunqText 'Unattend.NameEmpty' }
+    if ($Name.Length -gt 20) { return Get-LunqText 'Unattend.NameTooLong' $Name }
+    if ($Name -match '["/\\\[\]:;|=,+*?<>@''%]' -or $Name -match '[\x00-\x1F]') { return Get-LunqText 'Unattend.NameBadChars' $Name }
+    if ($Name -match '^[.\s]+$' -or $Name -ne $Name.Trim() -or $Name.EndsWith('.')) { return Get-LunqText 'Unattend.NameBadForm' $Name }
+    if ($script:ReservedAccountNames -contains $Name) { return Get-LunqText 'Unattend.NameReserved' $Name }
+    return $null
+}
+
+function Read-LunqAccountName {
+    # Имя учётной записи в пошаговом режиме. Enter берёт имя пользователя этого компьютера, «-»
+    # оставляет имя и пароль установке Windows, как без -LocalAccountName.
+    param([string]$Default)
+    if (-not $Default -or (Test-LunqAccountName -Name $Default)) { $Default = 'User' }
+    while ($true) {
+        $answer = ([string](Read-Host ('    ' + (Get-LunqText 'Unattend.AskName' $Default)))).Trim()
+        if (-not $answer) { return $Default }
+        if ($answer -eq '-') { return '' }
+        $problem = Test-LunqAccountName -Name $answer
+        if (-not $problem) { return $answer }
+        Write-Warning $problem
+    }
+}
+
+function Get-LunqUnattendAccount {
+    # Имя учётной записи, которую создаёт файл ответов, или пустая строка: тогда имя спросит OOBE.
+    # Свойства AccountName может не быть: файлы ответов до 1.13.0 его не знали.
+    param([Parameter(Mandatory)]$Unattend)
+    if (-not $Unattend.LocalAccount -or -not $Unattend.PSObject.Properties['AccountName']) { return '' }
+    return [string]$Unattend.AccountName
+}
+
 function Format-LunqUnattendSummary {
     # Одна строка о файле ответов для плана, итога и отметки о сборке.
     param([Parameter(Mandatory)]$Unattend)
@@ -38,9 +77,15 @@ function Format-LunqUnattendSummary {
     if ($Unattend.Oobe) { $parts += Get-LunqText 'Unattend.Oobe' }
     if ($Unattend.Region) { $parts += Get-LunqText 'Unattend.Region' $Unattend.Region.Locale $Unattend.Region.TimeZone }
     if ($Unattend.Bypass) { $parts += Get-LunqText 'Unattend.Bypass' }
-    if ($Unattend.LocalAccount) { $parts += Get-LunqText 'Unattend.LocalAccount' }
+    $account = Get-LunqUnattendAccount -Unattend $Unattend
+    if ($account) { $parts += Get-LunqText 'Unattend.LocalAccountNamed' $account }
+    elseif ($Unattend.LocalAccount) { $parts += Get-LunqText 'Unattend.LocalAccount' }
     return ($parts -join ', ')
 }
+
+# Создание учётной записи в specialize. {0}: имя, уже проверенное Test-LunqAccountName. Пароль не
+# истекает, как у учётной записи, созданной в OOBE: иначе через 42 дня Windows потребовала бы новый.
+$script:CreateAccountCommand = 'powershell.exe -NoProfile -Command "New-LocalUser -Name ''{0}'' -NoPassword -AccountNeverExpires | Set-LocalUser -PasswordNeverExpires $true; Add-LocalGroupMember -SID S-1-5-32-544 -Member ''{0}''"'
 
 function New-LunqUnattendXml {
     # autounattend.xml для корня ISO. Windows Setup находит его на флешке, применяет на всех этапах
@@ -52,6 +97,7 @@ function New-LunqUnattendXml {
         [string]$FirstLogonCommand
     )
     $e = { param($text) [Security.SecurityElement]::Escape([string]$text) }
+    $account = Get-LunqUnattendAccount -Unattend $Unattend
     $systemLocale = $null
     if ($Unattend.Region) {
         $systemLocale = $Unattend.Region.Locale
@@ -118,6 +164,16 @@ function New-LunqUnattendXml {
             $lines.Add('          <Order>1</Order>')
             $lines.Add('          <Path>reg.exe add &quot;HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE&quot; /v BypassNRO /t REG_DWORD /d 1 /f</Path>')
             $lines.Add('        </RunSynchronousCommand>')
+            if ($account) {
+                # Учётная запись создаётся здесь, от SYSTEM, а не через UserAccounts\LocalAccounts: там
+                # группа задаётся именем, а на русской Windows она называется «Администраторы», и с
+                # именем Administrators пользователь стал бы обычным. Здесь группа берётся по SID.
+                # Пароля нет: в ISO его не хранить, задать его предложит первый вход.
+                $lines.Add('        <RunSynchronousCommand wcm:action="add">')
+                $lines.Add('          <Order>2</Order>')
+                $lines.Add("          <Path>$(& $e ($script:CreateAccountCommand -f $account))</Path>")
+                $lines.Add('        </RunSynchronousCommand>')
+            }
             $lines.Add('      </RunSynchronous>')
             $lines.Add('    </component>')
         }
@@ -143,6 +199,8 @@ function New-LunqUnattendXml {
     }
     # Без учётной записи Майкрософт OOBE сразу предлагает создать локальную.
     $lines.Add("        <HideOnlineAccountScreens>$(([string][bool]$Unattend.LocalAccount).ToLower())</HideOnlineAccountScreens>")
+    # Учётная запись уже есть: экран создания локальной учётной записи не нужен.
+    if ($account) { $lines.Add('        <HideLocalAccountScreen>true</HideLocalAccountScreen>') }
     $lines.Add('      </OOBE>')
     if ($FirstLogonCommand) {
         foreach ($line in (Get-LunqFirstLogonCommandsXml -Command $FirstLogonCommand -Indent '      ')) { $lines.Add($line) }
