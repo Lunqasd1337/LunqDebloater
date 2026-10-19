@@ -61,6 +61,19 @@ function Remove-LunqTree {
     Remove-Item -LiteralPath $Path -Force
 }
 
+function Remove-LunqWorkDir {
+    # Удаляет рабочую папку после сборки. Файл-метка удаляется последним: если какой-то файл занят
+    # антивирусом или Проводником, папка с меткой остаётся своей, и следующий запуск её очистит.
+    # Возвращает $true, если папки больше нет.
+    param([Parameter(Mandatory)][string]$WorkDir)
+    foreach ($item in @(Get-ChildItem -LiteralPath $WorkDir -Force | Where-Object { $_.Name -ne $script:WorkDirMarker })) {
+        try { Remove-LunqTree -Path $item.FullName } catch { Write-Verbose $_.Exception.Message }
+    }
+    $left = @(Get-ChildItem -LiteralPath $WorkDir -Force | Where-Object { $_.Name -ne $script:WorkDirMarker })
+    if ($left.Count -eq 0) { Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+    return -not (Test-Path -LiteralPath $WorkDir)
+}
+
 function Initialize-LunqWorkDir {
     # Создаёт рабочую папку с файлом-меткой, по которой скрипт узнаёт свою папку.
     param([Parameter(Mandatory)][string]$WorkDir)

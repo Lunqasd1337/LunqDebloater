@@ -271,7 +271,7 @@ An ISO built with downloading can be rebuilt every month without you. In step-by
 .\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
 ```
 
-The task `LunqDebloater\<ISO name>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<ISO name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
+The task `LunqDebloater\<ISO name>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 

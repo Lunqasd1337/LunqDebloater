@@ -66,6 +66,7 @@
         'Read-LunqRestoreData',
         'Read-YesNo',
         'Register-LunqSchedule',
+        'Remove-LunqWorkDir',
         'Save-LunqCatalogUpdates',
         'Save-LunqRecipe',
         'Select-IsoFile',

@@ -262,4 +262,13 @@ Describe 'Get-LunqLatestRelease' {
         Mock Invoke-WebRequest { [pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [uri]'https://github.com/login' } } } -ParameterFilter { $Uri -like '*/releases/latest' }
         { Get-LunqLatestRelease } | Should -Throw '*403*'
     }
+
+    It 'окно из ярлыка (-Command без -NoExit) ждёт Enter после ошибки, открытая консоль нет' {
+        Test-LunqClosingWindow -CommandLine @('powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'irm x | iex') | Should -BeTrue
+        Test-LunqClosingWindow -CommandLine @('powershell.exe', '-c', 'irm x | iex') | Should -BeTrue
+        Test-LunqClosingWindow -CommandLine @('powershell.exe', '-NoExit', '-Command', 'irm x | iex') | Should -BeFalse
+        Test-LunqClosingWindow -CommandLine @('powershell.exe', '-NonInteractive', '-Command', 'irm x | iex') | Should -BeFalse
+        Test-LunqClosingWindow -CommandLine @('powershell.exe') | Should -BeFalse
+        Test-LunqClosingWindow -CommandLine @('powershell.exe', '-File', 'C:\x\Install.ps1') | Should -BeFalse
+    }
 }

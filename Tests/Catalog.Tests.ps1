@@ -142,10 +142,13 @@ Describe 'Save-LunqCatalogUpdates' {
             Mock Write-Warning { }
             $script:WebCalls = New-Object System.Collections.Generic.List[string]
             $script:BadHash = $false
+            $script:FailDownloads = 0
+            $script:DownloadRetrySeconds = 0
             # Каталог отвечает по виду запроса: поиск, окно скачивания или сам файл.
             Mock Invoke-LunqWebRequest {
                 $script:WebCalls.Add("$Method $Uri")
                 if ($OutFile) {
+                    if ($script:FailDownloads -gt 0) { $script:FailDownloads--; throw 'The connection was closed unexpectedly' }
                     $name = [IO.Path]::GetFileName(([uri]$Uri).AbsolutePath)
                     $content = "update $name"
                     if ($script:BadHash) { $content = 'broken' }
@@ -201,6 +204,35 @@ Describe 'Save-LunqCatalogUpdates' {
         }
         Test-Path -LiteralPath (Join-Path $dest 'windows11.0-kb5080000-x64.msu') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $dest 'readme.txt') | Should -BeTrue
+    }
+
+    It 'оборванная загрузка повторяется, после трёх неудач сборка останавливается' {
+        $dest = Join-Path $TestDrive 'cat-retry'
+        InModuleScope LunqDebloater -Parameters @{ Dest = $dest } {
+            param($Dest)
+            $script:FailDownloads = 2
+            $null = Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest
+            Test-Path -LiteralPath (Join-Path $Dest 'windows11.0-kb5090000-x64.msu') | Should -BeTrue
+            Should -Invoke Write-Warning -Times 2 -ParameterFilter { $Message -match 'попытка [23] из 3' }
+
+            $script:FailDownloads = 3
+            Remove-Item -LiteralPath (Join-Path $Dest 'windows11.0-kb5090000-x64.msu')
+            { Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest } | Should -Throw '*Не удалось скачать windows11.0-kb5090000-x64.msu*'
+            @(Get-ChildItem -LiteralPath $Dest -Filter '*.partial').Count | Should -Be 0
+        }
+    }
+
+    It 'Dynamic Update, которые в этот раз не искали, не удаляются' {
+        $dest = Join-Path $TestDrive 'cat-keep'
+        New-Item -ItemType Directory -Path (Join-Path $dest 'SafeOS'), (Join-Path $dest 'Setup') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dest 'SafeOS\windows11.0-kb5080002-x64.cab') -Value 'old'
+        Set-Content -LiteralPath (Join-Path $dest 'Setup\windows11.0-kb5080003-x64.cab') -Value 'old'
+        InModuleScope LunqDebloater -Parameters @{ Dest = $dest } {
+            param($Dest)
+            $null = Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest
+        }
+        Test-Path -LiteralPath (Join-Path $dest 'SafeOS\windows11.0-kb5080002-x64.cab') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $dest 'Setup\windows11.0-kb5080003-x64.cab') | Should -BeTrue
     }
 
     It 'файл с неверной суммой удаляется, сборка останавливается' {

@@ -25,17 +25,21 @@ function Dismount-OfflineHives {
     # DISM не сохранит и не отключит образ, и сборка потерялась бы на шаге сохранения.
     # Без -Strict только предупреждение: так вызывается при разборе уже случившейся ошибки.
     param([switch]$Strict)
+    # Антивирус или индексатор может держать куст десятки секунд. С -Strict на кону вся сборка,
+    # поэтому ожидание дольше: паузы растут до 10 секунд, всего около полутора минут на куст.
+    $attempts = 5
+    if ($Strict) { $attempts = 12 }
     $stuck = @()
     foreach ($hive in $script:HiveMap.Values) {
         # Код 1 значит, что куст не подключён: выгружать нечего.
         if ((Invoke-Native reg.exe @('query', $hive.Key) -SuccessCodes 0, 1) -ne 0) { continue }
 
         $unloaded = $false
-        for ($attempt = 1; $attempt -le 5 -and -not $unloaded; $attempt++) {
+        for ($attempt = 1; $attempt -le $attempts -and -not $unloaded; $attempt++) {
             [GC]::Collect()
             [GC]::WaitForPendingFinalizers()
             $unloaded = ((Invoke-Native reg.exe @('unload', $hive.Key)) -eq 0)
-            if (-not $unloaded) { Start-Sleep -Seconds 2 }
+            if (-not $unloaded -and $attempt -lt $attempts) { Start-Sleep -Seconds ([Math]::Min(2 * $attempt, 10)) }
         }
         if (-not $unloaded) {
             Write-Warning (Get-LunqText 'Registry.HiveUnloadFailed' $hive.Key)

@@ -176,6 +176,8 @@ function Get-LunqSignatureError {
 
 # Каталог Центра обновления: страницы поиска и окна скачивания строятся здесь же по запросу,
 # а скачанный файл содержит текст, контрольная сумма которого стоит в окне скачивания.
+# Повторы скачивания в тестах без ожидания.
+$script:DownloadRetrySeconds = 0
 function Invoke-LunqWebRequest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Uri, [string]$Method = 'Get', $Body, [string]$OutFile)

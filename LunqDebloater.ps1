@@ -162,6 +162,9 @@ if (-not $runLock) {
     Read-Host (Get-LunqText 'Main.PressEnter') | Out-Null
     return
 }
+# Если прошлый запуск убили до уборки в finally, пароли Wi-Fi остались бы во временной папке.
+# Другого запуска сейчас нет (блокировка взята), поэтому остатки можно удалить.
+if (Test-Path -LiteralPath $hostWifiDir) { Remove-Item -LiteralPath $hostWifiDir -Recurse -Force -ErrorAction SilentlyContinue }
 
 try {
     # Лог ведётся с самого начала: так в него попадают и ошибки при выборе ISO и проверке системы.
@@ -209,6 +212,8 @@ try {
             $ProfilePath = $recipeProfile.Path
             if ($recipeProfile.FromRecipe) { Write-Warning (Get-LunqText 'Main.RecipeProfileCopy') }
         }
+        # Пустой путь (рецепт правили вручную) дал бы непонятную ошибку привязки параметра.
+        if (-not $IsoPath) { throw (Get-LunqText 'Main.RecipeNoIso' $Recipe) }
         if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw (Get-LunqText 'Main.RecipeIsoMissing' $IsoPath) }
         if ((Get-Item -LiteralPath $IsoPath).Length -ne [long]$recipeData.Iso.Size) { Write-Warning (Get-LunqText 'Main.RecipeIsoChanged' $IsoPath) }
     }
@@ -898,7 +903,10 @@ finally {
     }
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
     elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
-        Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+        # Файл держит антивирус или Проводник: 10-20 ГБ остаются на диске, об этом нужно сказать.
+        try { $removed = Remove-LunqWorkDir -WorkDir $WorkDir }
+        catch { $removed = $false }
+        if (-not $removed) { Write-Warning (Get-LunqText 'Main.WorkDirNotRemoved' $WorkDir) }
     }
     # Сборка уже встроила драйверы в образ, а следующий запуск выгрузит их заново.
     foreach ($tempDir in @($hostDriversDir, $cabCheckDir, $hostWifiDir, $hostAppsDir, $recipeTempDir)) {

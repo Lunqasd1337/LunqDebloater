@@ -210,6 +210,17 @@ function Start-LunqDebloater {
     & $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Path 'LunqDebloater.ps1')
 }
 
+function Test-LunqClosingWindow {
+    # True when the window closes as soon as the loader ends: powershell.exe was started with -Command,
+    # for example from the desktop shortcut in the README, without -NoExit. An error there would flash
+    # and vanish. In an already open console the prompt stays, so there is nothing to wait for.
+    param([string[]]$CommandLine = [Environment]::GetCommandLineArgs())
+    $switches = @($CommandLine | Select-Object -Skip 1 | Where-Object { $_ -match '^[-/]' })
+    $command = @($switches | Where-Object { $_ -match '^[-/]c(o(m(m(a(n(d)?)?)?)?)?)?$' }).Count -gt 0
+    $stays = @($switches | Where-Object { $_ -match '^[-/](noe(x(i(t)?)?)?|noni(n(t(e(r(a(c(t(i(v(e)?)?)?)?)?)?)?)?)?)?)$' }).Count -gt 0
+    return $command -and -not $stays
+}
+
 function Invoke-LunqInstall {
     param([string]$Path)
     $ErrorActionPreference = 'Stop'
@@ -276,4 +287,7 @@ function Invoke-LunqInstall {
 }
 
 try { Invoke-LunqInstall -Path $Path }
-catch { Write-Host "LunqDebloater: $($_.Exception.Message)" -ForegroundColor Red }
+catch {
+    Write-Host "LunqDebloater: $($_.Exception.Message)" -ForegroundColor Red
+    if (Test-LunqClosingWindow) { Read-Host 'Press Enter to close this window' | Out-Null }
+}

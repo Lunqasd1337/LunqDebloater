@@ -293,6 +293,9 @@ function Invoke-Native {
     $ErrorActionPreference = 'Continue'
     try {
         $output = @()
+        # Если программа не запустилась (её заблокировал AppLocker или антивирус), а ошибка запуска не
+        # прервала вызов, $LASTEXITCODE остался бы от прошлой программы, часто 0, и сбой считался бы успехом.
+        $global:LASTEXITCODE = -1
         if ($ShowOutput) { & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host "    $_" } }
         else { $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { "$_" }) }
         $code = $LASTEXITCODE

@@ -6,6 +6,10 @@ $script:CatalogBase = 'https://www.catalog.update.microsoft.com'
 # Серверы, с которых каталог отдаёт файлы. Ссылка на любой другой адрес значит, что окно скачивания
 # подменено или изменилось, и такой файл не скачивается.
 $script:CatalogHosts = @('windowsupdate.com', 'delivery.mp.microsoft.com')
+# Сколько раз пробовать скачать файл и сколько секунд ждать между попытками: накопительное весит
+# 3-4 ГБ, и один обрыв сети не должен останавливать запуск по расписанию.
+$script:DownloadAttempts = 3
+$script:DownloadRetrySeconds = 15
 
 function Invoke-LunqWebRequest {
     # Запрос к сайту: текст ответа или файл (-OutFile). Обёртка, чтобы тесты могли её подменить.
@@ -241,28 +245,48 @@ function Save-LunqCatalogUpdates {
                 continue
             }
             Write-Info ('  ' + (Get-LunqText 'Catalog.Downloading' $file.Name))
-            # Сначала во временный файл: оборванная загрузка не выглядит готовым обновлением.
-            $partial = "$path.partial"
-            try { Invoke-LunqWebRequest -Uri $file.Url -OutFile $partial }
-            catch {
-                Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-                throw (Get-LunqText 'Catalog.DownloadFailed' $file.Name $_.Exception.Message)
-            }
-            if (-not (Test-LunqFileSha1 -Path $partial -Sha1 $file.Sha1)) {
-                Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-                throw (Get-LunqText 'Catalog.BadHash' $file.Name)
-            }
-            Move-Item -LiteralPath $partial -Destination $path -Force
+            Save-LunqCatalogFile -Url $file.Url -Path $path -Sha1 $file.Sha1
         }
     }
-    # Обновления прошлого месяца больше не нужны: накопительное включает всё предыдущее.
-    foreach ($folder in @($Destination, (Join-Path $Destination 'SafeOS'), (Join-Path $Destination 'Setup'))) {
+    # Обновления прошлого месяца больше не нужны: накопительное включает всё предыдущее. Убираются
+    # только папки того, что скачано сейчас: Dynamic Update, которые в этот раз не искали или не
+    # нашли, остаются от прошлого раза.
+    $folders = @($found | ForEach-Object { Get-LunqCatalogFolder -Root $Destination -Kind $_.Kind } | Select-Object -Unique)
+    foreach ($folder in $folders) {
         if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
         foreach ($old in @(Get-ChildItem -LiteralPath $folder -File | Where-Object { $_.Extension -in '.msu', '.cab', '.partial' -and $keep -notcontains $_.FullName })) {
             Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue
         }
     }
     return , $found.ToArray()
+}
+
+function Save-LunqCatalogFile {
+    # Скачивает файл с проверкой SHA-1 и повторами. Сначала во временный файл: оборванная
+    # загрузка не выглядит готовым обновлением. Неверная сумма тоже повод для повтора: файл
+    # мог прийти испорченным.
+    param([Parameter(Mandatory)][string]$Url, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Sha1)
+    $name = Split-Path $Path -Leaf
+    $partial = "$Path.partial"
+    for ($attempt = 1; $attempt -le $script:DownloadAttempts; $attempt++) {
+        $reason = $null
+        try {
+            Invoke-LunqWebRequest -Uri $Url -OutFile $partial
+            if (Test-LunqFileSha1 -Path $partial -Sha1 $Sha1) {
+                Move-Item -LiteralPath $partial -Destination $Path -Force
+                return
+            }
+        }
+        catch { $reason = $_.Exception.Message }
+        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+        if ($attempt -ge $script:DownloadAttempts) {
+            if ($reason) { throw (Get-LunqText 'Catalog.DownloadFailed' $name $reason) }
+            throw (Get-LunqText 'Catalog.BadHash' $name)
+        }
+        if (-not $reason) { $reason = Get-LunqText 'Catalog.RetryBadHash' }
+        Write-Warning (Get-LunqText 'Catalog.Retry' $name $reason ($attempt + 1) $script:DownloadAttempts)
+        Start-Sleep -Seconds $script:DownloadRetrySeconds
+    }
 }
 
 function Get-LunqCatalogRelease {

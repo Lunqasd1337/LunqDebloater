@@ -124,6 +124,11 @@ Describe 'Лог' {
             # Код из -SuccessCodes считается успехом: вывода нет.
             $ok = & { Invoke-Native $shell @('-NoProfile', '-Command', 'Write-Output quiet; exit 1') -SuccessCodes 0, 1 } 6>&1
             @($ok | Where-Object { $_ -isnot [int] }).Count | Should -Be 0
+            # Программа не запустилась: ошибка или код -1, но не 0 от прошлого удачного вызова.
+            Invoke-Native $shell @('-NoProfile', '-Command', 'exit 0') | Should -Be 0
+            $missing = Join-Path ([IO.Path]::GetTempPath()) 'lunq-missing\nothing.exe'
+            $result = try { Invoke-Native $missing @('/x') 6>$null } catch { 'error' }
+            $result | Should -BeIn @(-1, 'error')
         } $shell
     }
 
