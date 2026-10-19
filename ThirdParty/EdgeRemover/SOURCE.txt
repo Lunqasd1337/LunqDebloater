@@ -1,0 +1,16 @@
+﻿# Откуда взят EdgeRemover. При обновлении скачайте RemoveEdge.ps1 с нового тега, сохраните его
+# в UTF-8 с BOM и окончаниями строк Windows и обновите здесь версию, коммит и обе суммы.
+# Tests\Uninstall.Tests.ps1 сверяет файл с этими значениями.
+
+Проект:  https://github.com/he3als/EdgeRemover
+Автор:   he3als
+Лицензия: The Unlicense (общественное достояние), см. LICENSE
+
+Версия:  1.9.5
+Тег:     v1.9.5
+Коммит:  17220aca63d55d0d210d98004a504cbbcf25cb63 (2025-06-13)
+
+RemoveEdge.ps1 совпадает с файлом этого коммита, кроме BOM в начале и окончаний строк CRLF:
+без BOM Windows PowerShell 5.1 читает файл как ANSI.
+SHA256 исходного файла (без BOM, LF): ca33fe16a9c6baf54b27d18864928fcb62b41886164606bd8dc6cda008d4b168
+SHA256 файла здесь (BOM, CRLF):       9d2396fdf5992c473f3f503ac03850afe27c2582e41f6999868519f049d9b369

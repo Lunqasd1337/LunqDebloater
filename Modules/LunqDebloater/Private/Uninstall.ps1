@@ -3,9 +3,10 @@
 # входе (Install-LunqFirstLogon кладёт его в образ), на этой Windows (-Online) сразу. -Restore
 # ставит программу обратно тем же скриптом.
 $script:LunqUninstallers = [ordered]@{
-    # EdgeRemover от he3als (https://github.com/he3als/EdgeRemover), без изменений. Без параметров
-    # он открывает меню и ждёт клавишу, поэтому всегда запускается с -NonInteractive. WebView2 он
-    # не трогает: без него не работают многие программы.
+    # EdgeRemover от he3als (https://github.com/he3als/EdgeRemover), без изменений кода: версия, коммит
+    # и контрольные суммы в ThirdParty\EdgeRemover\SOURCE.txt. Без параметров он открывает меню и
+    # ждёт клавишу, поэтому всегда запускается с -NonInteractive. WebView2 он не трогает: без него
+    # не работают многие программы.
     MicrosoftEdge = @{
         Title   = 'Microsoft Edge'
         Script  = 'EdgeRemover\RemoveEdge.ps1'

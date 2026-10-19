@@ -77,3 +77,25 @@ Describe 'Copy-LunqUninstallers' {
         foreach ($argument in $used) { $names | Should -Contain $argument }
     }
 }
+
+Describe 'ThirdParty\EdgeRemover' {
+    It 'RemoveEdge.ps1 совпадает с версией из SOURCE.txt: тот же файл автора, только с BOM и CRLF' {
+        $dir = Join-Path (Split-Path $PSScriptRoot -Parent) 'ThirdParty\EdgeRemover'
+        $source = Get-Content -LiteralPath (Join-Path $dir 'SOURCE.txt') -Encoding UTF8
+        $field = { param($pattern) (@($source | Where-Object { $_ -match $pattern }) | Select-Object -First 1) -replace '^.*:\s*', '' }
+        $version = (& $field '^Версия:').Trim()
+        $upstreamHash = (& $field '^SHA256 исходного файла').Trim()
+        $version | Should -Match '^\d+\.\d+\.\d+$'
+        $script = Join-Path $dir 'RemoveEdge.ps1'
+        # Версия в самом скрипте та же, что записана в SOURCE.txt.
+        Select-String -LiteralPath $script -Pattern ("^\`$version = '" + [regex]::Escape($version) + "'") -Quiet | Should -BeTrue
+        # Сумма считается без BOM и с LF, как у файла в репозитории автора: так она не зависит от
+        # того, как git выписал окончания строк.
+        $bytes = [IO.File]::ReadAllBytes($script)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $bytes = $bytes[3..($bytes.Length - 1)] }
+        $text = (New-Object Text.UTF8Encoding($false)).GetString($bytes).Replace("`r`n", "`n")
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $hash = -join ($sha.ComputeHash((New-Object Text.UTF8Encoding($false)).GetBytes($text)) | ForEach-Object { $_.ToString('x2') })
+        $hash | Should -Be $upstreamHash
+    }
+}
