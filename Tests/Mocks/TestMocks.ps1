@@ -90,7 +90,18 @@ function Invoke-Native {
             return 0
         }
         'schtasks.exe' { if ($Arguments[0] -eq '/Delete' -and $env:LUNQ_TEST_NO_TASK) { return 1 }; return 0 }
-        'dism.exe' { if ($env:LUNQ_TEST_DISM_EXIT) { return [int]$env:LUNQ_TEST_DISM_EXIT }; return 0 }
+        'dism.exe' {
+            # Накопительные обновления одним вызовом: какие .msu лежат в папке рядом с целевым.
+            $package = @($Arguments | Where-Object { $_ -like '/PackagePath:*' }) -replace '^/PackagePath:', ''
+            if ($package) {
+                $folder = @(Get-ChildItem -LiteralPath (Split-Path $package -Parent) -File | Sort-Object Name | ForEach-Object { $_.Name }) -join ', '
+                Write-Host "    [mock] dism add package $(Split-Path $package -Leaf) from folder: $folder"
+                if ((Split-Path $package -Leaf) -match 'broken') { return 1 }
+                return 0
+            }
+            if ($env:LUNQ_TEST_DISM_EXIT) { return [int]$env:LUNQ_TEST_DISM_EXIT }
+            return 0
+        }
         '*oscdimg*' { Set-Content -LiteralPath $Arguments[-1] -Value ('i' * 2048); return 0 }
         default { return 0 }
     }

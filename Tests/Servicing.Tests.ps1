@@ -45,13 +45,13 @@ Describe 'Обновления и драйверы' {
     It 'пакет для другого образа (0x800f081e) пропускается, а не считается ошибкой' {
         $dir = Join-Path $TestDrive 'na'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        foreach ($name in 'windows11.0-kb1-x64.msu', 'windows11.0-kb2-x64_notapplicable.cab', 'windows11.0-kb3-x64-broken.msu') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        foreach ($name in 'windows11.0-kb1-x64.msu', 'windows11.0-kb2-x64_notapplicable.cab', 'windows11.0-kb3-x64-broken.cab') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
         $files = Get-LunqUpdateFiles -Path $dir
         $scratch = Join-Path $TestDrive 'scratch'
         $output = & { $script:r = & (Get-Module LunqDebloater) { param($d, $f, $s) Add-LunqUpdates -MountPath $d -Files $f -ScratchDir $s } $dir $files $scratch } *>&1 | Out-String
         $script:r.Done | Should -Be @('windows11.0-kb1-x64.msu')
         $script:r.Skipped | Should -Be @('windows11.0-kb2-x64_notapplicable.cab')
-        $script:r.Failed | Should -Be @('windows11.0-kb3-x64-broken.msu')
+        $script:r.Failed | Should -Be @('windows11.0-kb3-x64-broken.cab')
         $output | Should -Match 'windows11\.0-kb2-x64_notapplicable\.cab не подходит к этому образу, пропускаю'
         $output | Should -Match 'подпапку SafeOS или Setup'
         # Предупреждение командлета не дублирует сообщение скрипта.
@@ -59,6 +59,52 @@ Describe 'Обновления и драйверы' {
         $report = Write-LunqReport -Results @($script:r) 6>&1 | Out-String
         $report | Should -Match 'Обновления: установлено 1, ошибок 1'
         $report | Should -Match 'Не подходят к этому образу: windows11\.0-kb2-x64_notapplicable\.cab'
+    }
+
+    It 'контрольное и целевое накопительные обновления ставятся одним вызовом DISM из отдельной папки' {
+        # В 24H2 каталог отдаёт к накопительному обновлению ещё и контрольное KB5043080: отдельно
+        # оно не ставится («An error occurred applying the Unattend.xml file from the .msu package»).
+        $dir = Join-Path $TestDrive 'checkpoint'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $names = 'windows11.0-kb5043080-x64_953449672073f8fb99badb4cc6d5d7849b9c83e8.msu', 'windows11.0-kb5090000-x64_aabbccddeeff00112233445566778899aabbccdd.msu', 'windows11.0-kb5090001-x64-ndp481.msu'
+        foreach ($name in $names) { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        $files = Get-LunqUpdateFiles -Path $dir
+        $script:DismCalls = New-Object System.Collections.Generic.List[object]
+        Mock Invoke-Native -ModuleName LunqDebloater {
+            $package = (@($Arguments | Where-Object { $_ -like '/PackagePath:*' }) -replace '^/PackagePath:', '')[0]
+            $script:DismCalls.Add([pscustomobject]@{ Arguments = @($Arguments); Folder = @(Get-ChildItem -LiteralPath (Split-Path $package -Parent) | ForEach-Object { $_.Name } | Sort-Object) })
+            return 0
+        } -ParameterFilter { $FilePath -eq 'dism.exe' }
+        $work = Join-Path $TestDrive 'cpwork'
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $work 'scratch') } *>&1 | Out-String
+        $script:DismCalls.Count | Should -Be 1
+        $call = $script:DismCalls[0]
+        $call.Arguments | Should -Contain '/Add-Package'
+        @($call.Arguments | Where-Object { $_ -like '/PackagePath:*' })[0] | Should -Match 'kb5090000-x64_aabb.*\.msu$'
+        # В папке только накопительные обновления Windows, без .NET.
+        $call.Folder | Should -Be @($names[0], $names[1])
+        $script:r.Done | Should -Be @($names[0], $names[1], $names[2])
+        $output | Should -Match 'kb5043080.* ставится вместе с windows11\.0-kb5090000'
+        $output | Should -Match 'add package windows11\.0-kb5090001-x64-ndp481\.msu'
+        # Папка для DISM убрана, исходные файлы на месте.
+        Test-Path -LiteralPath (Join-Path $work 'cumulative') | Should -BeFalse
+        @(Get-ChildItem -LiteralPath $dir).Count | Should -Be 3
+    }
+
+    It 'DISM не поставил накопительные обновления: ошибка с кодом по каждому из них' {
+        $dir = Join-Path $TestDrive 'checkpoint2'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        foreach ($name in 'windows11.0-kb5043080-x64.msu', 'windows11.0-kb5090000-x64.msu') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        $files = Get-LunqUpdateFiles -Path $dir
+        Mock Invoke-Native -ModuleName LunqDebloater { return -2146498529 } -ParameterFilter { $FilePath -eq 'dism.exe' }
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $TestDrive 'cpwork2\scratch') } *>&1 | Out-String
+        $script:r.Failed | Should -Be @('windows11.0-kb5043080-x64.msu', 'windows11.0-kb5090000-x64.msu')
+        $output | Should -Match 'Не удалось установить windows11\.0-kb5090000-x64\.msu \(dism\.exe, код 0x800f081f\)'
+        # 0x800f081e: накопительные обновления не для этого образа, это не ошибка.
+        Mock Invoke-Native -ModuleName LunqDebloater { return -2146498530 } -ParameterFilter { $FilePath -eq 'dism.exe' }
+        $null = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $TestDrive 'cpwork3\scratch') } *>&1
+        $script:r.Skipped.Count | Should -Be 2
+        $script:r.Failed.Count | Should -Be 0
     }
 
     It 'Safe OS и Setup Dynamic Update узнаются по содержимому .cab' {

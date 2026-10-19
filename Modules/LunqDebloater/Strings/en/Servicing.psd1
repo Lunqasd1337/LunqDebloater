@@ -9,6 +9,8 @@
     'Servicing.UpdateFailed'        = 'Could not install {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} does not apply to this image, skipping.'
     'Servicing.DynamicUpdateHint'   = 'If it is a Safe OS or Setup Dynamic Update, put it in the SafeOS or Setup subfolder of the updates folder.'
+    'Servicing.CumulativeWith'      = '[{0}/{1}] {2} is installed together with {3}: DISM installs the cumulative updates in one step.'
+    'Servicing.CumulativeFailed'    = 'Could not install {0} (dism.exe, code {1}). See the DISM log for details.'
     'Servicing.CheckingCab'         = 'Checking what kind of update {0} is...'
     'Servicing.DriverFailed'        = 'Could not add {0}: {1}'
     'Servicing.Cleanup'             = 'Removing old file versions left after the updates...'

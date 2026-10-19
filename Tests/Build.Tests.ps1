@@ -424,7 +424,10 @@ Describe 'Пошаговый режим' {
         $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Обновления: 3 шт\.'
-        $run.Output | Should -Match 'add package windows11\.0-kb5080000-x64\.msu'
+        # Два накопительных обновления Windows ставятся одним вызовом DISM, .NET отдельно.
+        $run.Output | Should -Match 'windows11\.0-kb5079999-x64\.msu ставится вместе с windows11\.0-kb5080000-x64\.msu'
+        $run.Output | Should -Match 'dism add package windows11\.0-kb5080000-x64\.msu from folder: windows11\.0-kb5079999-x64\.msu, windows11\.0-kb5080000-x64\.msu\r?\n'
+        $run.Output | Should -Match 'add package windows11\.0-kb5080001-x64-ndp481\.msu'
     }
 
     It 'драйверы этого компьютера выгружаются и встраиваются' {

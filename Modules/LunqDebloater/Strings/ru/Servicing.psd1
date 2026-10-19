@@ -9,6 +9,8 @@
     'Servicing.UpdateFailed'        = 'Не удалось установить {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} не подходит к этому образу, пропускаю.'
     'Servicing.DynamicUpdateHint'   = 'Если это Safe OS или Setup Dynamic Update, положите его в подпапку SafeOS или Setup папки с обновлениями.'
+    'Servicing.CumulativeWith'      = '[{0}/{1}] {2} ставится вместе с {3}: DISM устанавливает накопительные обновления одним шагом.'
+    'Servicing.CumulativeFailed'    = 'Не удалось установить {0} (dism.exe, код {1}). Подробности в логе DISM.'
     'Servicing.CheckingCab'         = 'Проверяю, что за обновление {0}...'
     'Servicing.DriverFailed'        = 'Не удалось добавить {0}: {1}'
     'Servicing.Cleanup'             = 'Удаляю старые версии файлов после обновлений...'
