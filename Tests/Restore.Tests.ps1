@@ -69,6 +69,31 @@ Describe 'Запись данных для отката' {
         }
     }
 
+    It 'значение, которое пишут две категории, запоминается один раз: исходное, до первой из них' {
+        # Значения не было, news ставит 1, tools ставит 2. Откат должен удалить значение, а не вернуть 1.
+        $path = Join-Path $TestDrive 'r2b\Restore.json'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; P = $script:TestProfile } {
+            param($Path, $P)
+            $data = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreRegistry -Restore $data -Category 'news' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'V'; Action = 'DeleteValue' })
+            Add-LunqRestoreRegistry -Restore $data -Category 'tools' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'a'; Name = 'v'; Type = 'DWord'; Value = 1 })
+            Add-LunqRestoreRegistryKey -Restore $data -Category 'news' -Hive 'SOFTWARE' -Path 'K' -Export 'first'
+            Add-LunqRestoreRegistryKey -Restore $data -Category 'tools' -Hive 'SOFTWARE' -Path 'K' -Export 'second'
+            Save-LunqRestoreData -Restore $data -Path $Path
+            # Повторный -Online: то же значение под другой категорией тоже не добавляется.
+            $second = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreRegistry -Restore $second -Category 'tools' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'A'; Name = 'V'; Type = 'DWord'; Value = 2 })
+            Save-LunqRestoreData -Restore $second -Path $Path -Merge
+            $back = Read-LunqRestoreData -Path $Path
+            $news = @($back.Categories | Where-Object { $_.Id -eq 'news' })[0]
+            @($news.Registry).Count | Should -Be 1
+            $news.Registry[0].Action | Should -Be 'DeleteValue'
+            @($news.RegistryKeys).Count | Should -Be 1
+            $news.RegistryKeys[0].Export | Should -Be 'first'
+            @($back.Categories | Where-Object { $_.Id -eq 'tools' }).Count | Should -Be 0
+        }
+    }
+
     It 'файл пишется через временный, прошлая версия остаётся в .bak, а испорченный файл откладывается' {
         $dir = Join-Path $TestDrive 'r-atomic'
         $path = Join-Path $dir 'Restore.json'
@@ -128,6 +153,33 @@ Describe 'Запись данных для отката' {
         }
     }
 
+    It 'файл новой версии не читается, записи без нужных полей пропускаются, а не обрывают откат' {
+        $path = Join-Path $TestDrive 'r5.json'
+        Set-Content -LiteralPath $path -Encoding UTF8 -Value '{ "Kind": "LunqDebloaterRestore", "FormatVersion": 2, "LunqVersion": "9.0.0" }'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path } {
+            param($Path)
+            { Read-LunqRestoreData -Path $Path } | Should -Throw '*более новой версией LunqDebloater (9.0.0)*'
+        }
+        # Без Source, с записью без имени, реестром без пути, неизвестным кустом и категорией без Id.
+        Set-Content -LiteralPath $path -Encoding UTF8 -Value @'
+{ "Kind": "LunqDebloaterRestore", "FormatVersion": 1, "Categories": [
+  { "Id": "ads", "Name": "Ads",
+    "Appx": [ { "Name": "Microsoft.BingNews" }, { "PackageFamilyName": "x" }, "text" ],
+    "Registry": [ { "Hive": "SOFTWARE", "Path": "A", "Name": "B", "Action": "DeleteValue" }, { "Hive": "SOFTWARE", "Name": "C" }, { "Hive": "HKCR", "Path": "D" } ] },
+  { "Name": "NoId" } ] }
+'@
+        InModuleScope LunqDebloater -Parameters @{ Path = $path } {
+            param($Path)
+            Mock Write-Warning { }
+            $data = Read-LunqRestoreData -Path $Path
+            $data.Source | Should -Be 'Image'
+            @($data.Categories).Count | Should -Be 1
+            @($data.Categories[0].Appx | ForEach-Object { $_.Name }) | Should -Be @('Microsoft.BingNews')
+            @($data.Categories[0].Registry).Count | Should -Be 1
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -match 'пропущено записей без нужных полей: 5' }
+        }
+    }
+
     It 'кусты образа в .reg переводятся в кусты этой Windows' {
         InModuleScope LunqDebloater {
             $text = "[HKEY_LOCAL_MACHINE\LUNQ_SOFTWARE\Policies\X]`r`n[-HKEY_LOCAL_MACHINE\LUNQ_SYSTEM]`r`n[HKEY_LOCAL_MACHINE\LUNQ_NTUSER\Software\Y]`r`n`"Path`"=`"HKEY_LOCAL_MACHINE\\LUNQ_SOFTWARE`""
@@ -168,7 +220,7 @@ Describe 'Откат категории' {
         InModuleScope LunqDebloater {
             Mock Write-Info { }
             Mock Write-Warning { }
-            Mock Add-LunqAppxBack { if ($PackageFamilyName -like 'Gone*') { throw 'package files are gone' } }
+            Mock Add-LunqAppxBack { if ($PackageFamilyName -like 'Gone*') { throw 'package files are gone' }; $PackageFamilyName -notlike 'Mine*' }
             Mock Add-WindowsCapability { if ($Name -like 'Broken*') { throw 'source files not found' } }
             Mock Enable-WindowsOptionalFeature { }
             Mock Invoke-RegistryEntry { 'Applied' }
@@ -206,6 +258,17 @@ Describe 'Откат категории' {
         }
     }
 
+    It 'приложение вернулось только текущему пользователю: предупреждение со ссылкой на Store' {
+        InModuleScope LunqDebloater {
+            $category = New-LunqRestoreCategory -Id 'news' -Name 'News'
+            $category.Appx.Add([pscustomobject]@{ Name = 'Mine.App'; PackageFamilyName = 'Mine.App_8wekyb3d8bbwe' })
+            $r = Restore-LunqCategory -Category $category
+            @($r.Done) | Should -Be @('Mine.App')
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -match 'Mine\.App вернулось только вам.*PFN=Mine\.App_8wekyb3d8bbwe' }
+            $category.Appx.Count | Should -Be 0
+        }
+    }
+
     It 'значение профиля Default возвращается и текущему пользователю, если для него нет своего' {
         InModuleScope LunqDebloater {
             $category = New-LunqRestoreCategory -Id 'ads' -Name 'Реклама'
@@ -236,6 +299,39 @@ Describe 'Откат категории' {
             $r = Restore-LunqCategory -Category $category
             @($r.Failed) | Should -Be @('Microsoft Edge')
             $category.Uninstall.Count | Should -Be 1
+        }
+    }
+
+    It 'неизвестная этой версии программа не обрывает откат и остаётся в категории' {
+        InModuleScope LunqDebloater {
+            $category = New-LunqRestoreCategory -Id 'edge' -Name 'Edge'
+            $category.Uninstall.Add([pscustomobject]@{ Name = 'FutureBrowser' })
+            $category.Uninstall.Add([pscustomobject]@{ Name = 'MicrosoftEdge' })
+            Mock Invoke-LunqUninstaller { 0 }
+            $r = Restore-LunqCategory -Category $category
+            @($r.Failed) | Should -Be @('FutureBrowser')
+            @($r.Done) | Should -Be @('Microsoft Edge')
+            @($category.Uninstall | ForEach-Object { $_.Name }) | Should -Be @('FutureBrowser')
+            Should -Invoke Invoke-LunqUninstaller -Times 1 -Exactly
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -match 'FutureBrowser эта версия LunqDebloater вернуть не умеет' }
+        }
+    }
+
+    It 'ключ профиля Default из образа возвращается и текущему пользователю, а удалённый -Online нет' {
+        InModuleScope LunqDebloater {
+            $imageData = New-LunqRestoreData -LunqProfile ([pscustomobject]@{ Categories = @() }) -Source Image
+            Add-LunqRestoreRegistryKey -Restore $imageData -Category 'x' -Hive 'DefaultUser' -Path 'Software\Image' -Export 'image'
+            $onlineData = New-LunqRestoreData -LunqProfile ([pscustomobject]@{ Categories = @() }) -Source Online
+            Add-LunqRestoreRegistryKey -Restore $onlineData -Category 'x' -Hive 'DefaultUser' -Path 'Software\Online' -Export 'online'
+            Add-LunqRestoreRegistryKey -Restore $onlineData -Category 'x' -Hive 'SOFTWARE' -Path 'Policies\Z' -Export 'z'
+            $category = New-LunqRestoreCategory -Id 'x' -Name 'X'
+            foreach ($key in @($imageData.Categories[0].RegistryKeys) + @($onlineData.Categories[0].RegistryKeys)) { $category.RegistryKeys.Add($key) }
+            Mock ConvertTo-LunqImportText { $Text }
+            $null = Restore-LunqCategory -Category $category
+            # По одному импорту на ключ и ещё один в HKCU только для ключа из образа.
+            Should -Invoke Import-LunqRegistryText -Times 4 -Exactly
+            Should -Invoke ConvertTo-LunqImportText -Times 1 -Exactly -ParameterFilter { $ToCurrentUser -and $Text -eq 'image' }
+            Should -Invoke ConvertTo-LunqImportText -Times 0 -Exactly -ParameterFilter { $ToCurrentUser -and $Text -eq 'online' }
         }
     }
 

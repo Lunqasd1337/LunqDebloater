@@ -276,6 +276,17 @@ Describe 'Ошибки и предупреждения' {
         Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
     }
 
+    It 'мало места: без вопросов сборка не начинается, с -IgnoreSpace идёт' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare { $env:LUNQ_TEST_FREE_SPACE = [string](5GB) }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match '\[ !! \] Мало места на T:'
+        $run.Output | Should -Match 'Без вопросов сборка с нехваткой места не начинается'
+        Get-LunqStepNumbers -Output $run.Output | Should -BeNullOrEmpty
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; IgnoreSpace = $true } -Prepare { $env:LUNQ_TEST_FREE_SPACE = [string](5GB) }
+        $run.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
+    }
+
     It 'нет папки для итогового ISO: остановка до сборки' {
         $run = Start-TestBuild -Parameters @{ OutputIso = (Join-Path $TestDrive 'missing\out.iso') }
         $run.Error | Should -Not -BeNullOrEmpty
@@ -568,10 +579,17 @@ Describe 'Рецепт и отчёт' {
         try {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
             Remove-Item -LiteralPath $t.Iso -Force
-            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = (Join-Path $root 'Win11_Lunq.lunq.json'); WorkDir = $t.WorkDir; Force = $true }
+            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
+            # Рецепт без пути к ISO: понятная ошибка, а не ошибка привязки параметра.
+            $json = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $json.Iso.Path = ''
+            [IO.File]::WriteAllText($recipePath, ($json | ConvertTo-Json -Depth 30), (New-Object Text.UTF8Encoding($false)))
+            $empty = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
         $run.Output | Should -Match 'ISO из рецепта не найден: .*Укажите другой через -IsoPath'
+        $empty.Output | Should -Match 'нет пути к ISO\. Укажите ISO через -IsoPath'
     }
 
     It '-Schedule Monthly создаёт задание по рецепту, -Schedule Off удаляет его' {
@@ -583,7 +601,8 @@ Describe 'Рецепт и отчёт' {
             $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
             Remove-Item -LiteralPath $t.NativeLog -Force
             $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
-            $copy = Join-Path $root 'ProgramFiles\LunqDebloater-Schedule\Win11_Lunq'
+            $task = [regex]::Match([string]$on.Output, 'Задание LunqDebloater\\(Win11_Lunq-[0-9a-f]{8}) создано').Groups[1].Value
+            $copy = Join-Path $root ('ProgramFiles\LunqDebloater-Schedule\' + $task)
             $copied = @('LunqDebloater.ps1', 'Win11_Lunq.lunq.json', 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
                 Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
             $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
@@ -593,18 +612,21 @@ Describe 'Рецепт и отчёт' {
         }
         finally { Exit-LunqTestEnvironment }
         $on.Error | Should -BeNullOrEmpty
-        $on.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq создано: ISO будет пересобираться 15-го числа'
+        $on.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq-[0-9a-f]{8} создано: ISO будет пересобираться 15-го числа'
+        # Задание старого формата с именем без отпечатка удаляется.
+        $on.Output | Should -Match 'Удалено задание LunqDebloater\\Win11_Lunq старого формата'
         # Задание только создаётся: сборки в этом запуске нет.
         $on.Output | Should -Not -Match 'Шаг 1 из'
         $calls = @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'schtasks.exe|*' })
-        $calls[0] | Should -Match '^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\Win11_Lunq\|/XML\|'
+        $calls[0] | Should -Match ('^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\' + $task + '\|/XML\|')
         $calls[1] | Should -Match '^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\Win11_Lunq\|/F'
-        $off.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq удалено'
+        $calls[2] | Should -Match ('^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\' + $task + '\|/F')
+        $off.Output | Should -Match ('Задание LunqDebloater\\' + $task + ' удалено')
         # Задание запускает копию из закрытой папки, а -Schedule Off удаляет её вместе с заданием.
         @($copied).Count | Should -Be 4
         $on.Output | Should -Match 'Задание запускает копию LunqDebloater'
         Test-Path -LiteralPath $copy | Should -BeFalse
-        $none.Output | Should -Match 'Задания LunqDebloater\\Win11_Lunq нет, удалять нечего'
+        $none.Output | Should -Match ('Задания LunqDebloater\\' + $task + ' нет, удалять нечего')
         $noRecipe.Output | Should -Match '-Schedule работает только с -Recipe'
     }
 }
@@ -699,6 +721,7 @@ Describe 'Этот компьютер без ISO и откат' {
         # ISO не нужен: ни монтирования, ни сборки ISO.
         $online.Output | Should -Not -Match '\[mock\] mount'
         $online.Output | Should -Match 'Шаг 4 из 5\. Внесение настроек реестра'
+        $online.Output | Should -Not -Match 'Скрипт запущен от имени'
         $online.Output | Should -Match '-Restore'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry', 'ads')
         $saved.Source | Should -Be 'Online'
@@ -719,6 +742,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $t = New-LunqTestApp -Root $root
         Enter-LunqTestEnvironment -Test $t
         try {
+            # Скрипт запущен от имени администратора, а в Windows вошёл другой пользователь.
+            $env:LUNQ_TEST_CONSOLE_USER = 'PC\user'
             $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'edge'; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true; Force = $true }
             $saved = Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
@@ -727,6 +752,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $online.Error | Should -BeNullOrEmpty
         $online.Output | Should -Match 'Шаг 1 из 2\. Удаление программ'
         $online.Output | Should -Match 'Удаление программ: удалено 1, ошибок 0'
+        $online.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
+        $restore.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
         $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
         $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })

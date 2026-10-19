@@ -4,6 +4,10 @@
 
 function Test-Administrator { return -not $env:LUNQ_TEST_NOT_ADMIN }
 
+# Кто вошёл за экраном (LUNQ_TEST_CONSOLE_USER) и от чьего имени идёт скрипт.
+function Get-LunqConsoleUser { return [string]$env:LUNQ_TEST_CONSOLE_USER }
+function Get-LunqProcessUser { return 'PC\admin' }
+
 function Find-Oscdimg { [CmdletBinding()] param([string]$Path) return 'oscdimg.exe' }
 
 function Get-LunqHostBuild {
@@ -14,9 +18,10 @@ function Get-LunqHostBuild {
 function Get-LunqDriveInfo {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
-    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске.
+    # LUNQ_TEST_NETWORK_DRIVE: рабочая папка на подключённом сетевом диске, LUNQ_TEST_FREE_SPACE: свободно байт.
     $type = if ($env:LUNQ_TEST_NETWORK_DRIVE) { 'Network' } else { 'Fixed' }
-    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = [long]500GB }
+    $free = if ($env:LUNQ_TEST_FREE_SPACE) { [long]$env:LUNQ_TEST_FREE_SPACE } else { [long]500GB }
+    return [pscustomobject]@{ Name = 'T:\'; DriveType = $type; DriveFormat = 'NTFS'; AvailableFreeSpace = $free }
 }
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
@@ -70,6 +75,10 @@ function Invoke-Native {
                 $text = Get-Content -LiteralPath $Arguments[0] -Raw
                 if ($text -match 'safeos') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_SafeOSDU" />' }
                 elseif ($text -match 'rollup') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_RollupFix" />' }
+            }
+            # Файлы установщика есть только в Setup Dynamic Update.
+            if ($Arguments[1] -eq '-F:setup*.exe' -and (Get-Content -LiteralPath $Arguments[0] -Raw) -match 'setup') {
+                Set-Content -LiteralPath (Join-Path $Arguments[2] 'setupprep.exe') -Value 'exe'
             }
             return 0
         }
@@ -159,10 +168,20 @@ function Add-LunqAppxBack {
     param([Parameter(Mandatory)][string]$PackageFamilyName)
     if ($env:LUNQ_TEST_APPX_GONE) { throw 'package files not found' }
     Write-Host "    [mock] register $PackageFamilyName"
+    return $true
+}
+
+# Подпись Microsoft: у файлов-пустышек её нет, поэтому неподписанным считается только файл со словом unsigned.
+function Get-LunqSignatureError {
+    param([Parameter(Mandatory)][string]$Path)
+    if ((Get-Content -LiteralPath $Path -Raw) -match 'unsigned') { return 'NotSigned' }
+    return $null
 }
 
 # Каталог Центра обновления: страницы поиска и окна скачивания строятся здесь же по запросу,
 # а скачанный файл содержит текст, контрольная сумма которого стоит в окне скачивания.
+# Повторы скачивания в тестах без ожидания.
+$script:DownloadRetrySeconds = 0
 function Invoke-LunqWebRequest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Uri, [string]$Method = 'Get', $Body, [string]$OutFile)

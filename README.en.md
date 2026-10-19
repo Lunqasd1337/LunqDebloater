@@ -79,6 +79,7 @@ Or by hand:
 `irm ... | iex` downloads and runs [Install.ps1](Install.ps1), which you can read before running it. The loader:
 
 - finds the latest release on GitHub (not the current `main`) and puts it into `C:\Users\<name>\LunqDebloater`. A folder in the profile is used because the script runs from it as administrator, and files in the root of drive C: can be changed by other users of the computer too;
+- checks the release archive against the `SHA256SUMS` attached to the release before unpacking it. If the checksum does not match, nothing is changed. Releases before 1.12.0 have no such file, and for them the loader warns that the archive is not verified;
 - starts `LunqDebloater.ps1` in Windows PowerShell 5.1, even if the command was typed in PowerShell 7. The script asks for administrator rights itself.
 
 The same command updates the program. If the version is already the latest, the script just starts. On update the program folders are replaced as a whole. Files in `Config` that you changed stay, and the loader lists them. Your own files next to it (an ISO, `Logs`) are not touched. Without internet the version already downloaded starts.
@@ -140,6 +141,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
+| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run from a recipe or on schedule stops when space is short, and step-by-step mode asks |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
 | `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates every month") |
 | `-Recipe` | Repeat the build from the recipe `<ISO name>.lunq.json`. Parameters you pass win over the recipe (see "Build recipe and report") |
@@ -258,7 +260,7 @@ The script builds and changes nothing. It copies the edition to the working fold
 
 ## Fresh updates every month
 
-Instead of looking up the cumulative update in the catalog by hand, turn on "Download fresh updates from the Microsoft catalog" in the summary or add `-DownloadUpdates`. Once the edition is selected and its release (for example, 26H2) and architecture are known, the script finds the latest cumulative and .NET updates in the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), and together with updating Setup (`-UpdatesToSetup`, turned on automatically in step-by-step mode) also Safe OS and Setup Dynamic Update. Preview and server updates are skipped. The files are checked against the catalog checksum and kept in `Config\Updates\Catalog\<release>-<architecture>`: the next build does not download them again, and last month's updates are deleted. Updates from `Config\Updates` are added together with the downloaded ones.
+Instead of looking up the cumulative update in the catalog by hand, turn on "Download fresh updates from the Microsoft catalog" in the summary or add `-DownloadUpdates`. Once the edition is selected and its release (for example, 26H2) and architecture are known, the script finds the latest cumulative and .NET updates in the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), and together with updating Setup (`-UpdatesToSetup`, turned on automatically in step-by-step mode) also Safe OS and Setup Dynamic Update. Preview and server updates are skipped. The files are downloaded only from the Microsoft download servers, checked against the catalog checksum (a file without one is not downloaded) and kept in `Config\Updates\Catalog\<release>-<architecture>`: the next build does not download them again, and last month's updates are deleted. Updates from `Config\Updates` are added together with the downloaded ones. Setup Dynamic Update, downloaded or your own, is expanded into Setup only if it is signed by Microsoft.
 
 The catalog has no official API: the script reads the same page a browser shows. If Microsoft changes it, the script says that it found nothing, and the update can be downloaded by hand as before.
 
@@ -269,7 +271,7 @@ An ISO built with downloading can be rebuilt every month without you. In step-by
 .\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
 ```
 
-The task `LunqDebloater\<ISO name>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<ISO name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
+The task `LunqDebloater\<ISO name>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 
@@ -312,7 +314,7 @@ If the ISO is built to reinstall Windows on this same computer, the image can ta
 | Apps of this computer | `-HostApps` | Takes the app list with `winget export` and installs those apps at the first sign-in together with `Apps.txt`. Apps winget does not know are not in the list. `Config\Apps.txt` itself is not changed |
 | Wi-Fi networks of this computer | `-HostWifi` | Saves the Wi-Fi profiles (`netsh wlan export key=clear`) and adds them at the first sign-in, before the apps are installed |
 
-Wi-Fi passwords are stored in the ISO as plain text until Windows is installed and someone signs in: at the first sign-in the profiles are added and deleted from the disk right away. That is why this option is off by default, and such an ISO must not be given to anyone.
+Wi-Fi passwords are stored in the ISO as plain text until Windows is installed and someone signs in: at the first sign-in an added profile is deleted from the disk right away. A profile that could not be added (for example, the Wi-Fi driver is not installed yet) waits for the next sign-in in a folder only administrators can open and is deleted when the initial setup is finished. That is why this option is off by default, and such an ISO must not be given to anyone.
 
 ## Profile
 

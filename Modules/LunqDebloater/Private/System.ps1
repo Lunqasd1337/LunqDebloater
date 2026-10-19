@@ -1,4 +1,26 @@
-﻿function Test-Administrator {
+﻿function Get-LunqConsoleUser {
+    # Кто вошёл в Windows за этим экраном (DOMAIN\user). Пустая строка, если это не узнать
+    # (например, вход по RDP или WMI не отвечает).
+    try { return [string](Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).UserName }
+    catch { return '' }
+}
+
+function Get-LunqProcessUser {
+    # От чьего имени запущен скрипт (DOMAIN\user).
+    return [Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
+
+function Get-LunqOtherConsoleUser {
+    # Если скрипт запущен от другой учётной записи, чем вошедшая за экраном (в окне UAC ввели
+    # логин и пароль администратора), HKCU принадлежит администратору, и настройки «текущего
+    # пользователя» достанутся ему. Возвращает имя вошедшего пользователя или $null.
+    $console = Get-LunqConsoleUser
+    if (-not $console) { return $null }
+    if ($console -eq (Get-LunqProcessUser)) { return $null }
+    return $console
+}
+
+function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -293,6 +315,9 @@ function Invoke-Native {
     $ErrorActionPreference = 'Continue'
     try {
         $output = @()
+        # Если программа не запустилась (её заблокировал AppLocker или антивирус), а ошибка запуска не
+        # прервала вызов, $LASTEXITCODE остался бы от прошлой программы, часто 0, и сбой считался бы успехом.
+        $global:LASTEXITCODE = -1
         if ($ShowOutput) { & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host "    $_" } }
         else { $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { "$_" }) }
         $code = $LASTEXITCODE

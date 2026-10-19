@@ -30,6 +30,8 @@ function Test-LunqWorkDir {
         }
     }
     if ((Test-Path -LiteralPath $WorkDir -PathType Leaf)) { return (Get-LunqText 'Checks.WorkDirIsFile') }
+    # Ссылка (junction, symlink) вместо рабочей папки: создание и удаление пошли бы в папку, на которую она указывает.
+    if ((Test-Path -LiteralPath $WorkDir) -and (Test-LunqReparsePoint -Path $WorkDir)) { return (Get-LunqText 'Checks.WorkDirIsLink') }
     if ((Test-Path -LiteralPath $WorkDir) -and -not (Test-Path -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker))) {
         $items = @(Get-ChildItem -LiteralPath $WorkDir -Force)
         if ($IsDefault) { $items = @($items | Where-Object { $script:WorkDirItems -notcontains $_.Name }) }
@@ -38,6 +40,38 @@ function Test-LunqWorkDir {
         }
     }
     return $null
+}
+
+function Test-LunqReparsePoint {
+    # Ссылка ли это (junction, symlink, точка монтирования), а не обычный файл или папка.
+    param([Parameter(Mandatory)][string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force
+    return [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+}
+
+function Remove-LunqTree {
+    # Удаляет папку, не заходя в ссылки. Remove-Item -Recurse в Windows PowerShell 5.1 проходит
+    # по junction и удалил бы содержимое папки, на которую указывает ссылка. Такую ссылку в старой
+    # рабочей папке мог заранее оставить обычный пользователь, поэтому удаляется только сама ссылка.
+    param([Parameter(Mandatory)][string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer) { Remove-Item -LiteralPath $Path -Force; return }
+    if (Test-LunqReparsePoint -Path $Path) { [IO.Directory]::Delete($item.FullName, $false); return }
+    foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force)) { Remove-LunqTree -Path $child.FullName }
+    Remove-Item -LiteralPath $Path -Force
+}
+
+function Remove-LunqWorkDir {
+    # Удаляет рабочую папку после сборки. Файл-метка удаляется последним: если какой-то файл занят
+    # антивирусом или Проводником, папка с меткой остаётся своей, и следующий запуск её очистит.
+    # Возвращает $true, если папки больше нет.
+    param([Parameter(Mandatory)][string]$WorkDir)
+    foreach ($item in @(Get-ChildItem -LiteralPath $WorkDir -Force | Where-Object { $_.Name -ne $script:WorkDirMarker })) {
+        try { Remove-LunqTree -Path $item.FullName } catch { Write-Verbose $_.Exception.Message }
+    }
+    $left = @(Get-ChildItem -LiteralPath $WorkDir -Force | Where-Object { $_.Name -ne $script:WorkDirMarker })
+    if ($left.Count -eq 0) { Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+    return -not (Test-Path -LiteralPath $WorkDir)
 }
 
 function Initialize-LunqWorkDir {
@@ -86,7 +120,7 @@ function Reset-LunqWorkDir {
         Write-Info (Get-LunqText 'Checks.LeftoverMount' $leftover)
         Dismount-WindowsImage -Path $leftover -Discard | Out-Null
     }
-    if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
+    if (Test-Path -LiteralPath $WorkDir) { Remove-LunqTree -Path $WorkDir }
     Initialize-LunqWorkDir -WorkDir $WorkDir
 }
 
@@ -175,7 +209,7 @@ function Test-LunqPrerequisites {
         [string[]]$OwnMountPaths = @()
     )
 
-    $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0 }
+    $result = [pscustomobject]@{ Oscdimg = $null; Errors = 0; Warnings = 0; SpaceLow = $false }
 
     $workDirProblem = Test-LunqWorkDir -WorkDir $WorkDir -ProtectedPaths $ProtectedPaths -IsDefault:$DefaultWorkDir
     if ($workDirProblem) {
@@ -243,6 +277,7 @@ function Test-LunqPrerequisites {
     else {
         Write-Check Warn (Get-LunqText 'Checks.WorkSpaceLow' $workDrive.Name (Format-Size $workDrive.AvailableFreeSpace) (Format-Size $needWork)) (Get-LunqText 'Checks.WorkSpaceLowHint')
         $result.Warnings++
+        $result.SpaceLow = $true
     }
     if ($outDrive -and $workDrive.Name -ne $outDrive.Name) {
         if ($outDrive.AvailableFreeSpace -ge $needOut) {
@@ -251,6 +286,7 @@ function Test-LunqPrerequisites {
         else {
             Write-Check Warn (Get-LunqText 'Checks.OutputSpaceLow' $outDrive.Name (Format-Size $outDrive.AvailableFreeSpace) (Format-Size $needOut))
             $result.Warnings++
+            $result.SpaceLow = $true
         }
     }
 

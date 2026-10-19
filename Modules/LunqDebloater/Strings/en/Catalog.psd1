@@ -14,4 +14,8 @@
     'Catalog.Downloading'      = 'downloading {0}'
     'Catalog.DownloadFailed'   = 'Could not download {0}: {1}'
     'Catalog.BadHash'          = 'The downloaded file {0} does not match the catalog checksum and was deleted. Run the build again.'
+    'Catalog.Retry'            = 'Could not download {0} ({1}), attempt {2} of {3}'
+    'Catalog.RetryBadHash'     = 'the file did not match its checksum'
+    'Catalog.NoHash'           = 'The catalog has no checksum for {0}: the file cannot be verified and is not downloaded. Download the update manually into Config\Updates.'
+    'Catalog.BadUrl'           = 'The link to {0} does not lead to the Microsoft download servers ({1}), so the file is not downloaded. Download the update manually into Config\Updates.'
 }

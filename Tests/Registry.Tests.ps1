@@ -74,8 +74,9 @@ Describe 'Dismount-OfflineHives' {
             Mock Write-Warning { }
             { Dismount-OfflineHives } | Should -Not -Throw
             { Dismount-OfflineHives -Strict } | Should -Throw '*HKLM\LUNQ_SOFTWARE*сборка остановлена*'
-            # 3 куста по 5 попыток при каждом из двух вызовов.
-            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'unload' } -Times 30 -Exactly
+            # 3 куста по 5 попыток без -Strict и по 12 с ним: тогда на кону вся сборка.
+            Should -Invoke Invoke-Native -ParameterFilter { $Arguments[0] -eq 'unload' } -Times 51 -Exactly
+            Should -Invoke Start-Sleep -ParameterFilter { $Seconds -eq 10 } -Times 21 -Exactly
         }
     }
 

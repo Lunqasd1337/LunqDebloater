@@ -1,7 +1,11 @@
 ﻿# Строки Private\Restore.ps1.
 @{
     'Restore.NotRestoreFile' = '{0} не файл отката LunqDebloater.'
+    'Restore.NewerFormat'    = 'Файл отката {0} записан более новой версией LunqDebloater ({1}). Обновите скрипт.'
+    'Restore.BadItems'       = 'В файле отката {0} пропущено записей без нужных полей: {1}.'
+    'Restore.UnknownProgram' = 'Программу {0} эта версия LunqDebloater вернуть не умеет. Обновите скрипт.'
     'Restore.Appx'           = 'Возвращаю приложение {0}'
+    'Restore.AppxOnlyYou'    = 'Приложение {0} вернулось только вам: другим и новым пользователям его нужно поставить из Microsoft Store ({1}, вставьте в Win+R).'
     'Restore.Capability'     = 'Возвращаю компонент {0}'
     'Restore.Feature'        = 'Включаю компонент {0}'
     'Restore.Uninstall'      = 'Ставлю обратно {0} (нужен интернет)'

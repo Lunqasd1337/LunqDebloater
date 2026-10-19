@@ -137,6 +137,116 @@ Describe 'Set-LunqAdminOnlyAccess' {
     }
 }
 
+Describe 'Ссылки в рабочей папке' {
+    BeforeAll {
+        # Junction в Windows создаётся без прав администратора, symlink в Linux тоже.
+        $script:LinkType = if ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'Junction' } else { 'SymbolicLink' }
+    }
+
+    It 'ссылка вместо рабочей папки не годится' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive"; LinkType = $script:LinkType } {
+            param($Root, $LinkType)
+            $target = Join-Path $Root 'target-a'
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            $link = Join-Path $Root 'LinkWork'
+            New-Item -ItemType $LinkType -Path $link -Value $target | Out-Null
+            Test-LunqWorkDir -WorkDir $link -IsDefault | Should -Be 'это ссылка (junction или symlink) на другую папку'
+        }
+    }
+
+    It 'пересоздание рабочей папки удаляет ссылку внутри, но не то, на что она указывает' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive"; LinkType = $script:LinkType } {
+            param($Root, $LinkType)
+            Mock Get-WindowsImage { @() } -ParameterFilter { $Mounted }
+            Mock Dismount-OfflineHives { }
+            $target = Join-Path $Root 'target-b'
+            New-Item -ItemType Directory -Path (Join-Path $target 'Windows') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $target 'Windows\keep.txt') -Value 'x'
+            $work = Join-Path $Root 'OldWork'
+            New-Item -ItemType Directory -Path (Join-Path $work 'iso\sources') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $work 'iso\sources\install.wim') -Value 'x'
+            New-Item -ItemType $LinkType -Path (Join-Path $work 'iso\link') -Value $target | Out-Null
+            Test-LunqWorkDir -WorkDir $work -IsDefault | Should -BeNullOrEmpty
+
+            Reset-LunqWorkDir -WorkDir $work -MountPaths @(Join-Path $work 'mount')
+            Test-Path -LiteralPath (Join-Path $target 'Windows\keep.txt') | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $work 'iso') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $work '.lunqdebloater') | Should -BeTrue
+        }
+    }
+}
+
+Describe 'ISO, подключённый прошлым запуском' {
+    It 'ISO, который открыл пользователь, не отключается, а оставленный убитым запуском отключается' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Get-LunqIsoStateFile { Join-Path $Root 'iso-state\MountedIso.txt' }
+            Mock Dismount-DiskImage { }
+            $env:LUNQ_TEST_ISO_ATTACHED = '1'
+            try {
+                $iso = Mount-IsoImage -IsoPath 'D:\Win11.iso'
+                $iso.Root | Should -Be 'Q:\'
+                $iso.Owned | Should -BeFalse
+                Dismount-IsoImage -Iso $iso
+                Should -Invoke Dismount-DiskImage -Times 0 -Exactly -Scope It
+
+                # Прошлый запуск подключил ISO и был убит, не успев его отключить.
+                Set-LunqIsoOwned -IsoPath 'D:\Win11.iso'
+                $iso = Mount-IsoImage -IsoPath 'D:\Win11.iso'
+                $iso.Owned | Should -BeTrue
+                Dismount-IsoImage -Iso $iso
+                Should -Invoke Dismount-DiskImage -Times 1 -Exactly -Scope It
+                Test-LunqIsoOwned -IsoPath 'D:\Win11.iso' | Should -BeFalse
+            }
+            finally { Remove-Item Env:\LUNQ_TEST_ISO_ATTACHED -ErrorAction SilentlyContinue }
+
+            # ISO подключает сам скрипт: он попадает в список до отключения.
+            $iso = Mount-IsoImage -IsoPath 'D:\Other.iso'
+            $iso.Owned | Should -BeTrue
+            Test-LunqIsoOwned -IsoPath 'D:\Other.iso' | Should -BeTrue
+            Dismount-IsoImage -Iso $iso
+            Test-Path -LiteralPath (Join-Path $Root 'iso-state\MountedIso.txt') | Should -BeFalse
+        }
+    }
+}
+
+Describe 'Get-LunqOtherConsoleUser' {
+    It 'другой пользователь за экраном находится, тот же (в любом регистре) и неизвестный нет' {
+        InModuleScope LunqDebloater {
+            Mock Get-LunqProcessUser { 'PC\Admin' }
+            Mock Get-LunqConsoleUser { 'PC\User' }
+            Get-LunqOtherConsoleUser | Should -Be 'PC\User'
+            Mock Get-LunqConsoleUser { 'pc\admin' }
+            Get-LunqOtherConsoleUser | Should -BeNullOrEmpty
+            Mock Get-LunqConsoleUser { '' }
+            Get-LunqOtherConsoleUser | Should -BeNullOrEmpty
+        }
+    }
+}
+
+Describe 'Remove-LunqWorkDir' {
+    It 'удаляет папку целиком, а при занятом файле оставляет метку, и папка остаётся своей' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $work = Join-Path $Root 'DoneWork'
+            Initialize-LunqWorkDir -WorkDir $work
+            New-Item -ItemType Directory -Path (Join-Path $work 'iso\sources') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $work 'iso\sources\install.wim') -Value 'x'
+            Remove-LunqWorkDir -WorkDir $work | Should -BeTrue
+            Test-Path -LiteralPath $work | Should -BeFalse
+
+            # Файл занят: ошибка не обрывает уборку, метка остаётся, следующий запуск примет папку.
+            Initialize-LunqWorkDir -WorkDir $work
+            New-Item -ItemType Directory -Path (Join-Path $work 'iso'), (Join-Path $work 'mount') -Force | Out-Null
+            Mock Remove-LunqTree { throw 'The process cannot access the file' } -ParameterFilter { $Path -like '*iso' }
+            Remove-LunqWorkDir -WorkDir $work | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $work 'mount') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $work '.lunqdebloater') | Should -BeTrue
+            Test-LunqWorkDir -WorkDir $work | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Смонтированные образы' {
     It 'DISM не ответил: считается, что образ смонтирован, и рабочая папка не удаляется' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

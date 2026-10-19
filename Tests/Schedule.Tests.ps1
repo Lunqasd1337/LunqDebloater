@@ -16,8 +16,13 @@ AfterAll {
 Describe 'Описание задания' {
     It 'имя задания берётся из имени рецепта, без недопустимых знаков' {
         InModuleScope LunqDebloater {
-            Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq.lunq.json' | Should -Be 'LunqDebloater\Win11_Lunq'
-            Get-LunqScheduleName -RecipePath 'D:\ISO\a"b.lunq.json' | Should -Be 'LunqDebloater\a_b'
+            $name = Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq.lunq.json'
+            $name | Should -Match '^LunqDebloater\\Win11_Lunq-[0-9a-f]{8}$'
+            Get-LunqScheduleName -RecipePath 'D:\ISO\a"b.lunq.json' | Should -Match '^LunqDebloater\\a_b-[0-9a-f]{8}$'
+            # Регистр пути не важен, а тот же рецепт в другой папке получает своё задание.
+            Get-LunqScheduleName -RecipePath 'd:\iso\WIN11_Lunq.lunq.json' | Should -Be $name
+            Get-LunqScheduleName -RecipePath 'E:\Other\Win11_Lunq.lunq.json' | Should -Not -Be $name
+            Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq.lunq.json' -Legacy | Should -Be 'LunqDebloater\Win11_Lunq'
         }
     }
 
@@ -88,12 +93,13 @@ Describe 'Создание и удаление задания' {
             $start = Register-LunqSchedule -SourceRoot $App -ConfigPath (Join-Path $App 'Config') -RecipePath $Recipe
             $start.Day | Should -Be 15
             $call = $script:SchtasksCalls[0]
-            $call.Arguments[0..2] | Should -Be @('/Create', '/TN', 'LunqDebloater\Win11_Lunq')
+            $name = Get-LunqScheduleName -RecipePath $Recipe
+            $call.Arguments[0..2] | Should -Be @('/Create', '/TN', $name)
             $call.Arguments[-1] | Should -Be '/F'
             # schtasks читает описание задания только в UTF-16.
             $call.Bytes[0..1] | Should -Be @(0xFF, 0xFE)
             $xml = [Text.Encoding]::Unicode.GetString($call.Bytes)
-            $copy = Join-Path $TestDrive 'ProgramFiles\LunqDebloater-Schedule\Win11_Lunq'
+            $copy = Join-Path $TestDrive ('ProgramFiles\LunqDebloater-Schedule\' + ($name -replace '^LunqDebloater\\', ''))
             $xml | Should -Match ('-File &quot;' + [regex]::Escape((Join-Path $copy 'LunqDebloater.ps1')) + '&quot;')
             $xml | Should -Match ('-Recipe &quot;' + [regex]::Escape((Join-Path $copy 'Win11_Lunq.lunq.json')) + '&quot;')
             $xml | Should -Match ('-ConfigPath &quot;' + [regex]::Escape((Join-Path $copy 'Config')) + '&quot;')
@@ -107,8 +113,11 @@ Describe 'Создание и удаление задания' {
             # Обновления копия скачивает сама, а папка драйверов записана в рецепте.
             Test-Path -LiteralPath (Join-Path $copy 'Config\Updates') | Should -BeFalse
             Test-Path -LiteralPath (Join-Path $copy 'Config\Drivers') | Should -BeFalse
-            Should -Invoke Write-Check -ParameterFilter { $Message -match 'Задание LunqDebloater\\Win11_Lunq создано' }
+            Should -Invoke Write-Check -ParameterFilter { $Message -match 'Задание LunqDebloater\\Win11_Lunq-[0-9a-f]{8} создано' }
             Should -Invoke Write-Info -ParameterFilter { $Message -match 'Задание запускает копию LunqDebloater' }
+            # Задание старого формата с тем же именем удаляется: оно запускало папку программы.
+            $script:SchtasksCalls[1].Arguments | Should -Be @('/Delete', '/TN', 'LunqDebloater\Win11_Lunq', '/F')
+            Should -Invoke Write-Info -ParameterFilter { $Message -match 'Удалено задание LunqDebloater\\Win11_Lunq старого формата' }
 
             # Повторное создание заменяет копию целиком: файлы прошлой версии не остаются.
             Set-Content -LiteralPath (Join-Path $copy 'Modules\LunqDebloater\Old.ps1') -Value '# old'
@@ -135,11 +144,12 @@ Describe 'Создание и удаление задания' {
     It '-Schedule Off удаляет задание, а если его нет, только говорит об этом' {
         InModuleScope LunqDebloater {
             Unregister-LunqSchedule -RecipePath 'D:\Win11.lunq.json'
-            $script:SchtasksCalls[0].Arguments | Should -Be @('/Delete', '/TN', 'LunqDebloater\Win11', '/F')
+            $script:SchtasksCalls[0].Arguments | Should -Be @('/Delete', '/TN', (Get-LunqScheduleName -RecipePath 'D:\Win11.lunq.json'), '/F')
+            $script:SchtasksCalls[1].Arguments | Should -Be @('/Delete', '/TN', 'LunqDebloater\Win11', '/F')
             Should -Invoke Write-Check -Times 1 -ParameterFilter { $Message -match 'удалено' }
             $script:SchtasksCode = 1
             Unregister-LunqSchedule -RecipePath 'D:\Win11.lunq.json'
-            Should -Invoke Write-Info -Times 1 -ParameterFilter { $Message -match 'Задания LunqDebloater\\Win11 нет' }
+            Should -Invoke Write-Info -Times 1 -ParameterFilter { $Message -match 'Задания LunqDebloater\\Win11-[0-9a-f]{8} нет' }
         }
     }
 }

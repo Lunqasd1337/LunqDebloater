@@ -22,6 +22,8 @@ $maxAttempts = 5
 # Скрипт, который столько раз начинался и не дошёл до конца (перезагрузил компьютер или завершил
 # процесс), больше не запускается: иначе он повторялся бы при каждом входе.
 $maxStarts = 2
+# Столько секунд ждётся установка одной программы: зависший установщик не должен держать первый вход.
+$appTimeoutSeconds = 1800
 
 # Тексты на двух языках: скрипт работает в образе без модуля LunqDebloater и его таблиц строк.
 # Язык записан при сборке в Language.txt рядом со скриптом; без него берётся язык системы.
@@ -60,6 +62,8 @@ $texts = @{
         WifiHeader      = '==> Сети Wi-Fi ({0})'
         WifiFailed      = 'Не удалось добавить сеть {0} (код {1})'
         WifiAdded       = 'Добавлено сетей: {0}'
+        WifiLater       = 'Сети, которые не добавились, будут добавлены при следующем входе.'
+        AppTimeout      = 'Установка {0} не закончилась за {1} минут и прервана'
     }
     en = @{
         NoAdmin         = 'Initial setup skipped: administrator rights are required.'
@@ -95,6 +99,8 @@ $texts = @{
         WifiHeader      = '==> Wi-Fi networks ({0})'
         WifiFailed      = 'Could not add the network {0} (code {1})'
         WifiAdded       = 'Networks added: {0}'
+        WifiLater       = 'Networks that were not added will be added at the next sign-in.'
+        AppTimeout      = 'Installing {0} did not finish in {1} minutes and was stopped'
     }
 }
 $language = ''
@@ -191,7 +197,9 @@ Write-Host (Get-Text 'Header') -ForegroundColor Cyan
 Write-Line (Get-Text 'DoNotClose')
 
 # Сети Wi-Fi с компьютера, на котором собран образ: профили netsh с паролями открытым текстом.
-# Они добавляются первыми, чтобы для программ сразу был интернет, и тут же удаляются с диска.
+# Они добавляются первыми, чтобы для программ сразу был интернет. Добавленная сеть тут же удаляется
+# с диска. Не добавленная (например, драйвер Wi-Fi ещё не установлен) ждёт следующего входа в закрытой
+# папке, а когда задание больше не нужно, удаляется вместе с остальным.
 $wifiDir = Join-Path $root 'Wifi'
 if (Test-Path -LiteralPath $wifiDir) {
     Protect-Path $wifiDir
@@ -203,17 +211,50 @@ if (Test-Path -LiteralPath $wifiDir) {
         foreach ($wifiFile in $wifiFiles) {
             $global:LASTEXITCODE = 0
             & netsh wlan add profile "filename=$($wifiFile.FullName)" user=all *> $null
-            if ($LASTEXITCODE -eq 0) { $wifiAdded++ } else { Write-Line (Get-Text 'WifiFailed' $wifiFile.BaseName $LASTEXITCODE) 'Yellow' }
+            if ($LASTEXITCODE -eq 0) {
+                $wifiAdded++
+                Remove-Item -LiteralPath $wifiFile.FullName -Force -ErrorAction SilentlyContinue
+            }
+            else { Write-Line (Get-Text 'WifiFailed' $wifiFile.BaseName $LASTEXITCODE) 'Yellow' }
         }
         Write-Line (Get-Text 'WifiAdded' $wifiAdded)
+        if ($wifiAdded -lt $wifiFiles.Count) { Write-Line (Get-Text 'WifiLater') 'Yellow' }
     }
-    Remove-Item -LiteralPath $wifiDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (@(Get-ChildItem -LiteralPath $wifiDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+        Remove-Item -LiteralPath $wifiDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $attempt = 1
 if (Test-Path -LiteralPath $attemptsFile) { $attempt = [int](Get-Content -LiteralPath $attemptsFile -Raw) + 1 }
 Set-Content -LiteralPath $attemptsFile -Value $attempt
 $lastAttempt = $attempt -ge $maxAttempts
+
+function Invoke-Winget([string]$Winget, [string[]]$Arguments) {
+    # Запускает winget и возвращает код выхода или $null, если установка не закончилась за отведённое
+    # время. Вывод идёт через файл: в Windows PowerShell 5.1 транскрипт не пишет вывод внешних
+    # программ, а так он попадает и в окно, и в лог.
+    $out = Join-Path $root ('winget-' + [guid]::NewGuid().ToString('N') + '.txt')
+    # Start-Process в 5.1 не берёт аргументы в кавычки сам.
+    $line = @($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
+    $process = Start-Process -FilePath $Winget -ArgumentList $line -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+    # Без обращения к Handle Windows PowerShell 5.1 не отдаёт ExitCode после выхода.
+    $null = $process.Handle
+    $code = $null
+    if ($process.WaitForExit($appTimeoutSeconds * 1000)) { $code = $process.ExitCode }
+    else {
+        # Вместе с установщиком, который запустил winget. taskkill есть только в Windows.
+        try { & taskkill.exe /PID $process.Id /T /F *> $null } catch { $process.Kill() }
+        if (-not $process.HasExited) { try { $process.Kill() } catch { } }   # уже завершился сам
+    }
+    foreach ($file in $out, "$out.err") {
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        # Строки хода установки winget перезаписывает через возврат каретки: остаётся последняя.
+        Get-Content -LiteralPath $file -Encoding UTF8 | ForEach-Object { @($_ -split "`r")[-1] } | Where-Object { $_.Trim() } | Out-Host
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+    return $code
+}
 
 function Read-Lines([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
@@ -233,6 +274,7 @@ function Remove-Leftovers {
     Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $uninstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $wifiDir -Recurse -Force -ErrorAction SilentlyContinue
     # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
     # можно открыть без прав администратора.
     try {
@@ -300,21 +342,27 @@ if ($todo.Count -gt 0) {
         if (-not $online) { Write-Line (Get-Text 'NoInternet') 'Yellow' } else { Write-Line (Get-Text 'NoWinget') 'Yellow' }
     }
     else {
-        # 0x8A15002B: обновление не требуется, 0x8A150061: программа уже установлена.
-        $okCodes = @(0, -1978335189, -1978335135)
+        # 0x8A15002B: обновление не требуется, 0x8A150061: программа уже установлена,
+        # 0x8A150109: установлена, закончится после перезагрузки.
+        $okCodes = @(0, -1978335189, -1978335135, -1978334967)
         $i = 0
         foreach ($line in $todo) {
             $i++
             $parts = @($line -split '\s+')
             Write-Line ("[{0}/{1}] {2}" -f $i, $todo.Count, $parts[0])
             $arguments = @('install', '--id', $parts[0], '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity') + @($parts | Select-Object -Skip 1)
-            & $winget @arguments
-            if ($okCodes -contains $LASTEXITCODE) {
+            $code = Invoke-Winget $winget $arguments
+            if ($null -eq $code) {
+                Write-Line (Get-Text 'AppTimeout' $parts[0] ([int]($appTimeoutSeconds / 60))) 'Yellow'
+                $failed += $parts[0]
+                $appsPending = $true
+            }
+            elseif ($okCodes -contains $code) {
                 $installed += $parts[0]
                 Add-Content -LiteralPath $appsInstalledFile -Value $parts[0] -Encoding UTF8
             }
             else {
-                Write-Line (Get-Text 'AppFailed' $parts[0] $LASTEXITCODE) 'Yellow'
+                Write-Line (Get-Text 'AppFailed' $parts[0] $code) 'Yellow'
                 $failed += $parts[0]
                 $appsPending = $true
             }

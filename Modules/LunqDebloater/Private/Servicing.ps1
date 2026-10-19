@@ -44,9 +44,10 @@ function Get-LunqCabKind {
     # Что за .cab лежит рядом с обычными обновлениями, если папку выбрали целиком (например,
     # «Загрузки») и подпапок SafeOS и Setup в ней нет. Обновления Windows Каталог отдаёт в .msu,
     # а .cab с номером KB обычно оказывается Dynamic Update:
-    #   Setup: просто файлы установщика, пакета DISM (.mum) в нём нет;
+    #   Setup: файлы установщика (setupprep.exe, setuphost.exe), пакета DISM (.mum) в нём нет;
     #   SafeOS: пакет Package_for_SafeOSDU, он ставится только в WinRE.
-    # Возвращает 'Setup', 'SafeOS' или 'Update': обычный пакет и всё, что распознать не удалось.
+    # Возвращает 'Setup', 'SafeOS', 'Update' (пакет DISM или не архив CAB) или 'Unknown': архив
+    # без пакета и без файлов установщика, например драйвер. Такой нельзя распаковывать в sources.
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$TempDir)
 
     $stream = [IO.File]::OpenRead($Path)
@@ -64,7 +65,13 @@ function Get-LunqCabKind {
         $code = Invoke-Native expand.exe @($Path, '-F:*.mum', $dir)
         if ($code -ne 0) { return 'Update' }
         $manifests = @(Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*.mum')
-        if ($manifests.Count -eq 0) { return 'Setup' }
+        if ($manifests.Count -eq 0) {
+            $code = Invoke-Native expand.exe @($Path, '-F:setup*.exe', $dir)
+            if ($code -ne 0) { return 'Unknown' }
+            $setupFiles = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { @('setupprep.exe', 'setuphost.exe') -contains $_.Name.ToLowerInvariant() })
+            if ($setupFiles.Count -gt 0) { return 'Setup' }
+            return 'Unknown'
+        }
         foreach ($manifest in $manifests) {
             if (Select-String -LiteralPath $manifest.FullName -Pattern 'Package_for_SafeOSDU' -SimpleMatch -Quiet) { return 'SafeOS' }
         }
@@ -78,7 +85,7 @@ function Split-LunqDynamicUpdates {
     # Проверяются только .cab. Cache (путь, размер и время файла) избавляет от повторной
     # распаковки, когда сводка показывается снова.
     param($Files, [Parameter(Mandatory)][string]$TempDir, [hashtable]$Cache = @{})
-    $result = [pscustomobject]@{ Updates = @(); SafeOS = @(); Setup = @() }
+    $result = [pscustomobject]@{ Updates = @(); SafeOS = @(); Setup = @(); Unknown = @() }
     foreach ($file in @($Files)) {
         $kind = 'Update'
         if ($file.Extension -eq '.cab') {
@@ -87,12 +94,15 @@ function Split-LunqDynamicUpdates {
                 # Большой .cab проверяется несколько секунд, без строки это выглядело бы как зависание.
                 Write-Info (Get-LunqText 'Servicing.CheckingCab' $file.Name)
                 $Cache[$key] = Get-LunqCabKind -Path $file.FullName -TempDir $TempDir
+                # Один раз, при проверке: сводка показывается заново после каждого действия.
+                if ($Cache[$key] -eq 'Unknown') { Write-Warning (Get-LunqText 'Servicing.UnknownCab' $file.Name) }
             }
             $kind = $Cache[$key]
         }
         switch ($kind) {
             'SafeOS' { $result.SafeOS += $file }
             'Setup' { $result.Setup += $file }
+            'Unknown' { $result.Unknown += $file }
             default { $result.Updates += $file }
         }
     }
@@ -415,6 +425,18 @@ function Copy-LunqBootManager {
     return $result
 }
 
+function Get-LunqSignatureError {
+    # Что не так с подписью Microsoft на файле, или $null, если она в порядке. expand.exe ничего не
+    # проверяет, а файлы Setup Dynamic Update выполняются при установке Windows. Пакеты .msu и .cab,
+    # которые ставит DISM, он проверяет сам.
+    param([Parameter(Mandatory)][string]$Path)
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne 'Valid') { return [string]$signature.Status }
+    $subject = [string]$signature.SignerCertificate.Subject
+    if ($subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') { return $subject }
+    return $null
+}
+
 function Add-LunqSetupDynamicUpdate {
     # Setup Dynamic Update: .cab, который распаковывается в sources ISO поверх файлов установщика.
     param([Parameter(Mandatory)][string]$IsoRoot, [Parameter(Mandatory)]$Files)
@@ -425,6 +447,12 @@ function Add-LunqSetupDynamicUpdate {
     foreach ($file in $Files) {
         $i++
         Write-Info (Get-LunqText 'Servicing.Expanding' $i $Files.Count $file.Name (Format-Size $file.Length))
+        $signatureError = Get-LunqSignatureError -Path $file.FullName
+        if ($signatureError) {
+            Write-Warning (Get-LunqText 'Servicing.NotSigned' $file.Name $signatureError)
+            $result.Failed.Add($file.Name)
+            continue
+        }
         $code = Invoke-Native expand.exe @($file.FullName, '-F:*', $sources)
         if ($code -eq 0) { $result.Done.Add($file.Name) }
         else {

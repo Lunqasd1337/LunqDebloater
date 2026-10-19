@@ -6,13 +6,33 @@
 # рядом с ISO: там их может поменять любая программа пользователя и так получить права SYSTEM.
 
 function Get-LunqScheduleName {
-    # Имя задания по имени рецепта: у каждого собираемого ISO своё задание в папке LunqDebloater.
-    param([Parameter(Mandatory)][string]$RecipePath)
+    # Имя задания: имя рецепта и короткий отпечаток его полного пути, у каждого собираемого ISO своё
+    # задание в папке LunqDebloater. Одного имени мало: рецепты Win11 из двух папок затирали бы задание
+    # и копию друг друга. -Legacy: имя без отпечатка, так задания назывались до 1.12.0.
+    param([Parameter(Mandatory)][string]$RecipePath, [switch]$Legacy)
     # Имя файла вырезается сразу по обоим разделителям: путь бывает и с / .
     $name = ($RecipePath -split '[\\/]')[-1] -replace '\.lunq\.json$', ''
     # Имя задания не может содержать \ / : * ? " < > |.
     $name = $name -replace '[\\/:*?"<>|]', '_'
-    return "LunqDebloater\$name"
+    if ($Legacy) { return "LunqDebloater\$name" }
+    # Пути в Windows не различают регистр, поэтому отпечаток считается от пути в нижнем регистре.
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($RecipePath.ToLowerInvariant())) }
+    finally { $sha.Dispose() }
+    $id = -join @($hash[0..3] | ForEach-Object { $_.ToString('x2') })
+    return "LunqDebloater\$name-$id"
+}
+
+function Remove-LunqLegacySchedule {
+    # Задание до 1.12.0 называлось только по имени рецепта и запускало папку программы, которую может
+    # менять пользователь. Оно удаляется: иначе осталось бы рядом с новым и запускалось бы от SYSTEM.
+    # Если это было задание другого рецепта с тем же именем, его создают заново по сообщению.
+    param([Parameter(Mandatory)][string]$RecipePath)
+    $legacy = Get-LunqScheduleName -RecipePath $RecipePath -Legacy
+    $code = Invoke-Native -FilePath 'schtasks.exe' -Arguments @('/Delete', '/TN', $legacy, '/F') -SuccessCodes 0, 1
+    if ($code -ne 0) { return $false }
+    Write-Info (Get-LunqText 'Schedule.LegacyRemoved' $legacy)
+    return $true
 }
 
 function Get-LunqScheduleRoot {
@@ -150,6 +170,7 @@ function Register-LunqSchedule {
     finally { Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue }
     Write-Check Ok (Get-LunqText 'Schedule.Created' $name ($task.Start.ToString('yyyy-MM-dd HH:mm')))
     Write-Info (Get-LunqText 'Schedule.Copy' $copy.Dir)
+    $null = Remove-LunqLegacySchedule -RecipePath $RecipePath
     return $task.Start
 }
 
@@ -158,8 +179,9 @@ function Unregister-LunqSchedule {
     param([Parameter(Mandatory)][string]$RecipePath)
     $name = Get-LunqScheduleName -RecipePath $RecipePath
     $code = Invoke-Native -FilePath 'schtasks.exe' -Arguments @('/Delete', '/TN', $name, '/F')
+    $legacy = Remove-LunqLegacySchedule -RecipePath $RecipePath
     if ($code -eq 0) { Write-Check Ok (Get-LunqText 'Schedule.Removed' $name) }
-    else { Write-Info (Get-LunqText 'Schedule.NotFound' $name) }
+    elseif (-not $legacy) { Write-Info (Get-LunqText 'Schedule.NotFound' $name) }
     $dir = Get-LunqScheduleDir -RecipePath $RecipePath
     if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
 }

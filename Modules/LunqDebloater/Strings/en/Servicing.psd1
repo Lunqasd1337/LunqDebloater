@@ -22,6 +22,8 @@
     'Servicing.SetupDUTitle'        = 'Setup Dynamic Update'
     'Servicing.Expanding'           = '[{0}/{1}] Expanding {2} ({3}) into sources...'
     'Servicing.ExpandFailed'        = 'Could not expand {0}: expand.exe returned code {1}'
+    'Servicing.UnknownCab'          = '{0} looks like neither an update nor a Dynamic Update (for example, it is a driver), so it is not added. Put drivers unpacked into Config\Drivers.'
+    'Servicing.NotSigned'           = '{0} is not signed by Microsoft ({1}), so it is not expanded into the installer.'
     'Servicing.SetupFilesTitle'     = 'Setup files'
     'Servicing.SetupFilesDone'      = '{0} copied from boot.wim to sources'
     'Servicing.SetupFileFailed'     = 'Could not copy {0} from boot.wim to sources: {1}'

@@ -1,13 +1,44 @@
-﻿function Mount-IsoImage {
+﻿function Get-LunqIsoStateFile {
+    # Список ISO, которые подключил сам скрипт. Если запуск убили, пока ISO был подключён, следующий
+    # запуск узнает его по этому списку и отключит, а не примет за открытый пользователем.
+    return (Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\MountedIso.txt')
+}
+
+function Set-LunqIsoOwned {
+    # Добавляет ISO в список подключённых скриптом или убирает из него.
+    param([Parameter(Mandatory)][string]$IsoPath, [switch]$Remove)
+    $file = Get-LunqIsoStateFile
+    $list = @()
+    if (Test-Path -LiteralPath $file -PathType Leaf) { $list = @(Get-Content -LiteralPath $file | Where-Object { $_ -and $_ -ne $IsoPath }) }
+    if (-not $Remove) { $list += $IsoPath }
+    if ($list.Count -eq 0) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue; return }
+    New-Item -ItemType Directory -Path (Split-Path $file -Parent) -Force | Out-Null
+    Set-Content -LiteralPath $file -Value $list -Encoding UTF8
+}
+
+function Test-LunqIsoOwned {
+    # Подключал ли этот ISO сам скрипт (в том числе запуск, который не успел его отключить).
+    param([Parameter(Mandatory)][string]$IsoPath)
+    $file = Get-LunqIsoStateFile
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+    return (@(Get-Content -LiteralPath $file) -contains $IsoPath)
+}
+
+function Mount-IsoImage {
     # Подключает ISO и возвращает его корень (Root, например "E:\"). Если ISO уже подключён,
     # например открыт в Проводнике, берётся его буква, и Dismount-IsoImage его не отключит.
+    # Исключение: ISO, который подключил прошлый запуск и не отключил, потому что его убили.
     param([Parameter(Mandatory)][string]$IsoPath)
 
     $attached = $false
     try { $attached = [bool](Get-DiskImage -ImagePath $IsoPath -ErrorAction Stop).Attached } catch { $attached = $false }
     if ($attached) { $image = Get-DiskImage -ImagePath $IsoPath }
-    else { $image = Mount-DiskImage -ImagePath $IsoPath -PassThru }
-    $iso = [pscustomobject]@{ IsoPath = $IsoPath; Root = $null; Owned = -not $attached }
+    else {
+        $image = Mount-DiskImage -ImagePath $IsoPath -PassThru
+        Set-LunqIsoOwned -IsoPath $IsoPath
+    }
+    $owned = (-not $attached) -or (Test-LunqIsoOwned -IsoPath $IsoPath)
+    $iso = [pscustomobject]@{ IsoPath = $IsoPath; Root = $null; Owned = $owned }
     # Буква диска иногда назначается с задержкой.
     for ($attempt = 1; $attempt -le 10; $attempt++) {
         $volume = $image | Get-Volume -ErrorAction SilentlyContinue
@@ -24,7 +55,9 @@
 function Dismount-IsoImage {
     # Отключает ISO, только если его подключил сам скрипт.
     param([Parameter(Mandatory)]$Iso)
-    if ($Iso.Owned) { Dismount-DiskImage -ImagePath $Iso.IsoPath | Out-Null }
+    if (-not $Iso.Owned) { return }
+    Dismount-DiskImage -ImagePath $Iso.IsoPath | Out-Null
+    Set-LunqIsoOwned -IsoPath $Iso.IsoPath -Remove
 }
 
 function Dismount-LunqStateIso {

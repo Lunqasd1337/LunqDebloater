@@ -3,6 +3,7 @@
     'Checks.WorkDirIsRoot'       = 'это корень диска'
     'Checks.WorkDirContainsPath' = 'внутри неё лежит {0}, он был бы удалён'
     'Checks.WorkDirIsFile'       = 'это файл, а не папка'
+    'Checks.WorkDirIsLink'       = 'это ссылка (junction или symlink) на другую папку'
     'Checks.WorkDirNotEmpty'     = 'папка не пустая и создана не этим скриптом'
     'Checks.WorkDirMarker'       = 'Рабочая папка LunqDebloater. Удаляется после сборки.'
     'Checks.LeftoverMount'       = 'Найден оставшийся смонтированный образ в {0}, отключаю без сохранения.'

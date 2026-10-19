@@ -135,10 +135,14 @@ Describe 'Обновления и драйверы' {
         # expand.exe заменён: что лежит в .cab, задаёт текст файла.
         Mock Invoke-Native -ModuleName LunqDebloater {
             $text = Get-Content -LiteralPath $Arguments[0] -Raw
-            if ($text -match 'safeos') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_SafeOSDU" />' }
+            if ($Arguments[1] -eq '-F:setup*.exe') {
+                if ($text -match 'setup') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'SetupHost.exe') -Value 'exe' }
+            }
+            elseif ($text -match 'safeos') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_SafeOSDU" />' }
             elseif ($text -match 'rollup') { Set-Content -LiteralPath (Join-Path $Arguments[2] 'update.mum') -Value '<assemblyIdentity name="Package_for_RollupFix" />' }
             return 0
         }
+        Mock Write-Warning -ModuleName LunqDebloater { }
         $dir = Join-Path $TestDrive 'du'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $dir 'windows11.0-kb1-x64.msu') -Value 'MSCF msu'
@@ -147,16 +151,22 @@ Describe 'Обновления и драйверы' {
         Set-Content -LiteralPath (Join-Path $dir 'windows11.0-kb4-x64_0123456789abcdef0123456789abcdef01234567.cab') -Value 'MSCF setup files'
         # Не архив CAB: распаковка не запускается, файл считается обычным обновлением.
         Set-Content -LiteralPath (Join-Path $dir 'windows11.0-kb5-x64.cab') -Value 'not a cab'
+        # Архив без пакета и без файлов установщика (драйвер из каталога): его не распаковывают в sources.
+        Set-Content -LiteralPath (Join-Path $dir 'windows11.0-kb6-x64.cab') -Value 'MSCF driver'
 
         $cache = @{}
         $split = Split-LunqDynamicUpdates -Files (Get-LunqUpdateFiles -Path $dir) -TempDir (Join-Path $TestDrive 'check') -Cache $cache 6>$null
         @($split.Updates | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb1-x64.msu', 'windows11.0-kb2-x64.cab', 'windows11.0-kb5-x64.cab')
         @($split.SafeOS | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb3-x64_0123456789abcdef0123456789abcdef01234567.cab')
         @($split.Setup | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb4-x64_0123456789abcdef0123456789abcdef01234567.cab')
-        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 3 -Exactly
+        @($split.Unknown | ForEach-Object { $_.Name }) | Should -Be @('windows11.0-kb6-x64.cab')
+        Should -Invoke Write-Warning -ModuleName LunqDebloater -Times 1 -Exactly -ParameterFilter { $Message -match 'kb6-x64\.cab не похож ни на обновление' }
+        # По одному вызову на пакет и по два на архивы без .mum: Setup и драйвер.
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 6 -Exactly
         # Распознанные файлы не распаковываются снова, когда сводка показывается ещё раз.
         Split-LunqDynamicUpdates -Files (Get-LunqUpdateFiles -Path $dir) -TempDir (Join-Path $TestDrive 'check') -Cache $cache 6>$null | Out-Null
-        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 3 -Exactly
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 6 -Exactly
+        Should -Invoke Write-Warning -ModuleName LunqDebloater -Times 1 -Exactly
         # Временные папки проверки удаляются.
         @(Get-ChildItem -LiteralPath (Join-Path $TestDrive 'check')).Count | Should -Be 0
     }
@@ -197,6 +207,24 @@ Describe 'Обновления и драйверы' {
         Set-Content -LiteralPath (Join-Path $dir 'net.inf') -Value "[Version]`r`nClass = HDC"
         (Get-Item -LiteralPath (Join-Path $dir 'net.inf')).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(1)
         @(Select-LunqPEDrivers (Get-LunqDriverFiles -Path $dir) -Cache $cache | ForEach-Object { $_.Name }) | Should -Be @('net.inf')
+    }
+}
+
+Describe 'Add-LunqSetupDynamicUpdate' {
+    It 'распаковывает в sources только файлы с подписью Microsoft' {
+        $iso = Join-Path $TestDrive 'sdu'
+        New-Item -ItemType Directory -Path (Join-Path $iso 'sources') -Force | Out-Null
+        $signed = Join-Path $TestDrive 'windows11.0-kb1-x64.cab'
+        $unsigned = Join-Path $TestDrive 'windows11.0-kb2-x64.cab'
+        Set-Content -LiteralPath $signed, $unsigned -Value 'cab'
+        Mock Get-LunqSignatureError -ModuleName LunqDebloater { if ($Path -like '*kb2*') { 'NotSigned' } }
+        Mock Invoke-Native -ModuleName LunqDebloater { 0 }
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($i, $f) Add-LunqSetupDynamicUpdate -IsoRoot $i -Files $f } $iso @((Get-Item -LiteralPath $signed), (Get-Item -LiteralPath $unsigned)) } *>&1 | Out-String -Width 400
+        $script:r.Done | Should -Be @('windows11.0-kb1-x64.cab')
+        $script:r.Failed | Should -Be @('windows11.0-kb2-x64.cab')
+        $output | Should -Match 'windows11\.0-kb2-x64\.cab не подписан Microsoft \(NotSigned\)'
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 1 -Exactly
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 0 -Exactly -ParameterFilter { $Arguments[0] -like '*kb2*' }
     }
 }
 
