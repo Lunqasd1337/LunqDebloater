@@ -119,8 +119,18 @@ Describe 'Invoke-LunqInstall' {
         New-TestRelease -Root (Join-Path $script:Archive 'LunqDebloater-1.7.0') -Version 'v1.7.0' -Config @{ 'Apps.txt' = '7zip.7zip' }
         Mock Write-Host { }
         Mock Start-LunqDebloater { }
-        Mock Get-LunqLatestRelease { [pscustomobject]@{ Tag = 'v1.7.0'; ZipUrl = 'https://example.invalid/v1.7.0.zip' } }
-        Mock Invoke-WebRequest { Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $OutFile }
+        Mock Get-LunqLatestRelease {
+            [pscustomobject]@{
+                Tag = 'v1.7.0'; ZipUrl = 'https://example.invalid/v1.7.0.zip'
+                AssetUrl = 'https://example.invalid/download/v1.7.0/LunqDebloater-v1.7.0.zip'; SumsUrl = 'https://example.invalid/download/v1.7.0/SHA256SUMS'
+            }
+        }
+        # Релиз с архивом и SHA256SUMS, как его выпускает release.yml.
+        $script:Zip = Join-Path $script:Archive 'LunqDebloater-v1.7.0.zip'
+        Compress-Archive -Path (Join-Path $script:Archive 'LunqDebloater-1.7.0') -DestinationPath $script:Zip
+        $script:Sums = '{0}  LunqDebloater-v1.7.0.zip' -f (Get-FileHash -LiteralPath $script:Zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        Mock Invoke-WebRequest { Copy-Item -LiteralPath $script:Zip -Destination $OutFile }
+        Mock Invoke-WebRequest { Set-Content -LiteralPath $OutFile -Value @('0000000000000000000000000000000000000000000000000000000000000000  other.zip', $script:Sums) } -ParameterFilter { $Uri -like '*SHA256SUMS' }
     }
 
     It 'папку установки могут менять только владелец, администраторы и SYSTEM' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
@@ -145,7 +155,7 @@ Describe 'Invoke-LunqInstall' {
         $target = Join-Path $TestDrive 'Same'
         Invoke-LunqInstall -Path $target
         Invoke-LunqInstall -Path $target
-        Should -Invoke Invoke-WebRequest -Times 1 -Exactly
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -like '*.zip' }
         Should -Invoke Start-LunqDebloater -Times 2 -Exactly
     }
 
@@ -157,6 +167,33 @@ Describe 'Invoke-LunqInstall' {
         Invoke-LunqInstall -Path $target
         Should -Invoke Write-Warning -Times 1 -Exactly
         Should -Invoke Start-LunqDebloater -Times 2 -Exactly
+    }
+
+    It 'архив сверяется с SHA256SUMS: не совпал, и ничего не установлено' {
+        $target = Join-Path $TestDrive 'BadHash'
+        $script:Sums = ('f' * 64) + '  LunqDebloater-v1.7.0.zip'
+        { Invoke-LunqInstall -Path $target } | Should -Throw '*does not match its SHA256SUMS*'
+        Test-Path -LiteralPath (Join-Path $target 'LunqDebloater.ps1') | Should -BeFalse
+        Should -Invoke Start-LunqDebloater -Times 0 -Exactly
+        # Архив релиза, а не архив тега, который собирает сам GitHub.
+        Should -Invoke Invoke-WebRequest -Times 0 -Exactly -ParameterFilter { $Uri -eq 'https://example.invalid/v1.7.0.zip' }
+    }
+
+    It 'у релиза до 1.12.0 нет SHA256SUMS: берётся архив тега с предупреждением' {
+        $target = Join-Path $TestDrive 'OldRelease'
+        Mock Invoke-WebRequest { throw 'The remote server returned an error: (404) Not Found.' } -ParameterFilter { $Uri -like '*SHA256SUMS' }
+        Mock Write-Warning { }
+        Invoke-LunqInstall -Path $target
+        Get-Content -LiteralPath (Join-Path $target 'LunqDebloater.ps1') | Should -Be '# v1.7.0'
+        Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*no SHA256SUMS*' }
+        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://example.invalid/v1.7.0.zip' }
+    }
+
+    It 'SHA256SUMS не скачался по другой причине: установка останавливается, а не берёт непроверенный архив' {
+        $target = Join-Path $TestDrive 'SumsError'
+        Mock Invoke-WebRequest { throw 'The operation has timed out.' } -ParameterFilter { $Uri -like '*SHA256SUMS' }
+        { Invoke-LunqInstall -Path $target } | Should -Throw '*timed out*'
+        Should -Invoke Invoke-WebRequest -Times 0 -Exactly -ParameterFilter { $Uri -like '*.zip' }
     }
 
     It 'чужую папку не трогает' {
@@ -214,6 +251,8 @@ Describe 'Get-LunqLatestRelease' {
         $release = Get-LunqLatestRelease
         $release.Tag | Should -Be 'v1.9.2'
         $release.ZipUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/archive/refs/tags/v1.9.2.zip'
+        $release.AssetUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/releases/download/v1.9.2/LunqDebloater-v1.9.2.zip'
+        $release.SumsUrl | Should -Be 'https://github.com/Lunqasd1337/LunqDebloater/releases/download/v1.9.2/SHA256SUMS'
         # В PowerShell 7 адрес лежит в RequestMessage.
         Mock Invoke-WebRequest {
             [pscustomobject]@{ BaseResponse = [pscustomobject]@{ RequestMessage = [pscustomobject]@{ RequestUri = [uri]'https://github.com/Lunqasd1337/LunqDebloater/releases/tag/v1.9.3' } } }

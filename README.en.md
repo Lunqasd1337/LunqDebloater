@@ -79,6 +79,7 @@ Or by hand:
 `irm ... | iex` downloads and runs [Install.ps1](Install.ps1), which you can read before running it. The loader:
 
 - finds the latest release on GitHub (not the current `main`) and puts it into `C:\Users\<name>\LunqDebloater`. A folder in the profile is used because the script runs from it as administrator, and files in the root of drive C: can be changed by other users of the computer too;
+- checks the release archive against the `SHA256SUMS` attached to the release before unpacking it. If the checksum does not match, nothing is changed. Releases before 1.12.0 have no such file, and for them the loader warns that the archive is not verified;
 - starts `LunqDebloater.ps1` in Windows PowerShell 5.1, even if the command was typed in PowerShell 7. The script asks for administrator rights itself.
 
 The same command updates the program. If the version is already the latest, the script just starts. On update the program folders are replaced as a whole. Files in `Config` that you changed stay, and the loader lists them. Your own files next to it (an ISO, `Logs`) are not touched. Without internet the version already downloaded starts.

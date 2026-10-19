@@ -1,0 +1,41 @@
+name: Release
+
+# К опубликованному релизу прикладываются архив программы и SHA256SUMS: Install.ps1 сверяет
+# архив с суммой до распаковки. Аттестация GitHub подтверждает, что архив собран этим workflow
+# из тега: gh attestation verify LunqDebloater-<тег>.zip --repo Lunqasd1337/LunqDebloater.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  assets:
+    name: Archive and SHA256SUMS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      # Тот же git archive, которым GitHub собирает архив тега: окончания строк из .gitattributes,
+      # внутри одна папка LunqDebloater-<версия>. Тег передаётся через окружение, а не подстановкой в скрипт.
+      - name: Build archive
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          name="LunqDebloater-${TAG}.zip"
+          git archive --format=zip --prefix="LunqDebloater-${TAG#v}/" -o "$name" HEAD
+          sha256sum "$name" > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: LunqDebloater-*.zip
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" "LunqDebloater-${TAG}.zip" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

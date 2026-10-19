@@ -183,4 +183,4 @@ Next to the program the loader keeps `.lunq-install.json` with the installed rel
 
 ## Versions and releases
 
-The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub.
+The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub. When the release is published, `.github/workflows/release.yml` attaches `LunqDebloater-vX.Y.Z.zip`, `SHA256SUMS` and a GitHub attestation to it: the loader takes that archive and checks it against the checksum.

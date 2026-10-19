@@ -106,9 +106,46 @@ function Get-LunqLatestRelease {
         if ($finalUri -notmatch '/releases/tag/([^/?#]+)') { throw $apiError }
         $tag = [uri]::UnescapeDataString($Matches[1])
     }
+    # Since 1.12.0 .github/workflows/release.yml attaches an archive and its SHA256SUMS to every release.
+    $download = "https://github.com/$repo/releases/download/$([uri]::EscapeDataString($tag))"
     return [pscustomobject]@{
-        Tag    = $tag
-        ZipUrl = "https://github.com/$repo/archive/refs/tags/$tag.zip"
+        Tag      = $tag
+        ZipUrl   = "https://github.com/$repo/archive/refs/tags/$tag.zip"
+        AssetUrl = "$download/LunqDebloater-$tag.zip"
+        SumsUrl  = "$download/SHA256SUMS"
+    }
+}
+
+function Save-LunqReleaseArchive {
+    # Downloads the release archive and checks it against the release's SHA256SUMS before anything
+    # is unpacked: the archive then runs as administrator. Releases older than 1.12.0 have no
+    # SHA256SUMS (GitHub answers 404); for them the source archive of the tag is taken, with a warning.
+    param([Parameter(Mandatory)]$Release, [Parameter(Mandatory)][string]$OutFile)
+    $sumsFile = "$OutFile.sha256sums"
+    $hasSums = $true
+    try { Invoke-WebRequest -Uri $Release.SumsUrl -OutFile $sumsFile -UseBasicParsing }
+    catch {
+        # Windows PowerShell 5.1 says "(404) Not Found", PowerShell 7 "404 (Not Found)".
+        # Any other error stops the install: an archive that cannot be checked is not used.
+        if ($_.Exception.Message -notmatch '\b404\b') { throw }
+        $hasSums = $false
+    }
+    if (-not $hasSums) {
+        Write-Warning "$($Release.Tag) has no SHA256SUMS, so its archive is not verified."
+        Invoke-WebRequest -Uri $Release.ZipUrl -OutFile $OutFile -UseBasicParsing
+        return
+    }
+    $name = [IO.Path]::GetFileName(([uri]$Release.AssetUrl).AbsolutePath)
+    $expected = $null
+    foreach ($line in @(Get-Content -LiteralPath $sumsFile)) {
+        if ($line -match '^([0-9a-fA-F]{64}) [ *](.+)$' -and $Matches[2].Trim() -eq $name) { $expected = $Matches[1].ToUpperInvariant() }
+    }
+    Remove-Item -LiteralPath $sumsFile -Force
+    if (-not $expected) { throw "SHA256SUMS of $($Release.Tag) has no line for $name." }
+    Invoke-WebRequest -Uri $Release.AssetUrl -OutFile $OutFile -UseBasicParsing
+    if ((Get-FileHash -LiteralPath $OutFile -Algorithm SHA256).Hash -ne $expected) {
+        Remove-Item -LiteralPath $OutFile -Force
+        throw "The archive of $($Release.Tag) does not match its SHA256SUMS. Nothing was changed; try again later."
     }
 }
 
@@ -219,9 +256,9 @@ function Invoke-LunqInstall {
         try {
             $zip = Join-Path $temp 'release.zip'
             $unpacked = Join-Path $temp 'release'
-            Invoke-WebRequest -Uri $release.ZipUrl -OutFile $zip -UseBasicParsing
+            Save-LunqReleaseArchive -Release $release -OutFile $zip
             Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
-            # A GitHub archive has one folder inside, LunqDebloater-<version>.
+            # Both archives have one folder inside, LunqDebloater-<version>.
             $root = @(Get-ChildItem -LiteralPath $unpacked -Directory)
             if ($root.Count -ne 1 -or -not (Test-Path -LiteralPath (Join-Path $root[0].FullName 'LunqDebloater.ps1'))) {
                 throw "The archive of $($release.Tag) does not contain LunqDebloater.ps1."
