@@ -39,7 +39,8 @@ function New-LunqRecipe {
     $v = $Values.Clone()
     foreach ($key in 'ProfilePath', 'ProfileOriginalPath', 'Profile', 'IsoPath', 'Index', 'EditionName', 'BuildText', 'OutputIso', 'Label', 'ConfigPath',
         'SkipAppx', 'SkipComponents', 'SkipRegistry', 'CleanupComponents', 'DownloadUpdates', 'UpdatesPath', 'UpdatesToSetup', 'Updates', 'SafeOS', 'SetupDU',
-        'DriversPath', 'HostDrivers', 'DriversToSetup', 'Drivers', 'Apps', 'HostApps', 'Scripts', 'HostWifi', 'SetupAnswers', 'BypassRequirements', 'LocalAccount') {
+        'DriversPath', 'HostDrivers', 'DriversToSetup', 'Drivers', 'Apps', 'HostApps', 'Scripts', 'HostWifi', 'SetupAnswers', 'BypassRequirements', 'LocalAccount',
+        'BootCA2023') {
         if (-not $v.ContainsKey($key)) { $v[$key] = $null }
     }
     $profileContent = $null
@@ -69,6 +70,8 @@ function New-LunqRecipe {
         Drivers       = [ordered]@{ Path = $v.DriversPath; FromHost = [bool]$v.HostDrivers; ToSetup = [bool]$v.DriversToSetup; Count = @($v.Drivers).Count }
         FirstLogon    = [ordered]@{ Apps = @($v.Apps); AppsFromHost = [bool]$v.HostApps; Scripts = @($v.Scripts | ForEach-Object { $_.Name }); Wifi = [bool]$v.HostWifi }
         Unattend      = [ordered]@{ Enabled = [bool]$v.SetupAnswers; BypassRequirements = [bool]$v.BypassRequirements; LocalAccount = [bool]$v.LocalAccount }
+        # Каким загрузчиком и как записан носитель. В рецептах до 1.13.0 этого поля нет.
+        Media         = [ordered]@{ BootCA2023 = [bool]$v.BootCA2023 }
     }
 }
 
@@ -149,6 +152,7 @@ function Get-LunqRecipeParameters {
     $values.Unattend = [bool](Get-ConfigValue $r 'Unattend', 'Enabled')
     $values.BypassRequirements = [bool](Get-ConfigValue $r 'Unattend', 'BypassRequirements')
     $values.LocalAccount = [bool](Get-ConfigValue $r 'Unattend', 'LocalAccount')
+    $values.BootCA2023 = [bool](Get-ConfigValue $r 'Media', 'BootCA2023')
     return $values
 }
 

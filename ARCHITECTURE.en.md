@@ -104,12 +104,12 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Features | Turns off features and removes CBS packages | without `-SkipComponents` |
 | Registry | Applies the profile's registry entries | without `-SkipRegistry` |
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | Writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
-| Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim` (image 2), services it and copies `setup.exe`, `setuphost.exe` and the UEFI boot manager out of it | there is something for Windows Setup |
+| Save | With `-BootCA2023` copies the `_EX` boot files to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
+| Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim` (image 2), services it and copies `setup.exe`, `setuphost.exe`, the UEFI boot manager and `efisys.bin` out of it | there is something for Windows Setup |
 | Recompress | Recompresses `install.wim` | always |
-| Iso | Builds the bootable ISO with `oscdimg` | always |
+| Iso | With `-BootCA2023` puts the Windows UEFI CA 2023 boot manager from `WorkDir\bootex` on the ISO, then builds the bootable ISO with `oscdimg` | always |
 
-The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`.
+The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`. The Windows UEFI CA 2023 boot manager is taken from `install.wim` before it is dismounted, but goes onto the ISO only in the Iso step: otherwise the Setup step would replace it with the boot manager from `boot.wim`.
 
 ## Step results and the summary
 

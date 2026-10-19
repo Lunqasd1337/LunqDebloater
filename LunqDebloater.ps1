@@ -61,7 +61,8 @@ param(
     [string[]]$Category,
     [switch]$HostDrivers,
     [switch]$HostApps,
-    [switch]$HostWifi
+    [switch]$HostWifi,
+    [switch]$BootCA2023
 )
 
 $ErrorActionPreference = 'Stop'
@@ -434,6 +435,7 @@ try {
             region         = [bool]$withUnattend
             bypass         = [bool]$BypassRequirements
             localAccount   = [bool]$LocalAccount
+            bootCA2023     = [bool]$BootCA2023
         }
         $action = $null
         if ($interactive -and -not $listMode) {
@@ -458,6 +460,7 @@ try {
             # Скачанные Safe OS и Setup Dynamic Update нужны только вместе с обновлением установщика.
             if ($DownloadUpdates) { $UpdatesToSetup = [switch]$true }
             $CleanupComponents = [switch]$use.cleanup
+            $BootCA2023 = [switch]$use.bootCA2023
         }
         $useUpdates = $use.updates
         $useDrivers = $use.drivers
@@ -489,6 +492,8 @@ try {
     }
     if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
     $HostDrivers = [switch]($useDrivers -and $foundDrivers.Count -gt 0 -and $driversDir -eq $hostDriversDir)
+    # Microsoft требует, чтобы с загрузчиком 2023 года был обновлён и boot.wim.
+    if ($BootCA2023) { $UpdatesToSetup = [switch]$true }
 
     # ---------- Копия этого компьютера: программы и сети Wi-Fi ----------
     if (-not $listMode -and $HostApps) {
@@ -678,6 +683,11 @@ try {
     }
     $hostWarning = Get-LunqHostWarning -ImageBuild $imageInfo.Build
     if ($hostWarning) { Write-Check Warn $hostWarning (Get-LunqText 'Main.HostWarningHint') }
+    # Файлы _EX без накопительного обновления могут быть старыми или их нет вовсе.
+    if (-not $listMode -and $BootCA2023 -and -not (Test-CumulativeUpdate $updates)) {
+        Write-Warning (Get-LunqText 'Main.BootCA2023NoUpdate')
+        $BootCA2023 = [switch]$false
+    }
 
     # ---------- Режим «Что в образе» ----------
     if ($listMode) {
@@ -760,6 +770,10 @@ try {
     elseif ($config.Packages.Remove.Count -gt 0) { Write-Warning (Get-LunqText 'Main.PackagesWarning') }
     if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
     if ($CleanupComponents) { Write-Info (Get-LunqText 'Main.PlanCleanup') }
+    if ($BootCA2023) {
+        Write-Info (Get-LunqText 'Main.PlanBootCA2023')
+        Write-Warning (Get-LunqText 'Main.BootCA2023Warning')
+    }
     Write-Info (Get-LunqText 'Main.PlanOutputIso' $OutputIso)
     Write-Info (Get-LunqText 'Main.PlanWorkDir' $WorkDir)
     Write-Info (Get-LunqText 'Main.PlanLog' $lunqLog.Path)
@@ -808,6 +822,7 @@ try {
         SkipComponents    = [bool]$SkipComponents
         SkipRegistry      = [bool]$SkipRegistry
         CleanupComponents = [bool]$CleanupComponents
+        BootCA2023        = [bool]$BootCA2023
         Profile           = $lunqProfile
         ProfilePath       = $ProfilePath
         EditionName       = $editionName
@@ -843,6 +858,7 @@ try {
             DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
             Apps = $recipeApps; HostApps = $HostApps; Scripts = $(if ($firstLogon) { $firstLogon.Scripts } else { @() }); HostWifi = ($wifiNames.Count -gt 0)
             SetupAnswers = [bool]$setupAnswers; BypassRequirements = $useBypass -and [bool]$setupAnswers; LocalAccount = $useLocalAccount -and [bool]$setupAnswers
+            BootCA2023 = $BootCA2023
         }
         Save-LunqRecipe -Recipe $newRecipe -Path $recipePath
         Write-LunqHtmlReport -Path $htmlPath -Results $results -LunqProfile $lunqProfile -StepTimes $state['StepTimes'] -Info @{

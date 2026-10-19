@@ -60,10 +60,13 @@ Describe 'Сборка с параметрами' {
         # После обновления boot.wim setup.exe в sources берётся из него, иначе версии не совпадут.
         $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы из boot.wim в sources'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\sources\setup.exe') | Should -Be 'from boot.wim'
-        # Загрузчик на ISO тоже из обновлённого boot.wim, как в инструкции Microsoft.
-        $run.Output | Should -Match 'Загрузчик на ISO: efi\\boot\\bootx64\.efi, bootmgr\.efi обновлены из boot\.wim'
+        # Загрузчик на ISO тоже из обновлённого boot.wim, как в инструкции Microsoft, и efisys.bin
+        # вместе с ним: ISO, подключённый напрямую, грузится тем же загрузчиком, что и флешка.
+        $run.Output | Should -Match 'Загрузчик на ISO: efi\\boot\\bootx64\.efi, bootmgr\.efi, efi\\microsoft\\boot\\efisys\.bin обновлены из boot\.wim'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\bootmgr.efi') | Should -Be 'bootmgr.efi from boot.wim'
+        Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin from boot.wim'
+        $run.Output | Should -Not -Match 'Windows UEFI CA 2023'
 
         $native = Get-Content -LiteralPath $t.NativeLog -Encoding UTF8
         # install.esd не копируется в рабочую папку: редакция экспортируется прямо с ISO, сначала
@@ -394,6 +397,58 @@ Describe 'Ошибки и предупреждения' {
         $run = Start-TestBuild -Prepare { $env:LUNQ_TEST_IMAGE_VERSION = '10.0.26200.100' }
         $run.Error | Should -Not -BeNullOrEmpty
         $run.Output | Should -Match 'профиль рассчитан на сборку 26300'
+    }
+
+    It '-BootCA2023: на ISO загрузчик Windows UEFI CA 2023 из install.wim, установщик обновляется сам' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true } -Prepare {
+            param($t)
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Загрузчик:\s+Windows UEFI CA 2023'
+        $run.Output | Should -Match 'не загрузится с включённым Secure Boot'
+        # Без -UpdatesToSetup установщик всё равно обновлён: Microsoft требует этого для загрузчика 2023 года.
+        $run.Output | Should -Match 'Обновления в установщике: установлено 1'
+        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: efi\\boot\\bootx64\.efi, bootmgr\.efi, efi\\microsoft\\boot\\efisys\.bin и шрифты \(1 шт\.\) заменены'
+        $iso = Join-Path $script:Test.WorkDir 'iso'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw_EX.efi from install.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'bootmgr.efi') | Should -Be 'bootmgr_EX.efi from install.wim'
+        # oscdimg делает загрузочный образ UEFI из efisys.bin, а в нём теперь efisys_EX.bin.
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys_EX.bin from install.wim'
+        $oscdimg = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'oscdimg.exe|*' })
+        $oscdimg[0] | Should -BeLike '*-bootdata:*efisys.bin*'
+        # Шрифты кладутся без суффикса _EX.
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\fonts\wgl4_boot.ttf') | Should -Be 'wgl4_boot_EX.ttf from install.wim'
+        Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|да'
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Media.BootCA2023 | Should -BeTrue
+    }
+
+    It '-BootCA2023 без файлов _EX в образе: обычный загрузчик и предупреждение' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true } -Prepare {
+            param($t)
+            $env:LUNQ_TEST_NO_BOOTEX = '1'
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'В образе нет файлов загрузчика Windows UEFI CA 2023'
+        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: файлов _EX в образе нет, на ISO остался обычный загрузчик'
+        $iso = Join-Path $script:Test.WorkDir 'iso'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin from boot.wim'
+        Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|нет'
+    }
+
+    It '-BootCA2023 без накопительного обновления выключается с предупреждением' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'накопительного обновления среди обновлений нет'
+        $run.Output | Should -Not -Match 'Загрузчик:\s+Windows UEFI CA 2023'
+        Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Not -Match '_EX'
     }
 
     It 'рабочая папка с пробелом: oscdimg получает пути без пробелов' {

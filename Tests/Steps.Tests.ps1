@@ -19,7 +19,7 @@ BeforeAll {
             IsoPath = 'C:\iso\Win11.iso'; IsoDir = 'iso'; WimPath = 'install.wim'; Index = 1; OutputIso = 'out.iso'; Oscdimg = 'oscdimg.exe'; Label = 'LUNQ_WIN11'
             Updates = @(); SafeOSUpdates = @(); SetupUpdates = @(); PEUpdates = @(); Drivers = @(); PEDrivers = @(); DriversPath = $null
             ServiceRecovery = $false; ServicePE = $false; FirstLogon = $null; SetupAnswers = $null; Architecture = 'amd64'; Config = $null
-            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; Restore = $null
+            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; BootCA2023 = $false; Restore = $null
             Profile = $null; ProfilePath = 'C:\Config\Profile.json'; EditionName = 'Windows 11 Pro'; BuildText = '26300.9457'
         }
         foreach ($key in $Values.Keys) { $context[$key] = $Values[$key] }
@@ -229,6 +229,7 @@ Describe 'Get-LunqBuildStampValues' {
             $values.SkippedSteps | Should -Be 'Appx, Registry'
             $values.Drivers | Should -Be '2'
             $values.SetupAndWinRE | Should -Be 'да'
+            $values.BootCA2023 | Should -Be 'нет'
             $values.SetupAnswerFile | Should -Be 'нет'
             $values.Apps | Should -Be '7zip.7zip, Mozilla.Firefox'
             $values.Scripts | Should -Be '10-hello.ps1'

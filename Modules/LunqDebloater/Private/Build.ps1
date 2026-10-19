@@ -137,6 +137,10 @@ function Get-LunqBuildSteps {
             Title = Get-LunqText 'Main.StepSave'; Hint = Get-LunqText 'Main.StepSaveHint'
             Run = {
                 param($c)
+                # Файлы загрузчика 2023 берутся до отметки в реестре: в ней записано, нашлись ли они.
+                if ($c.BootCA2023) {
+                    $c.State.BootCA2023 = Export-LunqBootCA2023 -MountPath $c.MountDir -Destination (Join-Path $c.WorkDir 'bootex')
+                }
                 Set-LunqBuildStamp -MountPath $c.MountDir -Values (Get-LunqBuildStampValues -Context $c)
                 # Что удалено и какие значения реестра были до профиля: по ним -Restore на
                 # установленной системе вернёт выбранное.
@@ -165,7 +169,11 @@ function Get-LunqBuildSteps {
         @{
             Name = 'Iso'; When = $true
             Title = Get-LunqText 'Main.StepIso'; Hint = Get-LunqText 'Main.StepIsoHint'
-            Run = { param($c) New-BootableIso -IsoRoot $c.IsoDir -OutputPath $c.OutputIso -Oscdimg $c.Oscdimg -Label $c.Label }
+            Run = {
+                param($c)
+                if ($c.BootCA2023) { Install-LunqBootCA2023 -IsoRoot $c.IsoDir -From (Join-Path $c.WorkDir 'bootex') }
+                New-BootableIso -IsoRoot $c.IsoDir -OutputPath $c.OutputIso -Oscdimg $c.Oscdimg -Label $c.Label
+            }
         }
     )
 }
@@ -320,6 +328,7 @@ function Get-LunqBuildStampValues {
         SetupAndWinRE     = $(if ($c.ServicePE) { $yes } else { $no })
         SetupAnswerFile   = $(if ($c.SetupAnswers) { Format-LunqUnattendSummary -Unattend $c.SetupAnswers } else { $no })
         CleanupComponents = $(if ($c.CleanupComponents) { $yes } else { $no })
+        BootCA2023        = $(if ($c.BootCA2023 -and $c.State['BootCA2023']) { $yes } else { $no })
         Apps              = $(if ($c.FirstLogon) { $c.FirstLogon.Apps -join ', ' } else { '' })
         Scripts           = $(if ($c.FirstLogon) { @($c.FirstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { '' })
     }

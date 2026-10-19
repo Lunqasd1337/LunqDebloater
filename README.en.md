@@ -152,6 +152,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-HostDrivers` | Add the drivers of this computer instead of `Config\Drivers` |
 | `-HostApps` | Add the apps of this computer (`winget export`) to `Apps.txt` |
 | `-HostWifi` | Carry over the Wi-Fi networks of this computer with their passwords (see "A copy of this computer") |
+| `-BootCA2023` | Put the boot manager signed with Windows UEFI CA 2023 on the ISO. Needs a cumulative update, turns on `-UpdatesToSetup` (see "Boot manager and Secure Boot") |
 
 ## How the process works
 
@@ -211,7 +212,15 @@ Besides the system itself, the ISO contains two more images based on Windows PE:
 - **Windows Setup** (`sources\boot.wim`, image 2), which the USB drive boots from;
 - the **recovery environment** (WinRE, `Windows\System32\Recovery\Winre.wim` inside the system), which opens when Windows fails to start and from Settings > System > Recovery.
 
-By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. The UEFI boot manager on the ISO (`efi\boot\bootx64.efi` and `bootmgr.efi`) is taken from there too. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. The UEFI boot manager on the ISO (`efi\boot\bootx64.efi` and `bootmgr.efi`) is taken from there too, together with `efi\microsoft\boot\efisys.bin`, which `oscdimg` turns into the UEFI boot image: an ISO attached directly boots with the same boot manager as a USB drive made from it. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+
+### Boot manager and Secure Boot
+
+Microsoft is changing the certificate that signs the Windows boot manager (the BlackLotus vulnerability, CVE-2023-24932): the old Windows Production PCA 2011 is being revoked step by step, and the new one is called Windows UEFI CA 2023. A regular ISO boots with the old boot manager and will not boot with Secure Boot on a computer where the old certificate is already on the revocation list (DBX).
+
+With `-BootCA2023` (the last item in the summary) the ISO gets the boot manager signed with the new certificate: the `_EX` files from the updated image (`Windows\Boot\EFI_EX`, `DVD_EX` and `Fonts_EX`) replace `efi\boot\bootx64.efi`, `bootmgr.efi`, `efisys.bin` and the boot fonts. This needs a cumulative update in the updates folder or `-DownloadUpdates`, and Windows Setup is updated along with the system, as Microsoft requires. If the image has no `_EX` files, the ISO keeps the regular boot manager and the summary warns about it.
+
+Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks the Windows UEFI CA 2023 certificate: usually computers from before 2024 without recent firmware and Windows updates. If unsure, keep the regular boot manager.
 
 ## After installation
 

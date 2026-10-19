@@ -125,7 +125,7 @@ function Find-LunqBuildInputs {
 function New-LunqContentOptions {
     # Пункты сводки «Что войдёт в образ» по тому, что нашлось. Use: что включено сейчас (ключи
     # updates, cleanup, updatesToSetup, download, drivers, driversToSetup, apps, hostApps, scripts, wifi,
-    # unattend, oobe, region, bypass, localAccount).
+    # unattend, oobe, region, bypass, localAccount, bootCA2023).
     param(
         [Parameter(Mandatory)]$Found,
         [Parameter(Mandatory)]$FirstLogon,
@@ -210,7 +210,10 @@ function New-LunqContentOptions {
         (New-LunqOption -Key 'bypass' -Parent 'unattend' -Enabled $Use.bypass -Name (Get-LunqText 'Main.OptBypass') `
             -Details (Get-LunqText 'Main.OptBypassHint')),
         (New-LunqOption -Key 'localAccount' -Parent 'unattend' -Enabled $Use.localAccount -Name (Get-LunqText 'Main.OptLocalAccount') `
-            -Details (Get-LunqText 'Main.OptLocalAccountHint'))
+            -Details (Get-LunqText 'Main.OptLocalAccountHint')),
+        # Новые пункты добавляются в конец, чтобы номера прежних не менялись.
+        (New-LunqOption -Key 'bootCA2023' -Enabled ([bool]$Use.bootCA2023) -Name (Get-LunqText 'Main.OptBootCA2023') `
+            -Details @((Get-LunqText 'Main.OptBootCA2023Hint'), (Get-LunqText 'Main.BootCA2023Warning')))
     )
 }
 
