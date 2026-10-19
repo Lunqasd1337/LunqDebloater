@@ -69,6 +69,44 @@ Describe 'Запись данных для отката' {
         }
     }
 
+    It 'файл пишется через временный, прошлая версия остаётся в .bak, а испорченный файл откладывается' {
+        $dir = Join-Path $TestDrive 'r-atomic'
+        $path = Join-Path $dir 'Restore.json'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; P = $script:TestProfile } {
+            param($Path, $P)
+            Mock Write-Warning { }
+            $first = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreItem -Restore $first -Kind Appx -Name 'Microsoft.BingNews'
+            Save-LunqRestoreData -Restore $first -Path $Path
+            $second = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreItem -Restore $second -Kind Features -Name 'Recall'
+            Save-LunqRestoreData -Restore $second -Path $Path -Merge
+            Test-Path -LiteralPath "$Path.tmp" | Should -BeFalse
+            # В .bak прошлая версия: только первое приложение.
+            $backup = Get-Content -LiteralPath "$Path.bak" -Raw -Encoding UTF8 | ConvertFrom-Json
+            @($backup.Categories | ForEach-Object { $_.Id }) | Should -Be @('news')
+
+            # Запись оборвалась: файл испорчен. Он откладывается, а данные берутся из прошлой версии.
+            Set-Content -LiteralPath $Path -Value '{ "Kind": "LunqDebloaterRes'
+            $back = Read-LunqRestoreData -Path $Path
+            @($back.Categories | ForEach-Object { $_.Id }) | Should -Be @('news')
+            @(Get-ChildItem -LiteralPath (Split-Path $Path) -Filter 'Restore.json.corrupt-*').Count | Should -Be 1
+            Should -Invoke Write-Warning -Times 2 -Exactly
+
+            # Новое -Online после этого дописывается к прошлой версии, а не падает.
+            $third = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreItem -Restore $third -Kind Features -Name 'Recall'
+            Save-LunqRestoreData -Restore $third -Path $Path -Merge
+            @((Read-LunqRestoreData -Path $Path).Categories | ForEach-Object { $_.Id }) | Should -Be @('news', 'tools')
+
+            # Пустой файл без прошлой версии: данных нет, но и ошибки нет.
+            Remove-Item -LiteralPath "$Path.bak"
+            Set-Content -LiteralPath $Path -Value ''
+            Read-LunqRestoreData -Path $Path | Should -BeNullOrEmpty
+            Test-Path -LiteralPath $Path | Should -BeFalse
+        }
+    }
+
     It 'всё вернулось: файл отката удаляется' {
         $path = Join-Path $TestDrive 'r3\Restore.json'
         New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
@@ -100,6 +138,27 @@ Describe 'Запись данных для отката' {
             $out | Should -Match '\[HKEY_LOCAL_MACHINE\\LUNQ_NTUSER\\Software\\Y\]'
             $out | Should -Match '"Path"="HKEY_LOCAL_MACHINE\\\\LUNQ_SOFTWARE"'
             ConvertTo-LunqImportText -Text $text -ToCurrentUser | Should -Match '\[HKEY_CURRENT_USER\\Software\\Y\]'
+        }
+    }
+}
+
+Describe 'Invoke-LunqRestore' {
+    It 'куст не выгрузился: файл отката всё равно записан, вернувшееся из него убрано' {
+        $path = Join-Path $TestDrive 'r-stuck\Restore.json'
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; P = $script:TestProfile } {
+            param($Path, $P)
+            $data = New-LunqRestoreData -LunqProfile $P -Source Online
+            Add-LunqRestoreItem -Restore $data -Kind Appx -Name 'Microsoft.BingNews'
+            Save-LunqRestoreData -Restore $data -Path $Path
+            Mock Get-LunqSystemDrive { 'C:\' }
+            Mock Mount-OfflineHives { }
+            Mock Write-Step { }
+            Mock Write-LunqDismMarker { }
+            Mock Restore-LunqCategory { $Category.Appx.Clear(); New-LunqResult 'news' 'Restore' }
+            Mock Dismount-OfflineHives { throw 'hive is stuck' }
+            { Invoke-LunqRestore -Restore (Read-LunqRestoreData -Path $Path) -Ids 'news' -Path $Path } | Should -Throw '*hive is stuck*'
+            # Всё вернулось, поэтому файла больше нет: следующий -Restore не повторит откат.
+            Test-Path -LiteralPath $Path | Should -BeFalse
         }
     }
 }

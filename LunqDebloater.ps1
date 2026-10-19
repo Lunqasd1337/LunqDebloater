@@ -344,13 +344,8 @@ try {
             RestorePath    = $restorePath
         }
         $started = Get-Date
-        try { $results = Invoke-LunqBuild -Context $onlineContext -Online }
-        catch {
-            # Удалённое до ошибки тоже должно возвращаться через -Restore.
-            try { Save-LunqRestoreData -Restore $onlineContext.Restore -Path $restorePath -Merge }
-            catch { Write-Warning (Get-LunqText 'Restore.SaveFailed' $_.Exception.Message) }
-            throw
-        }
+        # Данные для отката записываются после каждого шага, в том числе упавшего.
+        $results = Invoke-LunqBuild -Context $onlineContext -Online
         Write-LunqReport -Results $results -LunqProfile $lunqProfile -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -RestorePath $restorePath
         return
     }
@@ -861,16 +856,30 @@ catch {
         Write-Host ('    ' + (Get-LunqText 'Main.ErrorWhere')) -ForegroundColor DarkGray
         foreach ($line in ($_.ScriptStackTrace -split '\r?\n')) { Write-Host "      $line" -ForegroundColor DarkGray }
     }
-    Dismount-OfflineHives
-    if ($state.Mounted) {
-        Write-Info (Get-LunqText 'Main.DiscardImage')
-        Dismount-WindowsImage -Path $mountDir -Discard -ErrorAction SilentlyContinue | Out-Null
-        $state.Mounted = Test-LunqAnyMounted -Paths $mountDir
-    }
     if ($lunqLog) { Write-Info (Get-LunqText 'Main.LogDetails' $lunqLog.Path) }
     if (-not $interactive) { throw }
 }
 finally {
+    # Образы, оставшиеся смонтированными после ошибки или Ctrl+C, отбрасываются здесь, а не в catch:
+    # при Ctrl+C catch не выполняется. Проверяются все папки сборки, а не только основная: WinRE и
+    # boot.wim тоже могли остаться смонтированными. После удачной сборки смонтированного нет.
+    $leftMounted = @()
+    if ($state.Mounted -or (Test-Path -LiteralPath $isoDir)) {
+        $leftMounted = Get-LunqMountedPaths -Paths $allMountDirs
+        if ($null -eq $leftMounted) { $leftMounted = @() }
+        # Основной образ, который этот запуск смонтировал, отбрасывается и тогда, когда DISM не ответил.
+        if ($state.Mounted -and $leftMounted -notcontains $mountDir) { $leftMounted = @($mountDir) + $leftMounted }
+    }
+    # С подключённым кустом DISM не отключит образ.
+    if ($failed -or $leftMounted.Count -gt 0) { Dismount-OfflineHives }
+    if ($leftMounted.Count -gt 0) {
+        Write-Info (Get-LunqText 'Main.DiscardImage')
+        foreach ($path in $leftMounted) {
+            try { Dismount-WindowsImage -Path $path -Discard -ErrorAction Stop | Out-Null }
+            catch { Write-Warning $_.Exception.Message }
+        }
+        $state.Mounted = Test-LunqAnyMounted -Paths $allMountDirs
+    }
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
     $stillMounted = $state.Mounted -or ((Test-Path -LiteralPath $isoDir) -and (Test-LunqAnyMounted -Paths $allMountDirs))
     # ISO, оставшийся подключённым после ошибки или Ctrl+C между шагами. Пока смонтирован образ,
