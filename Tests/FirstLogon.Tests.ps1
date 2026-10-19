@@ -318,6 +318,37 @@ Describe 'Скрипт первого входа' {
         Get-Lines $t.WingetLog | Should -BeNullOrEmpty
     }
 
+    It 'скрипт, который перезагружает компьютер, запускается не больше двух раз' {
+        # [Environment]::Exit завершает процесс, как перезагрузка: отметка «выполнен» не ставится.
+        $t = New-FirstLogonTest -Scripts @{ '10-reboot.ps1' = '[Environment]::Exit(0)' }
+        for ($i = 1; $i -le 2; $i++) {
+            $out = Invoke-FirstLogon -Test $t
+            $out | Should -Not -Match '==> Готово'
+            Test-Path -LiteralPath $t.Task | Should -BeTrue
+        }
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match '10-reboot.ps1 уже 2 раза начинался и не дошёл до конца'
+        $out | Should -Match 'С ошибками: 10-reboot.ps1'
+        Get-Lines (Join-Path $t.Lunq 'scripts.started') | Should -Be @('10-reboot.ps1', '10-reboot.ps1')
+        Test-Path -LiteralPath $t.Task | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
+    }
+
+    It 'попытки кончились, а задание осталось: работа не повторяется, за собой убрано' {
+        # Пятая попытка не дошла до конца (например, её прервала перезагрузка), задание осталось.
+        $t = New-FirstLogonTest -Apps @('7zip.7zip') -Scripts @{ '10-ok.ps1' = "Write-Host 'ok'" }
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'attempts.txt') -Value 5
+        Set-Content -LiteralPath $t.Task -Value 'task'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'не закончилась за 5 попыток и больше не повторяется'
+        Get-Lines $t.WingetLog | Should -BeNullOrEmpty
+        $out | Should -Not -Match '10-ok.ps1'
+        Test-Path -LiteralPath $t.Task | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $t.User 'Apps.txt') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $t.Windows 'System32\Sysprep\unattend.xml') | Should -BeFalse
+    }
+
     It 'программы из профиля удаляются после программ в отдельном PowerShell, без меню, один раз' {
         $t = New-FirstLogonTest -Apps @('7zip.7zip')
         $log = Add-FakeUninstall -Test $t -ExitCode 0
@@ -338,6 +369,16 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath $log | Should -BeFalse
         $out = Invoke-FirstLogon -Test $t
         Get-Lines $log | Should -Be @('NonInteractive,UninstallEdge')
+    }
+
+    It 'скрипт удаления, дважды не дошедший до конца, больше не запускается' {
+        $t = New-FirstLogonTest
+        $log = Add-FakeUninstall -Test $t -ExitCode 0
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'uninstall.started') -Value @('MicrosoftEdge', 'MicrosoftEdge') -Encoding UTF8
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Microsoft Edge уже 2 раза начинался и не дошёл до конца'
+        Get-Lines $log | Should -BeNullOrEmpty
+        Get-Lines (Join-Path $t.Lunq 'uninstall.done') | Should -Be @('MicrosoftEdge')
     }
 
     It 'скрипт удаления с ошибкой попадает в итог и повторно не запускается' {

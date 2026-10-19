@@ -104,6 +104,27 @@ Describe 'Install-LunqFirstLogon' {
     }
 }
 
+Describe 'Install-LunqFirstLogon: права' {
+    It 'папки User и Wifi закрываются от пользователей уже в образе, до копирования файлов' {
+        # Первый вход закрывает их только после согласия в UAC: без него пароли Wi-Fi остались бы
+        # открыты всем пользователям, ведь права наследуются от C:\Windows.
+        $wifi = Join-Path $TestDrive 'aclwifi'
+        New-Item -ItemType Directory -Path $wifi -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $wifi 'Home.xml') -Value '<WLANProfile />'
+        $mount = Join-Path $TestDrive 'aclmount'
+        New-Item -ItemType Directory -Path $mount -Force | Out-Null
+        $script:Order = New-Object System.Collections.Generic.List[string]
+        Mock Set-LunqAdminOnlyAccess -ModuleName LunqDebloater { $script:Order.Add("protect $(Split-Path $Path -Leaf) files=$(@(Get-ChildItem -LiteralPath $Path).Count)") }
+        & (Get-Module LunqDebloater) {
+            param($m, $w)
+            $logon = [pscustomobject]@{ AppsPath = 'Apps.txt'; Apps = @(); ScriptsPath = 'Scripts'; Scripts = @(); Wifi = @('Home'); WifiPath = $w }
+            $null = Install-LunqFirstLogon -MountPath $m -FirstLogon $logon -Architecture amd64
+        } $mount $wifi 6>$null
+        $script:Order | Should -Be @('protect User files=0', 'protect Wifi files=0')
+        Test-Path -LiteralPath (Join-Path $mount 'Windows\Setup\Scripts\Lunq\Wifi\Home.xml') | Should -BeTrue
+    }
+}
+
 Describe 'Файл ответов' {
     BeforeAll {
         $regionInfo = [pscustomobject]@{ Locale = 'en-GB'; SystemLocale = 'ru-RU'; InputLocale = '0419:00000419;0409:00000409'; Keyboards = @('ru-RU', 'en-US'); TimeZone = 'Russian Standard Time' }
