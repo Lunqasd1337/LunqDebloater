@@ -76,7 +76,8 @@ Describe 'Обновления и драйверы' {
             return 0
         } -ParameterFilter { $FilePath -eq 'dism.exe' }
         $work = Join-Path $TestDrive 'cpwork'
-        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $work 'scratch') } *>&1 | Out-String
+        # Без -Width консоль Windows переносит длинные строки, и проверка текста не находит его.
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $work 'scratch') } *>&1 | Out-String -Width 400
         $script:DismCalls.Count | Should -Be 1
         $call = $script:DismCalls[0]
         $call.Arguments | Should -Contain '/Add-Package'
@@ -97,7 +98,7 @@ Describe 'Обновления и драйверы' {
         foreach ($name in 'windows11.0-kb5043080-x64.msu', 'windows11.0-kb5090000-x64.msu') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
         $files = Get-LunqUpdateFiles -Path $dir
         Mock Invoke-Native -ModuleName LunqDebloater { return -2146498529 } -ParameterFilter { $FilePath -eq 'dism.exe' }
-        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $TestDrive 'cpwork2\scratch') } *>&1 | Out-String
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $TestDrive 'cpwork2\scratch') } *>&1 | Out-String -Width 400
         $script:r.Failed | Should -Be @('windows11.0-kb5043080-x64.msu', 'windows11.0-kb5090000-x64.msu')
         $output | Should -Match 'Не удалось установить windows11\.0-kb5090000-x64\.msu \(dism\.exe, код 0x800f081f\)'
         # 0x800f081e: накопительные обновления не для этого образа, это не ошибка.
