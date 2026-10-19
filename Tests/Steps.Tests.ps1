@@ -19,7 +19,7 @@ BeforeAll {
             IsoPath = 'C:\iso\Win11.iso'; IsoDir = 'iso'; WimPath = 'install.wim'; Index = 1; OutputIso = 'out.iso'; Oscdimg = 'oscdimg.exe'; Label = 'LUNQ_WIN11'
             Updates = @(); SafeOSUpdates = @(); SetupUpdates = @(); PEUpdates = @(); Drivers = @(); PEDrivers = @(); DriversPath = $null
             ServiceRecovery = $false; ServicePE = $false; FirstLogon = $null; SetupAnswers = $null; Architecture = 'amd64'; Config = $null
-            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false
+            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; Restore = $null
             Profile = $null; ProfilePath = 'C:\Config\Profile.json'; EditionName = 'Windows 11 Pro'; BuildText = '26300.9457'
         }
         foreach ($key in $Values.Keys) { $context[$key] = $Values[$key] }
@@ -171,6 +171,38 @@ Describe 'Get-LunqBuildSteps' {
             $step = Get-LunqBuildSteps -Context $Context | Where-Object { $_.Name -eq 'Mount' }
             & $step.Run $Context
             $Context.State.Mounted | Should -BeTrue
+        }
+    }
+}
+
+Describe 'Get-LunqOnlineSteps' {
+    It '-Online: шаги профиля для этой Windows и запись данных для отката последней' {
+        InModuleScope LunqDebloater {
+            $names = { param($c) @(Get-LunqOnlineSteps -Context $c | Where-Object { $_.When } | ForEach-Object { $_.Name }) }
+            & $names @{ SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Appx', 'Capabilities', 'Features', 'Registry', 'SaveRestore')
+            & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Registry', 'SaveRestore')
+        }
+    }
+
+    It 'каждый шаг работает с этой Windows (-Online), а не с образом, и передаёт данные для отката' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            Mock Write-Step { }
+            Mock Remove-LunqAppx { }
+            Mock Remove-LunqCapabilities { }
+            Mock Disable-LunqFeatures { }
+            Mock Remove-LunqPackages { }
+            Mock Set-LunqRegistry { }
+            Mock Save-LunqRestoreData { }
+            $restore = New-LunqRestoreData -Source Online
+            $context = @{ State = @{}; SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; Config = [pscustomobject]@{ Name = 'c' }; Restore = $restore; RestorePath = (Join-Path $Root 'Restore.json') }
+            $null = Invoke-LunqBuild -Context $context -Online
+            foreach ($name in 'Remove-LunqAppx', 'Remove-LunqCapabilities', 'Disable-LunqFeatures', 'Remove-LunqPackages', 'Set-LunqRegistry') {
+                Should -Invoke $name -Times 1 -Exactly -ParameterFilter { $Online -and -not $MountPath -and $null -ne $Restore }
+            }
+            # Повторный -Online дописывает к файлу, а не заменяет то, что было до первого запуска.
+            Should -Invoke Save-LunqRestoreData -Times 1 -Exactly -ParameterFilter { $Merge -and $Path -like '*Restore.json' }
+            $context.State.StepTimes.Count | Should -Be 5
         }
     }
 }

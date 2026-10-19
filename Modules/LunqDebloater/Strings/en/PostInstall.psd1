@@ -6,4 +6,5 @@
     'PostInstall.UnattendExists' = 'The image already has Windows\System32\Sysprep\unattend.xml, so the first sign-in script cannot be added.'
     'PostInstall.ConvertedToBom' = 'Resaved as UTF-8 with BOM so that non-English text works in Windows PowerShell 5.1: {0}'
     'PostInstall.Added'          = 'Added: {0}. It will run at the first sign-in to Windows.'
+    'PostInstall.Wifi'           = 'Wi-Fi networks: {0}'
 }

@@ -11,7 +11,11 @@ A PowerShell script that preconfigures a Windows 11 ISO image before installatio
 - optionally updates Windows Setup and the recovery environment (WinRE) with the same updates and drivers, plus Safe OS and Setup Dynamic Update;
 - optionally installs programs with winget and runs your scripts at the first sign-in to Windows;
 - optionally puts an answer file in the ISO: Windows Setup asks fewer questions, and on older computers you can bypass the TPM and Secure Boot requirements;
-- makes changes to the registry of the image (the `SOFTWARE` and `SYSTEM` hives and the `Default` profile that every new user is created from).
+- makes changes to the registry of the image (the `SOFTWARE` and `SYSTEM` hives and the `Default` profile that every new user is created from);
+- optionally downloads fresh updates from the Microsoft catalog by itself and rebuilds the ISO every month;
+- writes a recipe next to the ISO, so the build can be repeated with one command, and a before-and-after report;
+- applies the same profile to an installed Windows without an ISO and can bring back everything it removed;
+- carries the drivers, apps and Wi-Fi networks of this computer over to the new image.
 
 The result is a bootable ISO (BIOS + UEFI, UEFI only for ARM64) with one selected edition. A separate "What is in the image" mode builds nothing: it writes out the list of apps and components of an edition, so it is easier to make your own profile.
 
@@ -137,6 +141,15 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
+| `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates every month") |
+| `-Recipe` | Repeat the build from the recipe `<ISO name>.lunq.json`. Parameters you pass win over the recipe (see "Build recipe and report") |
+| `-Schedule` | Together with `-Recipe`: `Monthly` creates a task that rebuilds the ISO every month with fresh updates, `Off` removes it. Nothing is built |
+| `-Online` | Apply the profile to this Windows, without an ISO. What was there is saved for restore (see "This computer without an ISO, and restore") |
+| `-Restore` | Bring back what LunqDebloater removed on this Windows or in the image it was installed from |
+| `-Category` | Category Ids separated by commas: only these are applied or restored, the others are off |
+| `-HostDrivers` | Add the drivers of this computer instead of `Config\Drivers` |
+| `-HostApps` | Add the apps of this computer (`winget export`) to `Apps.txt` |
+| `-HostWifi` | Carry over the Wi-Fi networks of this computer with their passwords (see "A copy of this computer") |
 
 ## How the process works
 
@@ -242,6 +255,64 @@ To make your own profile, it helps to know the exact names of apps and component
 ```
 
 The script builds and changes nothing. It copies the edition to the working folder, opens it read-only and saves the file `<ISO name>_<edition number>_contents.txt` next to the ISO. The file lists the Appx apps, the installed components (Capabilities) and the Windows features (enabled and disabled). On the right of each item are the profile categories that already remove it. At the end of the file are the profile entries that are not in the image. Windows ADK is not needed for this mode.
+
+## Fresh updates every month
+
+Instead of looking up the cumulative update in the catalog by hand, turn on "Download fresh updates from the Microsoft catalog" in the summary or add `-DownloadUpdates`. Once the edition is selected and its release (for example, 26H2) and architecture are known, the script finds the latest cumulative and .NET updates in the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), and together with updating Setup (`-UpdatesToSetup`, turned on automatically in step-by-step mode) also Safe OS and Setup Dynamic Update. Preview and server updates are skipped. The files are checked against the catalog checksum and kept in `Config\Updates\Catalog\<release>-<architecture>`: the next build does not download them again, and last month's updates are deleted. Updates from `Config\Updates` are added together with the downloaded ones.
+
+The catalog has no official API: the script reads the same page a browser shows. If Microsoft changes it, the script says that it found nothing, and the update can be downloaded by hand as before.
+
+An ISO built with downloading can be rebuilt every month without you. In step-by-step mode the script offers this at the end of the build; with parameters the task is created from the recipe (see below):
+
+```powershell
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Monthly   # every month on the 15th
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
+```
+
+The task `LunqDebloater\<ISO name>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. Its log is in `Logs`, as for a normal run.
+
+## Build recipe and report
+
+After every build two files appear next to the output ISO:
+
+- `<ISO name>.lunq.json`, the recipe: the source ISO with its checksum, the edition, the whole profile, the enabled categories, the summary options, updates with checksums, drivers, apps and answer file settings;
+- `<ISO name>.lunq.html`, the before-and-after report: how many apps, capabilities and features the edition had and how many were removed, what was done for each profile category, what failed and how long each step took. It is a single file without external links, so it opens in any browser and can be sent to someone.
+
+`-Recipe` repeats the build from the recipe without questions:
+
+```powershell
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Force
+```
+
+Command line parameters win over the recipe: for example, `-IsoPath` builds the same thing from a new ISO, and `-SkipUpdates` builds it without updates. If the profile has changed or is gone since then, its copy from the recipe is used. If the updates in the folder differ from the ones in the recipe, the script warns about it before the build.
+
+## This computer without an ISO, and restore
+
+A profile can also be applied to the installed Windows the script runs on: in step-by-step mode this is "Apply a profile to this computer" at the start, with parameters `-Online`. The same profile steps run as for the image: removing apps (for new and existing users), capabilities and features, and writing the registry (to the `Default` profile and to the current user). No ISO and no Windows ADK are needed. `-Category` applies only the listed categories:
+
+```powershell
+.\LunqDebloater.ps1 -Online -Category telemetry,ads
+```
+
+Before every change the script saves how it was in `C:\Windows\LunqDebloater\Restore.json`. The same file is put into every built image, so restore also works on Windows installed from a LunqDebloater ISO. To bring back what was removed, choose "Bring back what LunqDebloater removed" or use `-Restore` (with `-Category` to bring back only part of it):
+
+```powershell
+.\LunqDebloater.ps1 -Restore
+```
+
+Registry entries get their previous values back, deleted keys are restored as a whole, capabilities and features are installed again. An app comes back if its files are still on the disk; one removed from the image together with its files has to be installed from the Microsoft Store, and the script shows links to its pages. System packages (CBS) are not installed back. Whatever was not restored stays in the file, and `-Restore` can be run again. Restart the computer after restoring.
+
+## A copy of this computer
+
+If the ISO is built to reinstall Windows on this same computer, the image can take what is already here:
+
+| Summary option | Switch | What it does |
+|---|---|---|
+| Take drivers from this computer | `-HostDrivers` | Exports the third-party drivers of this Windows and adds them to the image (see "Drivers") |
+| Apps of this computer | `-HostApps` | Takes the app list with `winget export` and installs those apps at the first sign-in together with `Apps.txt`. Apps winget does not know are not in the list. `Config\Apps.txt` itself is not changed |
+| Wi-Fi networks of this computer | `-HostWifi` | Saves the Wi-Fi profiles (`netsh wlan export key=clear`) and adds them at the first sign-in, before the apps are installed |
+
+Wi-Fi passwords are stored in the ISO as plain text until Windows is installed and someone signs in: at the first sign-in the profiles are added and deleted from the disk right away. That is why this option is off by default, and such an ISO must not be given to anyone.
 
 ## Profile
 

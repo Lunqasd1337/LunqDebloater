@@ -166,11 +166,101 @@ function Test-LunqRegistryEntry {
     return $null
 }
 
+function Get-LunqRegistryRoots {
+    # Куда пишется запись профиля. В образе кусты подключены под своими именами (HiveMap). На этой
+    # Windows (-Online) SOFTWARE и SYSTEM открыты и так, а DefaultUser это профиль Default (новые
+    # пользователи, он подключается как в образе) и текущий пользователь. CurrentUser встречается
+    # только в данных для отката: то, что было у текущего пользователя до -Online.
+    param([Parameter(Mandatory)][string]$Hive, [switch]$Online)
+    if (-not $Online) { return , @($script:HiveMap[$Hive].Key) }
+    switch ($Hive) {
+        'SOFTWARE' { return , @('HKLM\SOFTWARE') }
+        'SYSTEM' { return , @('HKLM\SYSTEM') }
+        'DefaultUser' { return , @($script:HiveMap.DefaultUser.Key, 'HKCU') }
+        'CurrentUser' { return , @('HKCU') }
+    }
+    throw (Get-LunqText 'Registry.UnknownRoot' $Hive)
+}
+
+function Get-LunqRegistryValue {
+    # Текущее значение в виде записи профиля (Type и Value) или $null, если значения нет.
+    # Так его можно записать обратно той же функцией, что и запись профиля.
+    param([Parameter(Mandatory)][string]$Key, [AllowEmptyString()][string]$Name = '')
+    $handle = Open-LunqRegistryKey -Path $Key
+    if (-not $handle) { return $null }
+    try {
+        if (@($handle.GetValueNames()) -notcontains $Name) { return $null }
+        $kind = [string]$handle.GetValueKind($Name)
+        # Переменные в REG_EXPAND_SZ не раскрываются: значение возвращается как записано.
+        $data = $handle.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    }
+    finally { $handle.Dispose() }
+    switch ($kind) {
+        'String' { return @{ Type = 'REG_SZ'; Value = [string]$data } }
+        'ExpandString' { return @{ Type = 'REG_EXPAND_SZ'; Value = [string]$data } }
+        'MultiString' { return @{ Type = 'REG_MULTI_SZ'; Value = @($data) } }
+        # Число записывается без знака: так его прочитает ConvertTo-LunqRegValue.
+        'DWord' { return @{ Type = 'REG_DWORD'; Value = [string][BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$data), 0) } }
+        'QWord' { return @{ Type = 'REG_QWORD'; Value = [string][BitConverter]::ToUInt64([BitConverter]::GetBytes([long]$data), 0) } }
+        'Binary' { return @{ Type = 'REG_BINARY'; Value = (@($data | ForEach-Object { '{0:x2}' -f $_ }) -join ' ') } }
+    }
+    # Тип, которого нет в профиле (например, REG_NONE): вернуть его скрипт не сможет.
+    return @{ Type = $kind; Value = $null; Unsupported = $true }
+}
+
+function Test-LunqRegistryKey {
+    param([Parameter(Mandatory)][string]$Key)
+    $handle = Open-LunqRegistryKey -Path $Key
+    if (-not $handle) { return $false }
+    $handle.Dispose()
+    return $true
+}
+
+function Export-LunqRegistryKey {
+    # Ключ целиком в виде текста .reg (reg export): так его можно вернуть после DeleteKey.
+    # Возвращает текст или $null, если выгрузить не удалось.
+    param([Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$TempDir)
+    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+    $file = Join-Path $TempDir ('{0}.reg' -f [guid]::NewGuid().ToString('N'))
+    try {
+        if ((Invoke-Native reg.exe @('export', $Key, $file, '/y')) -ne 0 -or -not (Test-Path -LiteralPath $file)) { return $null }
+        # reg export пишет в UTF-16 с меткой BOM, Get-Content распознаёт её сам.
+        return (Get-Content -LiteralPath $file -Raw)
+    }
+    finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+}
+
+function Save-LunqRegistryOriginal {
+    # Запоминает, что было в реестре до записи профиля: значение (или его отсутствие), а для
+    # DeleteKey весь ключ. Записывает это в данные для отката под категорией записи.
+    param([Parameter(Mandatory)]$Restore, [Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$Hive)
+    $category = [string](Get-ConfigValue $Entry 'LunqCategory')
+    $action = [string](Get-ConfigValue $Entry 'Action')
+    if (-not $action) { $action = 'Set' }
+    if ($action -eq 'DeleteKey') {
+        if (-not (Test-LunqRegistryKey -Key $Key)) { return }
+        $export = Export-LunqRegistryKey -Key $Key -TempDir (Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\RegExport')
+        if ($null -eq $export) { Write-Warning (Get-LunqText 'Registry.ExportFailed' $Key); return }
+        Add-LunqRestoreRegistryKey -Restore $Restore -Category $category -Hive $Hive -Path ([string]$Entry.Path) -Export $export
+        return
+    }
+    $name = [string](Get-ConfigValue $Entry 'Name')
+    $old = Get-LunqRegistryValue -Key $Key -Name $name
+    $backup = [ordered]@{ Hive = $Hive; Path = [string]$Entry.Path }
+    if ($name) { $backup.Name = $name }
+    if ($null -eq $old) { $backup.Action = 'DeleteValue' }
+    elseif (Get-ConfigValue ([pscustomobject]$old) 'Unsupported') { Write-Warning (Get-LunqText 'Registry.BackupUnsupported' $Key $old.Type); return }
+    else { $backup.Type = $old.Type; $backup.Value = $old.Value }
+    Add-LunqRestoreRegistry -Restore $Restore -Category $category -Entry ([pscustomobject]$backup)
+}
+
 function Invoke-RegistryEntry {
     # Применяет одну запись профиля. Возвращает 'Applied', 'Skipped' или 'Failed'.
-    param([Parameter(Mandatory)]$Entry)
+    # -Root: ключ, под которым лежит путь записи; по умолчанию куст образа из HiveMap.
+    param([Parameter(Mandatory)]$Entry, [string]$Root)
 
-    $key = '{0}\{1}' -f $script:HiveMap[[string]$Entry.Hive].Key, $Entry.Path
+    if (-not $Root) { $Root = $script:HiveMap[[string]$Entry.Hive].Key }
+    $key = '{0}\{1}' -f $Root, $Entry.Path
     # Без Name запись относится к значению «по умолчанию».
     $name = [string](Get-ConfigValue $Entry 'Name')
     $shownName = if ($name) { $name } else { Get-LunqText 'Registry.DefaultValueName' }
@@ -218,9 +308,13 @@ function Set-LunqBuildStamp {
 }
 
 function Set-LunqRegistry {
+    # Записи профиля в реестр образа или, с -Online, этой Windows. -Restore: перед записью
+    # запомнить, что было, чтобы потом вернуть.
     param(
-        [Parameter(Mandatory)][string]$MountPath,
-        [Parameter(Mandatory)]$Config
+        [string]$MountPath,
+        [switch]$Online,
+        [Parameter(Mandatory)]$Config,
+        $Restore
     )
 
     $result = New-LunqResult (Get-LunqText 'Registry.Title') 'Registry'
@@ -231,10 +325,26 @@ function Set-LunqRegistry {
     # настоящую причину ошибки. Образ после ошибки всё равно отключается без сохранения.
     $completed = $false
     try {
-        # Внутри try: если не загрузится второй куст, первый всё равно выгрузится.
-        Mount-OfflineHives -MountPath $MountPath
+        # Внутри try: если не загрузится второй куст, первый всё равно выгрузится. На этой Windows
+        # подключается только профиль Default: SOFTWARE и SYSTEM и так открыты.
+        if ($Online) { Mount-OfflineHives -MountPath (Get-LunqSystemDrive) -Hives DefaultUser }
+        else { Mount-OfflineHives -MountPath $MountPath }
         foreach ($entry in $entries) {
-            $status = Invoke-RegistryEntry -Entry $entry
+            $hive = [string]$entry.Hive
+            $statuses = foreach ($root in (Get-LunqRegistryRoots -Hive $hive -Online:$Online)) {
+                if ($Restore) {
+                    # Текущий пользователь отличается от профиля Default, поэтому его прежнее значение отдельное.
+                    $backupHive = if ($root -eq 'HKCU') { 'CurrentUser' } else { $hive }
+                    $key = '{0}\{1}' -f $root, $entry.Path
+                    try { Save-LunqRegistryOriginal -Restore $Restore -Entry $entry -Key $key -Hive $backupHive }
+                    catch { Write-Warning (Get-LunqText 'Registry.BackupFailed' $key $_.Exception.Message) }
+                }
+                Invoke-RegistryEntry -Entry $entry -Root $root
+            }
+            # Запись в два места (профиль Default и текущий пользователь) считается одной: важен худший итог.
+            $status = 'Skipped'
+            if (@($statuses) -contains 'Failed') { $status = 'Failed' }
+            elseif (@($statuses) -contains 'Applied') { $status = 'Applied' }
             $label = '{0}\{1}' -f $entry.Hive, $entry.Path
             if ($entry.PSObject.Properties['Name'] -and $entry.Name) { $label = "$label\$($entry.Name)" }
             switch ($status) {
@@ -255,4 +365,9 @@ function Set-LunqRegistry {
     finally {
         Dismount-OfflineHives -Strict:$completed
     }
+}
+
+function Get-LunqSystemDrive {
+    # Корень системного диска этой Windows: от него берётся профиль Default (Users\Default\NTUSER.DAT).
+    return ($env:SystemDrive.TrimEnd('\') + '\')
 }

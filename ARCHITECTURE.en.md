@@ -18,6 +18,7 @@ Config\                      Everything the user adjusts
   Updates\                   .msu/.cab updates (not stored in git)
     SafeOS\                  Safe OS Dynamic Update for WinRE
     Setup\                   Setup Dynamic Update for Windows Setup
+    Catalog\                 Downloaded from the Microsoft catalog (-DownloadUpdates)
   README.txt, README.en.txt  Guide to the Config folder
 Modules\
   LunqDebloater\
@@ -54,6 +55,11 @@ Tests\                       Pester tests and stubs
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
 | `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
+| `Catalog.ps1` | Fresh updates from the Microsoft Update Catalog: parsing the search page and the download dialog, picking the newest, downloading with a SHA-1 check and a cache (`Save-LunqCatalogUpdates`). Network access only through `Invoke-LunqWebRequest`, which the tests replace |
+| `Schedule.ps1` | The scheduled task that rebuilds from a recipe every month (`Register-LunqSchedule`, `Unregister-LunqSchedule`, through `schtasks.exe /XML`) |
+| `Recipe.ps1` | The build recipe `<ISO name>.lunq.json`: writing (`New-LunqRecipe`), reading and checking, parameters for a repeat (`Get-LunqRecipeParameters`), comparing updates, the before-and-after HTML report (`Write-LunqHtmlReport`) |
+| `Restore.ps1` | Restore data: what was removed and what the registry held, by profile category (`New-LunqRestoreData`, `Add-LunqRestoreItem`), the file `Windows\LunqDebloater\Restore.json` and restoring on this Windows (`Invoke-LunqRestore`) |
+| `Host.ps1` | A copy of this computer: apps from `winget export` (`Export-LunqHostApps`, `Merge-LunqAppsList`) and Wi-Fi networks (`Export-LunqHostWifi`) |
 
 ## How a run goes
 
@@ -65,8 +71,12 @@ Tests\                       Pester tests and stubs
 6. **Edition and version.** The ISO is mounted once for the list of editions, the choice and the version of the chosen one, and once more while the build works with it: the CopyIso and Export steps (or "What is in the image") keep it mounted in `Context.State.Iso`, and `Dismount-LunqStateIso` dismounts it after Export or on an error. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
 7. **"What is in the image" mode** (`-ListContents`) ends here: `Invoke-LunqBuild -Inventory` runs the `Get-LunqInventorySteps` steps, the edition is mounted read-only (straight from the ISO when it has `install.wim`, with no export; `install.esd` is exported to the working folder first), the list is saved next to the ISO or, if that folder is not writable, to the `Logs` folder (`Get-LunqContentsDir`), `Write-LunqInventory` saves the list and the image is unmounted without saving.
 8. **Plan.** The script shows what will be done and asks for confirmation in step-by-step mode.
-9. **Build** by the list of steps (below), then the result from `Write-LunqReport`.
+9. **Build** by the list of steps (below), then the result from `Write-LunqReport`. After the result, not as a step, the recipe and the HTML report are written next to the ISO: a failure there does not spoil the finished ISO.
 10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.
+
+Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
+
+Before every change the removal functions and `Set-LunqRegistry` record in `Context.Restore` what was removed and what was there (for `DeleteKey` the key is exported with `reg export`). In a build this is saved into the image at the Save step; with `-Online` it is appended to `%SystemRoot%\LunqDebloater\Restore.json` as the last step (and on error too).
 
 ## Build steps
 
@@ -90,7 +100,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Features | Turns off features and removes CBS packages | without `-SkipComponents` |
 | Registry | Applies the profile's registry entries | without `-SkipRegistry` |
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | Writes the build stamp into the image registry and saves `install.wim` | always |
+| Save | Writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
 | Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim` (image 2), services it and copies `setup.exe`, `setuphost.exe` and the UEFI boot manager out of it | there is something for Windows Setup |
 | Recompress | Recompresses `install.wim` | always |
 | Iso | Builds the bootable ISO with `oscdimg` | always |

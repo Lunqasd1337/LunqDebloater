@@ -95,26 +95,26 @@ function Get-LunqBuildSteps {
         @{
             Name = 'Appx'; When = -not $c.SkipAppx
             Title = Get-LunqText 'Main.StepAppx'; Hint = Get-LunqText 'Main.StepAppxHint'
-            Run = { param($c) Remove-LunqAppx -MountPath $c.MountDir -Config $c.Config }
+            Run = { param($c) Remove-LunqAppx -MountPath $c.MountDir -Config $c.Config -Restore $c.Restore }
         },
         @{
             Name = 'Capabilities'; When = -not $c.SkipComponents
             Title = Get-LunqText 'Main.StepCapabilities'; Hint = Get-LunqText 'Main.StepCapabilitiesHint'
-            Run = { param($c) Remove-LunqCapabilities -MountPath $c.MountDir -Config $c.Config }
+            Run = { param($c) Remove-LunqCapabilities -MountPath $c.MountDir -Config $c.Config -Restore $c.Restore }
         },
         @{
             Name = 'Features'; When = -not $c.SkipComponents
             Title = Get-LunqText 'Main.StepFeatures'; Hint = Get-LunqText 'Main.StepFeaturesHint'
             Run = {
                 param($c)
-                Disable-LunqFeatures -MountPath $c.MountDir -Config $c.Config
-                Remove-LunqPackages -MountPath $c.MountDir -Config $c.Config
+                Disable-LunqFeatures -MountPath $c.MountDir -Config $c.Config -Restore $c.Restore
+                Remove-LunqPackages -MountPath $c.MountDir -Config $c.Config -Restore $c.Restore
             }
         },
         @{
             Name = 'Registry'; When = -not $c.SkipRegistry
             Title = Get-LunqText 'Main.StepRegistry'; Hint = Get-LunqText 'Main.StepRegistryHint'
-            Run = { param($c) Set-LunqRegistry -MountPath $c.MountDir -Config $c.Config }
+            Run = { param($c) Set-LunqRegistry -MountPath $c.MountDir -Config $c.Config -Restore $c.Restore }
         },
         @{
             Name = 'Cleanup'; When = [bool]$c.CleanupComponents
@@ -138,6 +138,12 @@ function Get-LunqBuildSteps {
             Run = {
                 param($c)
                 Set-LunqBuildStamp -MountPath $c.MountDir -Values (Get-LunqBuildStampValues -Context $c)
+                # Что удалено и какие значения реестра были до профиля: по ним -Restore на
+                # установленной системе вернёт выбранное.
+                if ($c.Restore) {
+                    try { Save-LunqRestoreData -Restore $c.Restore -Path (Join-Path $c.MountDir 'Windows\LunqDebloater\Restore.json') }
+                    catch { Write-Warning (Get-LunqText 'Restore.SaveFailed' $_.Exception.Message) }
+                }
                 Dismount-WindowsImage -Path $c.MountDir -Save | Out-Null
                 $c.State.Mounted = $false
             }
@@ -203,6 +209,44 @@ function Get-LunqInventorySteps {
                 # ISO можно отключить только после образа, смонтированного прямо с него.
                 Dismount-LunqStateIso -State $c.State
             }
+        }
+    )
+}
+
+function Get-LunqOnlineSteps {
+    # Шаги -Online: профиль применяется к этой Windows. Перед каждым изменением запоминается,
+    # что было, а последний шаг дописывает это в файл для отката (Get-LunqRestorePath).
+    param([Parameter(Mandatory)][hashtable]$Context)
+    $c = $Context
+    return @(
+        @{
+            Name = 'Appx'; When = -not $c.SkipAppx
+            Title = Get-LunqText 'Main.StepAppx'; Hint = Get-LunqText 'Main.StepOnlineAppxHint'
+            Run = { param($c) Remove-LunqAppx -Online -Config $c.Config -Restore $c.Restore }
+        },
+        @{
+            Name = 'Capabilities'; When = -not $c.SkipComponents
+            Title = Get-LunqText 'Main.StepCapabilities'; Hint = Get-LunqText 'Main.StepCapabilitiesHint'
+            Run = { param($c) Remove-LunqCapabilities -Online -Config $c.Config -Restore $c.Restore }
+        },
+        @{
+            Name = 'Features'; When = -not $c.SkipComponents
+            Title = Get-LunqText 'Main.StepFeatures'; Hint = Get-LunqText 'Main.StepFeaturesHint'
+            Run = {
+                param($c)
+                Disable-LunqFeatures -Online -Config $c.Config -Restore $c.Restore
+                Remove-LunqPackages -Online -Config $c.Config -Restore $c.Restore
+            }
+        },
+        @{
+            Name = 'Registry'; When = -not $c.SkipRegistry
+            Title = Get-LunqText 'Main.StepRegistry'; Hint = Get-LunqText 'Main.StepOnlineRegistryHint'
+            Run = { param($c) Set-LunqRegistry -Online -Config $c.Config -Restore $c.Restore }
+        },
+        @{
+            Name = 'SaveRestore'; When = $true
+            Title = Get-LunqText 'Main.StepSaveRestore'; Hint = Get-LunqText 'Main.StepSaveRestoreHint' $c.RestorePath
+            Run = { param($c) Save-LunqRestoreData -Restore $c.Restore -Path $c.RestorePath -Merge }
         }
     )
 }
@@ -277,9 +321,10 @@ function Get-LunqBuildStampValues {
 
 function Invoke-LunqBuild {
     # Выполняет нужные шаги по порядку и возвращает их результаты для итога.
-    # -Inventory: шаги режима «Что в образе» вместо сборки.
-    param([Parameter(Mandatory)][hashtable]$Context, [switch]$Inventory)
+    # -Inventory: шаги режима «Что в образе» вместо сборки, -Online: шаги для этой Windows.
+    param([Parameter(Mandatory)][hashtable]$Context, [switch]$Inventory, [switch]$Online)
     if ($Inventory) { $steps = @(Get-LunqInventorySteps -Context $Context | Where-Object { $_.When }) }
+    elseif ($Online) { $steps = @(Get-LunqOnlineSteps -Context $Context | Where-Object { $_.When }) }
     else { $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When }) }
     Initialize-LunqSteps -Total $steps.Count
     $results = @()

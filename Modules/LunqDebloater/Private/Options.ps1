@@ -113,8 +113,8 @@ function Find-LunqBuildInputs {
 
 function New-LunqContentOptions {
     # Пункты сводки «Что войдёт в образ» по тому, что нашлось. Use: что включено сейчас (ключи
-    # updates, cleanup, updatesToSetup, drivers, driversToSetup, apps, scripts, unattend, oobe, region,
-    # bypass, localAccount).
+    # updates, cleanup, updatesToSetup, download, drivers, driversToSetup, apps, hostApps, scripts, wifi,
+    # unattend, oobe, region, bypass, localAccount).
     param(
         [Parameter(Mandatory)]$Found,
         [Parameter(Mandatory)]$FirstLogon,
@@ -177,6 +177,7 @@ function New-LunqContentOptions {
             -Name (Get-LunqText 'Main.OptUpdatesToSetup') `
             -Details $updatesToSetupDetails),
         (New-LunqOption -Key 'pickUpdates' -Action -Name (Get-LunqText 'Main.OptPickUpdates') -Details (Get-LunqText 'Main.OptPickUpdatesHint')),
+        (New-LunqOption -Key 'download' -Enabled $Use.download -Name (Get-LunqText 'Main.OptDownload') -Details (Get-LunqText 'Main.OptDownloadHint')),
         (New-LunqOption -Key 'drivers' -Enabled $Use.drivers -Available $hasDrivers -Name $driversName -Details $driversDetails),
         (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled $Use.driversToSetup -Available $hasDrivers `
             -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) `
@@ -184,7 +185,9 @@ function New-LunqContentOptions {
         (New-LunqOption -Key 'pickDrivers' -Action -Name (Get-LunqText 'Main.OptPickDrivers') -Details (Get-LunqText 'Main.OptPickDriversHint')),
         (New-LunqOption -Key 'hostDrivers' -Action -Name (Get-LunqText 'Main.OptHostDrivers') -Details (Get-LunqText 'Main.OptHostDriversHint')),
         (New-LunqOption -Key 'apps' -Enabled $Use.apps -Available $hasApps -Name $appsName -Details $appsDetails),
+        (New-LunqOption -Key 'hostApps' -Enabled $Use.hostApps -Name (Get-LunqText 'Main.OptHostApps') -Details (Get-LunqText 'Main.OptHostAppsHint')),
         (New-LunqOption -Key 'scripts' -Enabled $Use.scripts -Available $hasScripts -Name $scriptsName -Details $scriptsDetails),
+        (New-LunqOption -Key 'wifi' -Enabled $Use.wifi -Name (Get-LunqText 'Main.OptHostWifi') -Details @((Get-LunqText 'Main.OptHostWifiHint'), (Get-LunqText 'Main.OptHostWifiWarning'))),
         (New-LunqOption -Key 'unattend' -Enabled $Use.unattend -Name (Get-LunqText 'Main.OptUnattend') `
             -Details (Get-LunqText 'Main.OptUnattendHint')),
         (New-LunqOption -Key 'oobe' -Parent 'unattend' -Enabled $Use.oobe -Name (Get-LunqText 'Main.OptOobe') `

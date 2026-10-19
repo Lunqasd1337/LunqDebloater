@@ -18,6 +18,7 @@ Config\                      Всё, что пользователь настр�
   Updates\                   Обновления .msu/.cab (в git не попадают)
     SafeOS\                  Safe OS Dynamic Update для WinRE
     Setup\                   Setup Dynamic Update для установщика
+    Catalog\                 Скачанное из каталога Microsoft (-DownloadUpdates)
   README.txt, README.en.txt  Подсказка по папке Config
 Modules\
   LunqDebloater\
@@ -54,6 +55,11 @@ Tests\                       Тесты Pester и заглушки
 | `Inventory.ps1` | Режим «Что в образе»: список Appx, компонентов и функций с пометками категорий профиля |
 | `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) и значения отметки о сборке |
 | `Report.ps1` | Общий формат результата шага (`New-LunqResult`) и итог сборки (`Write-LunqReport`) |
+| `Catalog.ps1` | Свежие обновления из каталога Центра обновления: разбор страницы поиска и окна скачивания, выбор самого нового, скачивание с проверкой SHA-1 и кэшем (`Save-LunqCatalogUpdates`). Сеть только через `Invoke-LunqWebRequest`, тесты подменяют её |
+| `Schedule.ps1` | Задание планировщика для пересборки по рецепту каждый месяц (`Register-LunqSchedule`, `Unregister-LunqSchedule`, через `schtasks.exe /XML`) |
+| `Recipe.ps1` | Рецепт сборки `<имя ISO>.lunq.json`: запись (`New-LunqRecipe`), чтение и проверка, параметры для повтора (`Get-LunqRecipeParameters`), сверка обновлений, отчёт «до и после» в HTML (`Write-LunqHtmlReport`) |
+| `Restore.ps1` | Данные для отката: что удалено и как было в реестре, по категориям профиля (`New-LunqRestoreData`, `Add-LunqRestoreItem`), файл `Windows\LunqDebloater\Restore.json` и откат на этой Windows (`Invoke-LunqRestore`) |
+| `Host.ps1` | Копия этого компьютера: программы из `winget export` (`Export-LunqHostApps`, `Merge-LunqAppsList`) и сети Wi-Fi (`Export-LunqHostWifi`) |
 
 ## Как идёт запуск
 
@@ -65,8 +71,12 @@ Tests\                       Тесты Pester и заглушки
 6. **Редакция и версия.** ISO подключается один раз для списка редакций, выбора и версии выбранной, и ещё один раз на время работы с ним: шаги CopyIso и Export (или «Что в образе») держат его подключённым в `Context.State.Iso`, а `Dismount-LunqStateIso` отключает его после Export или при ошибке. `Test-LunqImageRequirements` сверяет сборку с `Requirements` профиля.
 7. **Режим «Что в образе»** (`-ListContents`) на этом заканчивается: `Invoke-LunqBuild -Inventory` выполняет шаги `Get-LunqInventorySteps`, редакция монтируется только для чтения (если на ISO лежит `install.wim`, прямо с ISO, без экспорта; `install.esd` сначала экспортируется в рабочую папку), опись сохраняется рядом с ISO или, если туда не записать, в папку `Logs` (`Get-LunqContentsDir`), `Write-LunqInventory` сохраняет список, образ отключается без сохранения.
 8. **План.** Скрипт показывает, что будет сделано, и в пошаговом режиме просит подтверждение.
-9. **Сборка** по списку шагов (ниже), затем итог `Write-LunqReport`.
+9. **Сборка** по списку шагов (ниже), затем итог `Write-LunqReport`. После итога, уже не шагом, рядом с ISO пишутся рецепт и HTML-отчёт: сбой здесь не портит готовый ISO.
 10. **При ошибке** кусты реестра выгружаются, образ отключается без сохранения. Рабочая папка удаляется, только если этот запуск сам её создал (шаг Prepare) и в ней ничего не смонтировано, иначе DISM потеряет образ.
+
+Другие режимы ответвляются раньше. `-Schedule` (с `-Recipe`) только создаёт или удаляет задание. `-Recipe` в начале подставляет значения из рецепта во все параметры, не заданные в командной строке, и дальше идёт обычная сборка без вопросов. `-Restore` читает `Restore.json`, даёт выбрать категории и вызывает `Invoke-LunqRestore`. `-Online` проходит выбор профиля и категорий, как сборка, и выполняет `Invoke-LunqBuild -Online`: шаги `Get-LunqOnlineSteps` вызывают те же функции удаления и реестра с `-Online` вместо `-MountPath`. `-DownloadUpdates` скачивает обновления после чтения редакции, когда известны выпуск и архитектура, и до проверки версии.
+
+Перед каждым изменением функции удаления и `Set-LunqRegistry` записывают в `Context.Restore`, что убрано и как было (для `DeleteKey` выгрузка ключа через `reg export`). При сборке это сохраняется в образ на шаге Save, при `-Online` дописывается к `%SystemRoot%\LunqDebloater\Restore.json` последним шагом (и при ошибке тоже).
 
 ## Шаги сборки
 
@@ -90,7 +100,7 @@ Tests\                       Тесты Pester и заглушки
 | Features | Отключает функции и удаляет CBS-пакеты | без `-SkipComponents` |
 | Registry | Применяет записи реестра профиля | без `-SkipRegistry` |
 | Cleanup | Очищает хранилище компонентов (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | Пишет отметку о сборке в реестр образа и сохраняет `install.wim` | всегда |
+| Save | Пишет отметку о сборке в реестр образа и данные для отката в `Windows\LunqDebloater\Restore.json`, сохраняет `install.wim` | всегда |
 | Setup | Распаковывает Setup DU в `sources`; если для `boot.wim` (образ 2) есть обновления или драйверы, обслуживает его и копирует из него `setup.exe`, `setuphost.exe` и загрузчик UEFI | есть что ставить в установщик |
 | Recompress | Пересжимает `install.wim` | всегда |
 | Iso | Собирает загрузочный ISO через `oscdimg` | всегда |

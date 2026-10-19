@@ -101,6 +101,8 @@ function Read-LunqProfile {
             $categories.Add([pscustomobject]@{
                     Id           = $id
                     Name         = [string]$name
+                    # Имя с переводами как в профиле: оно уходит в данные для отката, а откат может идти на другом языке.
+                    NameSource   = Get-ConfigValue $raw 'Name'
                     Description  = Get-LunqLocalized (Get-ConfigValue $raw 'Description')
                     Enabled      = $enabled
                     Appx         = Get-ConfigList $raw 'Appx'
@@ -209,6 +211,16 @@ function Disable-LunqCategories {
         }
         $category.Enabled = $false
     }
+}
+
+function Set-LunqOnlyCategories {
+    # Включает только категории с этими Id, остальные выключает (для параметра -Category).
+    param([Parameter(Mandatory)]$LunqProfile, [string[]]$Ids)
+    $known = @($LunqProfile.Categories | ForEach-Object { $_.Id })
+    foreach ($id in $Ids) {
+        if ($known -notcontains $id) { throw (Get-LunqText 'Profile.CategoryNotFound' $id ($known -join ', ')) }
+    }
+    foreach ($category in $LunqProfile.Categories) { $category.Enabled = $Ids -contains $category.Id }
 }
 
 function Select-LunqCategories {

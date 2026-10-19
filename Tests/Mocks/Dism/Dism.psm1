@@ -65,39 +65,62 @@ function Export-WindowsImage {
 
 function Get-AppxProvisionedPackage {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Path, $LogPath)
+    param($Path, [switch]$Online, $LogPath)
     if ($env:LUNQ_TEST_FAIL_APPX) { throw 'DISM failure to test the rollback' }
     @(
         [pscustomobject]@{ DisplayName = 'Microsoft.BingNews'; PackageName = 'Microsoft.BingNews_1.0_x64' },
         [pscustomobject]@{ DisplayName = 'Microsoft.WindowsCalculator'; PackageName = 'Microsoft.WindowsCalculator_1.0_x64' }
     )
 }
-function Remove-AppxProvisionedPackage { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$PackageName, $LogPath) }
+function Remove-AppxProvisionedPackage {
+    [CmdletBinding()]
+    param($Path, [switch]$Online, [Parameter(Mandatory)]$PackageName, $LogPath)
+    Write-Host "    [mock] remove provisioned $PackageName online=$Online"
+}
 
 function Get-WindowsCapability {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Path, $LogPath)
+    param($Path, [switch]$Online, $LogPath)
     @(
         [pscustomobject]@{ Name = 'App.StepsRecorder~~~~0.0.1.0'; State = 'Installed' },
         [pscustomobject]@{ Name = 'Language.Basic~~~ru-RU~0.0.1.0'; State = 'Installed' }
     )
 }
-function Remove-WindowsCapability { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$Name, $LogPath) }
+function Remove-WindowsCapability {
+    [CmdletBinding()]
+    param($Path, [switch]$Online, [Parameter(Mandatory)]$Name, $LogPath)
+    Write-Host "    [mock] remove capability $Name online=$Online"
+}
+# Возврат компонента и функции на этой Windows (-Restore).
+function Add-WindowsCapability {
+    [CmdletBinding()]
+    param([switch]$Online, [Parameter(Mandatory)]$Name, $LogPath)
+    Write-Host "    [mock] add capability $Name online=$Online"
+}
 
 function Get-WindowsOptionalFeature {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Path, $LogPath)
+    param($Path, [switch]$Online, $LogPath)
     @(
         [pscustomobject]@{ FeatureName = 'Recall'; State = 'Enabled' },
         [pscustomobject]@{ FeatureName = 'Microsoft-Hyper-V-All'; State = 'Disabled' }
     )
 }
-function Disable-WindowsOptionalFeature { [CmdletBinding()] param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath) }
+function Disable-WindowsOptionalFeature {
+    [CmdletBinding()]
+    param($Path, [switch]$Online, [Parameter(Mandatory)]$FeatureName, [switch]$NoRestart, [switch]$Remove, $LogPath)
+    Write-Host "    [mock] disable feature $FeatureName online=$Online"
+}
+function Enable-WindowsOptionalFeature {
+    [CmdletBinding()]
+    param([switch]$Online, [Parameter(Mandatory)]$FeatureName, [switch]$All, [switch]$NoRestart, $LogPath)
+    Write-Host "    [mock] enable feature $FeatureName online=$Online"
+}
 
 function Get-WindowsPackage {
     # Пакеты CBS образа. Staged-пакеты не установлены, их удалять не нужно.
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Path, $LogPath)
+    param($Path, [switch]$Online, $LogPath)
     @(
         [pscustomobject]@{ PackageName = 'Microsoft-Windows-Foundation-Package~31bf3856ad364e35~amd64~~10.0.26300.1'; PackageState = 'Installed' },
         [pscustomobject]@{ PackageName = 'Microsoft-Windows-MediaPlayer-Package~31bf3856ad364e35~amd64~~10.0.26300.1'; PackageState = 'Installed' },
@@ -107,7 +130,7 @@ function Get-WindowsPackage {
 }
 function Remove-WindowsPackage {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Path, [Parameter(Mandatory)]$PackageName, [switch]$NoRestart, $LogPath)
+    param($Path, [switch]$Online, [Parameter(Mandatory)]$PackageName, [switch]$NoRestart, $LogPath)
     Write-Host "    [mock] remove package $PackageName"
     if ($PackageName -match 'Broken') { throw 'The package is permanent and cannot be removed' }
 }

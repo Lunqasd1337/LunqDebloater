@@ -43,6 +43,9 @@ $texts = @{
         Failed         = 'С ошибками: {0}'
         LogPath        = 'Подробности в логе: {0}'
         Closing        = '    Окно закроется через 60 секунд или по нажатию любой клавиши.'
+        WifiHeader     = '==> Сети Wi-Fi ({0})'
+        WifiFailed     = 'Не удалось добавить сеть {0} (код {1})'
+        WifiAdded      = 'Добавлено сетей: {0}'
     }
     en = @{
         NoAdmin        = 'Initial setup skipped: administrator rights are required.'
@@ -69,6 +72,9 @@ $texts = @{
         Failed         = 'With errors: {0}'
         LogPath        = 'Details are in the log: {0}'
         Closing        = '    This window will close in 60 seconds or when you press any key.'
+        WifiHeader     = '==> Wi-Fi networks ({0})'
+        WifiFailed     = 'Could not add the network {0} (code {1})'
+        WifiAdded      = 'Networks added: {0}'
     }
 }
 $language = ''
@@ -163,6 +169,26 @@ function Find-Winget {
 Write-Host ''
 Write-Host (Get-Text 'Header') -ForegroundColor Cyan
 Write-Line (Get-Text 'DoNotClose')
+
+# Сети Wi-Fi с компьютера, на котором собран образ: профили netsh с паролями открытым текстом.
+# Они добавляются первыми, чтобы для программ сразу был интернет, и тут же удаляются с диска.
+$wifiDir = Join-Path $root 'Wifi'
+if (Test-Path -LiteralPath $wifiDir) {
+    Protect-Path $wifiDir
+    $wifiFiles = @(Get-ChildItem -LiteralPath $wifiDir -Filter '*.xml' -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.xml' })
+    if ($wifiFiles.Count -gt 0) {
+        Write-Host ''
+        Write-Host (Get-Text 'WifiHeader' $wifiFiles.Count) -ForegroundColor Cyan
+        $wifiAdded = 0
+        foreach ($wifiFile in $wifiFiles) {
+            $global:LASTEXITCODE = 0
+            & netsh wlan add profile "filename=$($wifiFile.FullName)" user=all *> $null
+            if ($LASTEXITCODE -eq 0) { $wifiAdded++ } else { Write-Line (Get-Text 'WifiFailed' $wifiFile.BaseName $LASTEXITCODE) 'Yellow' }
+        }
+        Write-Line (Get-Text 'WifiAdded' $wifiAdded)
+    }
+    Remove-Item -LiteralPath $wifiDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $attempt = 1
 if (Test-Path -LiteralPath $attemptsFile) { $attempt = [int](Get-Content -LiteralPath $attemptsFile -Raw) + 1 }

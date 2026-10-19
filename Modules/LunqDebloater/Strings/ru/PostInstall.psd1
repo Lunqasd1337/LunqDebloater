@@ -6,4 +6,5 @@
     'PostInstall.UnattendExists' = 'В образе уже есть Windows\System32\Sysprep\unattend.xml, скрипт первого входа добавить нельзя.'
     'PostInstall.ConvertedToBom' = 'Пересохранено в UTF-8 с BOM, чтобы русский текст работал в Windows PowerShell 5.1: {0}'
     'PostInstall.Added'          = 'Добавлено: {0}. Запустится при первом входе в Windows.'
+    'PostInstall.Wifi'           = 'сетей Wi-Fi: {0}'
 }

@@ -24,4 +24,7 @@
     'Registry.Title'                 = 'Registry'
     'Registry.ListEmpty'             = 'The registry tweak list in the profile is empty.'
     'Registry.Summary'               = 'Registry: applied {0}, skipped (already gone) {1}, errors {2}.'
+    'Registry.ExportFailed'          = 'Could not save the key {0} before deleting it: -Restore will not be able to bring it back.'
+    'Registry.BackupUnsupported'     = 'The value {0} of type {1} is not saved for restore.'
+    'Registry.BackupFailed'          = 'Could not save {0} for restore: {1}'
 }

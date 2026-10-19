@@ -22,4 +22,5 @@
     'Report.FirstLogonRufus3'  = 'their own after installation. The settings you need can be turned on in the LunqDebloater answer file'
     'Report.FirstLogonRufus4'  = '(the "What goes into the image" summary), and the programs and scripts can be run by hand: see README.'
     'Report.Longest'           = 'Took the longest: {0}'
+    'Report.OnlineNext'        = 'What next: restart the computer. To bring back what was removed: .\LunqDebloater.ps1 -Restore (data in {0}).'
 }

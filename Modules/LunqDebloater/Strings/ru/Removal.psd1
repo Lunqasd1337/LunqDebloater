@@ -15,4 +15,5 @@
     'Removal.PackagesTitle'      = 'Системные пакеты'
     'Removal.PackagesWarning'    = 'Удаление системных пакетов может помешать установке обновлений.'
     'Removal.RemovingPackage'    = 'Удаляю пакет {0}'
+    'Removal.AppxSummaryOnline'  = 'Удалено приложений: {0} из {1} на этом компьютере.'
 }
