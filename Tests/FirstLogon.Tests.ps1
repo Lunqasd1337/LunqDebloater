@@ -301,3 +301,36 @@ Describe 'Скрипт первого входа' {
         Get-Lines $t.WingetLog | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Удаление Edge из Config\Scripts' {
+    BeforeAll {
+        $script:Scripts = Join-Path (Split-Path $PSScriptRoot -Parent) 'Config\Scripts'
+    }
+
+    It 'EdgeRemover запускается без меню: с -UninstallEdge -NonInteractive, код выхода передаётся' {
+        # Вместо EdgeRemover заглушка: она записывает, с какими параметрами её вызвали.
+        $folder = Join-Path $TestDrive 'Scripts'
+        New-Item -ItemType Directory -Path (Join-Path $folder 'EdgeRemover') -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $script:Scripts 'RemoveEdge.ps1') -Destination $folder
+        $called = Join-Path $TestDrive 'called.txt'
+        Set-Content -LiteralPath (Join-Path $folder 'EdgeRemover\RemoveEdge.ps1') -Encoding UTF8 -Value @"
+param([switch]`$UninstallEdge, [switch]`$NonInteractive)
+Set-Content -LiteralPath '$called' -Value (@(`$PSBoundParameters.Keys | Sort-Object) -join ',')
+exit 3
+"@
+        $global:LASTEXITCODE = 0
+        & (Join-Path $folder 'RemoveEdge.ps1')
+        $global:LASTEXITCODE | Should -Be 3
+        Get-Content -LiteralPath $called | Should -Be 'NonInteractive,UninstallEdge'
+    }
+
+    It 'у EdgeRemover есть параметры, с которыми его запускает RemoveEdge.ps1' {
+        # Обновлённый EdgeRemover без этих параметров открыл бы меню при первом входе.
+        $tokens = $null; $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Scripts 'EdgeRemover\RemoveEdge.ps1'), [ref]$tokens, [ref]$errors)
+        $errors | Should -BeNullOrEmpty
+        $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+        $names | Should -Contain 'UninstallEdge'
+        $names | Should -Contain 'NonInteractive'
+    }
+}

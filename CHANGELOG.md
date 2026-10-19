@@ -2,6 +2,10 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.11.0
+
+- **Удаление Edge при первом входе.** В `Config\Scripts` лежит `RemoveEdge.ps1`: после установки программ он удаляет Microsoft Edge скриптом [EdgeRemover](https://github.com/he3als/EdgeRemover) от he3als (папка `Config\Scripts\EdgeRemover`). Скрипт запускается с `-UninstallEdge -NonInteractive`, поэтому меню EdgeRemover не открывается и первый вход не ждёт нажатия клавиши. Если Edge нужен, удалите `RemoveEdge.ps1` и папку `EdgeRemover` или соберите с `-SkipScripts`. Браузера после этого не остаётся, если его нет в `Apps.txt`: там закомментированы Firefox и Chrome.
+
 ## 1.10.1
 
 - Накопительное обновление 24H2 и 25H2 вместе с контрольным KB5043080 больше не падает с «An error occurred applying the Unattend.xml file from the .msu package». Microsoft требует ставить их одним вызовом DISM из папки, где лежат только они, поэтому все накопительные обновления Windows из `Config\Updates` теперь ставятся так: в отдельную папку, установка самого нового через `dism.exe /Add-Package`. Обновление .NET, языковые пакеты и `.cab` ставятся по-прежнему по одному.

@@ -20,6 +20,11 @@ can be taken from this computer.
                  programs are installed, in name order (10-settings.ps1, 20-cleanup.ps1),
                  with administrator rights. The other files in this folder are copied
                  too, and the scripts can use them by a relative path.
+                 RemoveEdge.ps1 is already here: it removes Microsoft Edge with he3als'
+                 EdgeRemover script (the EdgeRemover folder). If you need Edge, delete
+                 RemoveEdge.ps1 and the EdgeRemover folder. Without Edge there is no
+                 browser unless Apps.txt has one: remove the # before Mozilla.Firefox
+                 or Google.Chrome.
 
   Drivers\       Drivers: extracted .inf files together with .sys, .cat and the other
                  files, any subfolders. Windows installs them during setup.
