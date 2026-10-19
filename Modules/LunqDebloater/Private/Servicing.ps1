@@ -122,10 +122,37 @@ function Add-LunqUpdates {
 
     $result = New-LunqResult $Title $Kind
     New-Item -ItemType Directory -Path $ScratchDir -Force | Out-Null
+    # Несколько накопительных обновлений Windows в .msu (в 24H2 это контрольное KB5043080 и
+    # целевое) ставятся одним вызовом DISM, как велит Microsoft: целевое из папки, где кроме него
+    # только предыдущие накопительные. Контрольное обновление отдельно падает с ошибкой
+    # «An error occurred applying the Unattend.xml file from the .msu package».
+    $cumulative = @(@($Files) | Where-Object { $_.Extension -eq '.msu' -and $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' } |
+            Sort-Object @{ Expression = { if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]0 } } }, Name)
+    $target = $null
+    if ($cumulative.Count -gt 1) { $target = $cumulative[-1] }
     $i = 0
     foreach ($file in $Files) {
         $i++
+        if ($target -and $file.FullName -ne $target.FullName -and @($cumulative | Where-Object { $_.FullName -eq $file.FullName }).Count -gt 0) {
+            Write-Info (Get-LunqText 'Servicing.CumulativeWith' $i $Files.Count $file.Name $target.Name)
+            continue
+        }
         Write-Info (Get-LunqText 'Servicing.Installing' $i $Files.Count $file.Name (Format-Size $file.Length))
+        if ($target -and $file.FullName -eq $target.FullName) {
+            $code = Add-LunqCumulativeUpdates -MountPath $MountPath -Files $cumulative -ScratchDir $ScratchDir
+            $names = @($cumulative | ForEach-Object { $_.Name })
+            if ($code -eq 0 -or $code -eq 3010) { foreach ($name in $names) { $result.Done.Add($name) } }
+            elseif ($code -eq -2146498530) {
+                # 0x800f081e: обновление не для этого образа, как в Test-LunqNotApplicable.
+                Write-Info (Get-LunqText 'Servicing.UpdateNotApplicable' $file.Name)
+                foreach ($name in $names) { $result.Skipped.Add($name) }
+            }
+            else {
+                Write-Warning (Get-LunqText 'Servicing.CumulativeFailed' $file.Name ('0x{0:x8}' -f $code))
+                foreach ($name in $names) { $result.Failed.Add($name) }
+            }
+            continue
+        }
         try {
             # Свои предупреждения командлет повторяет в тексте ошибки, поэтому они не выводятся дважды.
             Add-WindowsPackage -Path $MountPath -PackagePath $file.FullName -ScratchDirectory $ScratchDir -NoRestart -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
@@ -148,6 +175,31 @@ function Add-LunqUpdates {
         Write-Info (Get-LunqText 'Servicing.DynamicUpdateHint')
     }
     return $result
+}
+
+function Add-LunqCumulativeUpdates {
+    # Целевое накопительное обновление (последнее по номеру KB) вместе с предыдущими: DISM находит
+    # контрольные обновления в папке целевого и ставит их по порядку. Папка своя, в рабочей папке,
+    # потому что других .msu (.NET, языковых пакетов) в ней быть не должно. Файлы в неё не
+    # копируются, а связываются жёсткими ссылками, если та же файловая система. Возвращает код dism.exe.
+    param([Parameter(Mandatory)][string]$MountPath, [Parameter(Mandatory)]$Files, [Parameter(Mandatory)][string]$ScratchDir)
+    $folder = Join-Path (Split-Path $ScratchDir -Parent) 'cumulative'
+    if (Test-Path -LiteralPath $folder) { Remove-Item -LiteralPath $folder -Recurse -Force }
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    try {
+        foreach ($file in @($Files)) {
+            $copy = Join-Path $folder $file.Name
+            try { New-Item -ItemType HardLink -Path $copy -Target $file.FullName -ErrorAction Stop | Out-Null }
+            catch { Copy-Item -LiteralPath $file.FullName -Destination $copy -Force }
+        }
+        # Через dism.exe, как в инструкции Microsoft: с Add-WindowsPackage контрольные обновления
+        # из папки подхватываются не всегда.
+        $target = Join-Path $folder (@($Files)[-1]).Name
+        $arguments = @("/Image:$MountPath", '/Add-Package', "/PackagePath:$target", "/ScratchDir:$ScratchDir", '/NoRestart')
+        if ($script:DismLogPath) { $arguments += "/LogPath:$($script:DismLogPath)" }
+        return (Invoke-Native dism.exe $arguments -SuccessCodes @(0, 3010))
+    }
+    finally { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-LunqDriverFiles {
