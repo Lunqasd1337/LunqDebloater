@@ -190,6 +190,7 @@ try {
     # например, с новым ISO или без обновлений.
     $recipeData = $null
     $recipeProfile = $null
+    $categoryFromRecipe = $false
     if ($Recipe) {
         $recipeData = Read-LunqRecipe -Path $Recipe
         Write-Info (Get-LunqText 'Main.RecipeUsing' $Recipe)
@@ -199,6 +200,7 @@ try {
             # Редакция по имени и выбранные вручную категории важнее записанных в рецепте.
             if ($name -eq 'Index' -and $PSBoundParameters.ContainsKey('Edition')) { continue }
             if ($name -eq 'Category' -and $PSBoundParameters.ContainsKey('SkipCategory')) { continue }
+            if ($name -eq 'Category') { $categoryFromRecipe = $true }
             Set-Variable -Name $name -Value $recipeValues[$name]
         }
         if (-not $PSBoundParameters.ContainsKey('ProfilePath')) {
@@ -298,7 +300,9 @@ try {
     $lunqProfile = Read-LunqProfile -Path $ProfilePath
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
     $Category = @($Category | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    if ($Category.Count -gt 0) { Set-LunqOnlyCategories -LunqProfile $lunqProfile -Ids $Category }
+    # Пустой список из рецепта значит «все категории выключены» (сборка только с обновлениями и
+    # драйверами), а не умолчания профиля.
+    if ($Category.Count -gt 0 -or $categoryFromRecipe) { Set-LunqOnlyCategories -LunqProfile $lunqProfile -Ids $Category }
     $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
     if ($interactive -and -not $listMode) {

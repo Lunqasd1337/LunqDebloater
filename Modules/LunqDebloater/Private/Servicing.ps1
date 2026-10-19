@@ -2,11 +2,22 @@
 # называются так же, только с ndp в имени, их отсекают отдельно.
 $script:WindowsUpdatePattern = '(?i)^windows1[01]\.0-kb'
 
+# Пакеты включения (enablement) переключают версию Windows и ставятся только поверх нужного
+# накопительного обновления. Имя у них такое же, как у накопительных, поэтому их узнают по номеру KB.
+# KB5054156: Windows 11 25H2, KB5027397: Windows 11 23H2, KB5015684: Windows 10 22H2.
+$script:EnablementUpdates = @('5054156', '5027397', '5015684')
+
+function Test-LunqEnablementUpdate {
+    param([Parameter(Mandatory)][string]$Name)
+    return $Name -match '(?i)kb(\d+)' -and $script:EnablementUpdates -contains $Matches[1]
+}
+
 function Get-LunqUpdateFiles {
     # Находит .msu и .cab в папке и упорядочивает их, как в инструкции Microsoft по обновлению
     # образа: сначала пакеты без номера KB (языковые пакеты и компоненты по запросу), потом
-    # обновления Windows, последними обновления .NET. Языковой пакет, поставленный после
-    # накопительного обновления, остаётся в исходной версии. Внутри группы порядок по номеру KB:
+    # обновления Windows, за ними пакеты включения, последними обновления .NET. Языковой пакет,
+    # поставленный после накопительного обновления, остаётся в исходной версии, а пакет включения
+    # без накопительного не ставится. Внутри группы порядок по номеру KB:
     # более старые (например, контрольные накопительные обновления) устанавливаются раньше.
     param([Parameter(Mandatory)][string]$Path)
 
@@ -20,7 +31,7 @@ function Get-LunqSortedUpdates {
     # Списки из Get-LunqUpdateFiles приходят одним объектом: ForEach-Object раскрывает их.
     $files = @($Files | ForEach-Object { $_ } | Where-Object { $_ })
     $sorted = $files | Sort-Object @{ Expression = {
-            if ($_.Name -notmatch '(?i)kb\d+') { 0 } elseif ($_.Name -match '(?i)ndp') { 2 } else { 1 }
+            if ($_.Name -notmatch '(?i)kb\d+') { 0 } elseif ($_.Name -match '(?i)ndp') { 3 } elseif (Test-LunqEnablementUpdate $_.Name) { 2 } else { 1 }
         }
     }, @{ Expression = {
             if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]0 }
@@ -126,7 +137,8 @@ function Add-LunqUpdates {
     # целевое) ставятся одним вызовом DISM, как велит Microsoft: целевое из папки, где кроме него
     # только предыдущие накопительные. Контрольное обновление отдельно падает с ошибкой
     # «An error occurred applying the Unattend.xml file from the .msu package».
-    $cumulative = @(@($Files) | Where-Object { $_.Extension -eq '.msu' -and $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' } |
+    # Пакет включения DISM из такой папки не берёт, поэтому он ставится отдельно, после неё.
+    $cumulative = @(@($Files) | Where-Object { $_.Extension -eq '.msu' -and $_.Name -match $script:WindowsUpdatePattern -and $_.Name -notmatch '(?i)ndp' -and -not (Test-LunqEnablementUpdate $_.Name) } |
             Sort-Object @{ Expression = { if ($_.Name -match '(?i)kb(\d+)') { [long]$Matches[1] } else { [long]0 } } }, Name)
     $target = $null
     if ($cumulative.Count -gt 1) { $target = $cumulative[-1] }
@@ -334,8 +346,9 @@ function Update-LunqPEImage {
             Write-Info (Get-LunqText 'Servicing.Cleanup')
             $null = Invoke-LunqComponentCleanup -MountPath $MountPath -ScratchDir $ScratchDir
         }
-        if ($ExportSetupTo) { $results += Copy-LunqSetupFiles -MountPath $MountPath -Destination $ExportSetupTo }
-        # Загрузчик меняется только обновлениями: после одних драйверов он тот же, что на ISO.
+        # setup.exe и загрузчик меняются только обновлениями. После одних драйверов или неудачного
+        # обновления в boot.wim лежат старые версии, и setup.exe затёр бы новый из Setup Dynamic Update.
+        if ($ExportSetupTo -and $updated -gt 0) { $results += Copy-LunqSetupFiles -MountPath $MountPath -Destination $ExportSetupTo }
         if ($BootFilesTo -and $updated -gt 0) { $results += Copy-LunqBootManager -MountPath $MountPath -IsoRoot $BootFilesTo }
         Dismount-WindowsImage -Path $MountPath -Save | Out-Null
         $saved = $true
@@ -463,8 +476,8 @@ function Update-LunqSetup {
     # Установщик: boot.wim, образ 2 («Установка Windows»), с которого загружается флешка.
     # Setup Dynamic Update распаковывается в sources, затем setup.exe и setuphost.exe
     # копируются туда же из обновлённого boot.wim, чтобы версии совпадали. Этот порядок взят
-    # из инструкции Microsoft. Если для boot.wim нет ни обновлений, ни драйверов, он не трогается:
-    # иначе он пересжимался бы впустую, а setup.exe из Setup Dynamic Update заменялся бы старым.
+    # из инструкции Microsoft. Если для boot.wim нет ни обновлений, ни драйверов, он не трогается,
+    # чтобы не пересжимать его впустую. Если обновления в boot.wim не встали, setup.exe не копируется.
     param(
         [Parameter(Mandatory)][string]$IsoRoot,
         [Parameter(Mandatory)][string]$WorkDir,
