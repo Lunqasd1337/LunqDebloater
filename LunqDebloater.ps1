@@ -444,7 +444,7 @@ try {
             $HostWifi = [switch]$use.wifi
             # Скачанные Safe OS и Setup Dynamic Update нужны только вместе с обновлением установщика.
             if ($DownloadUpdates) { $UpdatesToSetup = [switch]$true }
-            if (@($options | Where-Object { $_.Key -eq 'cleanup' -and $_.Available }).Count -gt 0) { $CleanupComponents = [switch]$use.cleanup }
+            $CleanupComponents = [switch]$use.cleanup
         }
         $useUpdates = $use.updates
         $useDrivers = $use.drivers

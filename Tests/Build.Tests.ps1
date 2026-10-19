@@ -421,12 +421,12 @@ Describe 'Пошаговый режим' {
     }
 
     # В сводке без обновлений и драйверов в Config пункты со стрелкой идут первыми:
-    # [1] папка с обновлениями, [2] скачать обновления, [3] папка с драйверами, [4] драйверы
-    # этого компьютера, дальше [5] программы, [6] программы этого компьютера, [7] сети Wi-Fi
-    # и [8] файл ответов.
+    # [1] папка с обновлениями, [2] скачать обновления, [3] очистка хранилища компонентов,
+    # [4] папка с драйверами, [5] драйверы этого компьютера, дальше [6] программы,
+    # [7] программы этого компьютера, [8] сети Wi-Fi и [9] файл ответов.
     It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
-        # «8 3»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '8 3', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        # «9 4»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Драйверы: 3 шт\.'
         $run.Output | Should -Match 'add driver net\.inf'
@@ -446,7 +446,7 @@ Describe 'Пошаговый режим' {
     It 'драйверы этого компьютера выгружаются и встраиваются' {
         $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
         try {
-            $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y')
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '5', 'y')
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
@@ -457,7 +457,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '', '5', 'y') -Prepare {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y') -Prepare {
             param($t)
             $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
             $env:LUNQ_TEST_FOLDER = $empty.FullName
@@ -465,6 +465,16 @@ Describe 'Пошаговый режим' {
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'нет файлов \.inf'
         $run.Output | Should -Not -Match 'add driver'
+    }
+
+    It 'очистка хранилища включается вместе со скачиванием обновлений, без папки с обновлениями' {
+        # «3»: очистка без обновлений не включается, «2 3»: скачать обновления и очистить хранилище.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '5', 'y')
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Пункт 3 работает только вместе с пунктом 2'
+        $run.Output | Should -Match 'Обновления из каталога готовы'
+        $run.Output | Should -Match 'Очистка WinSxS:\s+да'
+        @(Get-Content -LiteralPath $script:Test.NativeLog | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -BeGreaterThan 0
     }
 }
 

@@ -49,7 +49,7 @@
     'Main.ScriptsNoneHint'       = 'Положите свои *.ps1 в Config\Scripts.'
     'Main.RegionDetails'         = 'Формат: {0}, раскладки: {1}, часовой пояс: {2}.'
     'Main.OptCleanup'            = 'Очистить хранилище компонентов после обновлений'
-    'Main.OptCleanupHint'        = 'Образ станет меньше, но удалить встроенные обновления потом будет нельзя.'
+    'Main.OptCleanupHint'        = 'Для обновлений из папки и для скачанных. Образ станет меньше, но удалить встроенные обновления потом будет нельзя.'
     'Main.OptUpdatesToSetup'     = 'Обновить и установщик со средой восстановления (WinRE)'
     'Main.OptUpdatesToSetupHint' = 'В них будут те же исправления, что и в системе. Сборка займёт на 10-20 минут дольше.'
     'Main.OptUpdatesToSetupDU'   = 'Сюда же входят Safe OS Dynamic Update ({0} шт.) и Setup Dynamic Update ({1} шт.).'

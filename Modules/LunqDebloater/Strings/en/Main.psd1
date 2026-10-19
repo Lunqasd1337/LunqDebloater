@@ -49,7 +49,7 @@
     'Main.ScriptsNoneHint'       = 'Put your own *.ps1 files in Config\Scripts.'
     'Main.RegionDetails'         = 'Format: {0}, keyboard layouts: {1}, time zone: {2}.'
     'Main.OptCleanup'            = 'Clean up the component store after the updates'
-    'Main.OptCleanupHint'        = 'The image gets smaller, but the built-in updates cannot be removed later.'
+    'Main.OptCleanupHint'        = 'For updates from the folder and for downloaded ones. The image gets smaller, but the built-in updates cannot be removed later.'
     'Main.OptUpdatesToSetup'     = 'Also update Windows Setup and the recovery environment (WinRE)'
     'Main.OptUpdatesToSetupHint' = 'They get the same fixes as the system. The build takes 10-20 minutes longer.'
     'Main.OptUpdatesToSetupDU'   = 'This also covers Safe OS Dynamic Update ({0}) and Setup Dynamic Update ({1}).'
