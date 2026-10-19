@@ -92,6 +92,29 @@ Describe 'Обновления и драйверы' {
         @(Get-ChildItem -LiteralPath $dir).Count | Should -Be 3
     }
 
+    It 'пакет включения не входит в группу накопительных и ставится отдельно, после них' {
+        # Раньше пакет включения 25H2 попадал в папку целевого обновления, DISM его не брал,
+        # а итог писал, что он встроен.
+        $dir = Join-Path $TestDrive 'enablement'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $names = 'windows11.0-kb5043080-x64.msu', 'windows11.0-kb5054156-x64.msu', 'windows11.0-kb5090000-x64.msu', 'windows11.0-kb5090001-x64-ndp481.msu'
+        foreach ($name in $names) { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+        $files = Get-LunqUpdateFiles -Path $dir
+        @($files | ForEach-Object { $_.Name }) | Should -Be @($names[0], $names[2], $names[1], $names[3])
+        $script:DismCalls = New-Object System.Collections.Generic.List[object]
+        Mock Invoke-Native -ModuleName LunqDebloater {
+            $package = (@($Arguments | Where-Object { $_ -like '/PackagePath:*' }) -replace '^/PackagePath:', '')[0]
+            $script:DismCalls.Add(@(Get-ChildItem -LiteralPath (Split-Path $package -Parent) | ForEach-Object { $_.Name } | Sort-Object))
+            return 0
+        } -ParameterFilter { $FilePath -eq 'dism.exe' }
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($f, $s) Add-LunqUpdates -MountPath 'mount' -Files $f -ScratchDir $s } $files (Join-Path $TestDrive 'ekbwork\scratch') } *>&1 | Out-String -Width 400
+        $script:DismCalls.Count | Should -Be 1
+        $script:DismCalls[0] | Should -Be @($names[0], $names[2])
+        $script:r.Done | Should -Be @($names[0], $names[2], $names[1], $names[3])
+        $output | Should -Match 'add package windows11\.0-kb5054156-x64\.msu'
+        $output | Should -Not -Match 'kb5054156.* ставится вместе с'
+    }
+
     It 'DISM не поставил накопительные обновления: ошибка с кодом по каждому из них' {
         $dir = Join-Path $TestDrive 'checkpoint2'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null

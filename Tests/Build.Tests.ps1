@@ -146,6 +146,22 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Not -Match 'Файлы установщика:'
     }
 
+    It 'Setup Dynamic Update и драйверы в установщик: setup.exe из Setup Dynamic Update не заменяется' {
+        # boot.wim монтируется только ради драйверов, в нём старый setup.exe.
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; UpdatesToSetup = $true; DriversToSetup = $true } -Prepare {
+            param($t)
+            Copy-Item -LiteralPath $t.Drivers -Destination (Join-Path $t.App 'Config\Drivers') -Recurse -Force
+            $setup = Join-Path $t.App 'Config\Updates\Setup'
+            New-Item -ItemType Directory -Path $setup -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $setup 'windows11.0-kb5080200-x64.cab') -Value 'cab'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Setup Dynamic Update: установлено 1'
+        $run.Output | Should -Match 'mount .*boot\.wim'
+        $run.Output | Should -Not -Match 'Файлы установщика:'
+        Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\sources\setup.exe') | Should -Not -Be 'from boot.wim'
+    }
+
     It 'Safe OS и Setup Dynamic Update без -UpdatesToSetup не встраиваются' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
             param($t)
@@ -507,6 +523,26 @@ Describe 'Рецепт и отчёт' {
         $second.Output | Should -Match 'Реестр:\s+пропущено'
         $second.Output | Should -Not -Match 'изменилось с прошлой сборки'
         Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
+    }
+
+    It 'рецепт сборки без категорий повторяется без категорий, а не с умолчаниями профиля' {
+        $root = Join-Path $TestDrive 'recipe-empty'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $all = 'apps', 'legacy', 'telemetry', 'ai', 'ads', 'search', 'store', 'onedrive'
+            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true; SkipCategory = $all }
+            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            Remove-Item -LiteralPath $t.RegLog -Force -ErrorAction SilentlyContinue
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        @($recipe.Categories).Count | Should -Be 0
+        $run.Error | Should -BeNullOrEmpty
+        # Ни одна категория не включилась: телеметрия не отключается.
+        $registry = @(Get-Content -LiteralPath $t.RegLog -Encoding UTF8 -ErrorAction SilentlyContinue) -join "`n"
+        $registry | Should -Not -Match 'AllowTelemetry'
     }
 
     It 'ISO из рецепта изменился: предупреждение, профиль изменился: берётся копия из рецепта' {

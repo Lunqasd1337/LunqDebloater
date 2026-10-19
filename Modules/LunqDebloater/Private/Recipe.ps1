@@ -122,7 +122,8 @@ function Get-LunqRecipeParameters {
     if ($r.PSObject.Properties['Label'] -and $r.Label) { $values.Label = [string]$r.Label }
     $configPath = [string](Get-ConfigValue $r 'ConfigPath')
     if ($configPath -and (Test-Path -LiteralPath $configPath -PathType Container)) { $values.ConfigPath = $configPath }
-    $values.Category = (Get-ConfigList $r 'Categories')
+    # Пустой список тоже передаётся: в той сборке все категории были выключены.
+    if ($r.PSObject.Properties['Categories']) { $values.Category = (Get-ConfigList $r 'Categories') }
     foreach ($name in 'SkipAppx', 'SkipComponents', 'SkipRegistry', 'CleanupComponents') { $values[$name] = [bool](Get-ConfigValue $r 'Steps', $name) }
 
     $values.DownloadUpdates = [bool](Get-ConfigValue $r 'Updates', 'Download')
