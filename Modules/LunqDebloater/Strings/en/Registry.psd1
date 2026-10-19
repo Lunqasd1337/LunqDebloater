@@ -12,6 +12,7 @@
     'Registry.UnknownRoot'           = 'Unknown registry root: {0}'
     'Registry.UnknownActionAllowed'  = 'unknown action ''{0}''. Allowed: {1}'
     'Registry.PathHasHive'           = 'Path is written without HKLM\ and the hive name ({0}): the Hive field sets the hive.'
+    'Registry.PathMalformed'         = 'Path uses single \ separators, with no \ at the start or the end and no /.'
     'Registry.PathCurrentControlSet' = 'the SYSTEM hive of the image has no CurrentControlSet, write ControlSet001 instead.'
     'Registry.UnknownAction'         = 'unknown action ''{0}'''
     'Registry.DefaultValueName'      = '(Default)'

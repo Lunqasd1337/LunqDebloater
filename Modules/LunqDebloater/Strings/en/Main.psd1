@@ -101,6 +101,7 @@
     'Main.StepCopyEditionHint'   = 'The edition is copied from the ISO to the working folder so that it can be opened. The original ISO is not changed.'
     'Main.StepOpenImage'         = 'Opening the image'
     'Main.StepOpenImageHint'     = 'The image is mounted read-only, nothing in it is changed.'
+    'Main.DirectMountFailed'     = 'install.wim could not be mounted directly from the ISO ({0}), the edition will be copied to the working folder.'
     'Main.StepReadInventory'     = 'Reading apps and components'
     'Main.StepReadInventoryHint' = 'The lists are compared with the profile so you can see what is already in it.'
     'Main.InventoryHeader'       = 'Image contents: [{0}] {1}, {2}'

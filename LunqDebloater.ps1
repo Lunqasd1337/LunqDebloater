@@ -112,15 +112,15 @@ if (-not (Test-Administrator)) {
 
 # Относительные пути считаются от текущей папки PowerShell. [IO.Path]::GetFullPath
 # для этого не годится: он берёт рабочую папку процесса, а она не меняется после cd.
-$defaultWorkDir = Join-Path $env:SystemDrive 'LunqWork'
 $WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorkDir).TrimEnd('\')
 if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'Config' }
 $ConfigPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ConfigPath).TrimEnd('\')
 
 # Что нужно знать при ошибке. Mounted: смонтирован ли образ. WorkDirOwned: рабочую папку можно
 # удалить в конце, только если этот запуск сам её пересоздал, иначе проверка могла её отвергнуть
-# и в ней лежат чужие файлы. Шаги сборки меняют эту же таблицу через контекст.
-$state = @{ Mounted = $false; WorkDirOwned = $false; ImageInfo = $null }
+# и в ней лежат чужие файлы. Iso: ISO, который шаги держат подключённым между шагами.
+# Шаги сборки меняют эту же таблицу через контекст.
+$state = @{ Mounted = $false; WorkDirOwned = $false; ImageInfo = $null; Iso = $null }
 $bootMountDir = Join-Path $WorkDir 'bootmount'
 $reMountDir = Join-Path $WorkDir 'remount'
 $allMountDirs = @((Join-Path $WorkDir 'mount'), $bootMountDir, $reMountDir)
@@ -162,7 +162,7 @@ try {
         Write-Section (Get-LunqText 'Main.SectionAction')
         Write-Host '    [1] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionBuild')
         Write-Host '    [2] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionList')
-        $listMode = ((Read-Host (Get-LunqText 'Main.ActionPrompt')).Trim() -eq '2')
+        $listMode = (([string](Read-Host (Get-LunqText 'Main.ActionPrompt'))).Trim() -eq '2')
 
         Write-Section (Get-LunqText 'Main.SectionIso')
         Write-Info (Get-LunqText 'Main.ChooseIso')
@@ -226,6 +226,7 @@ try {
     # Какого вида .cab в корне папки обновлений: распознаётся один раз, а не при каждом показе сводки.
     $cabKinds = @{}
     $peDriverKinds = @{}
+    $folderSizes = @{}
 
     while ($true) {
         $found = [pscustomobject]@{ Updates = @(); SafeOS = @(); SetupDU = @(); DUNames = @(); Drivers = @() }
@@ -262,7 +263,7 @@ try {
             Write-Info (Get-LunqText 'Main.ContentsIntro' $ConfigPath)
             Write-Info (Get-LunqText 'Main.ContentsHowTo')
             $options = New-LunqContentOptions -Found $found -FirstLogon $foundLogon -Use $use -HostRegion $hostRegion `
-                -UpdatesDir $updatesDir -DriversDir $driversDir -PEDriverCache $peDriverKinds
+                -UpdatesDir $updatesDir -DriversDir $driversDir -PEDriverCache $peDriverKinds -SizeCache $folderSizes
             foreach ($option in $options) {
                 if ($choices.ContainsKey($option.Key)) { $option.Enabled = $choices[$option.Key] }
             }
@@ -295,6 +296,8 @@ try {
             foreach ($key in 'updates', 'updatesToSetup') { $choices.Remove($key) }
         }
         elseif ($picked) {
+            # Драйверы этого компьютера каждый раз выгружаются в ту же папку: прежний размер не годится.
+            $folderSizes.Remove($picked.Path)
             $driversDir = $picked.Path
             $DriversPath = $picked.Path
             foreach ($key in 'drivers', 'driversToSetup') { $choices.Remove($key) }
@@ -317,7 +320,7 @@ try {
     $drivers = @()
     if ($useDrivers) { $drivers = $foundDrivers }
     $driversSize = [long]0
-    if ($drivers.Count -gt 0) { $driversSize = Get-FolderSize $DriversPath }
+    if ($drivers.Count -gt 0) { $driversSize = Get-FolderSize $DriversPath -Cache $folderSizes }
     if ($drivers.Count -eq 0) { $DriversToSetup = [switch]$false }
 
     # Установщик и WinRE получают только обновления самой Windows.
@@ -361,10 +364,12 @@ try {
     $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $ConfigPath, $UpdatesPath, $DriversPath, $ProfilePath) | Where-Object { $_ } |
         ForEach-Object { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($_) }
     $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath `
-        -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:($WorkDir -eq $defaultWorkDir) `
+        -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:(-not $PSBoundParameters.ContainsKey('WorkDir')) `
         -ExtraSize $extraSize -SkipOscdimg:$listMode -SkipOutputCheck:$listMode -OwnMountPaths $allMountDirs
     if ($check.Errors -gt 0) { throw (Get-LunqText 'Main.FixErrors') }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo (Get-LunqText 'Main.AskContinueWarnings'))) { return }
+    $contentsDir = $null
+    if ($listMode) { $contentsDir = Get-LunqContentsDir -IsoPath $IsoPath -FallbackDir (Split-Path $lunqLog.Path -Parent) }
 
     if (-not $listMode -and (Test-Path -LiteralPath $OutputIso)) {
         if ($interactive -and -not $Force) {
@@ -385,6 +390,7 @@ try {
         $selected = Select-LunqEdition -Images $images -Index $Index -Edition $Edition
         $editionName = ($images | Where-Object ImageIndex -eq $selected).ImageName
         $imageInfo = Get-IsoImageInfo -IsoRoot $iso.Root -Index $selected
+        $sourceIsWim = (Get-InstallImagePath -IsoRoot $iso.Root) -like '*.wim'
         # Чужой autounattend.xml в ISO иначе обнаружился бы только на шаге файла ответов,
         # после обновлений и драйверов.
         if ($setupAnswers -and (Test-Path -LiteralPath (Join-Path $iso.Root 'autounattend.xml'))) { throw (Get-LunqText 'Unattend.Exists') }
@@ -431,7 +437,7 @@ try {
 
     # ---------- Режим «Что в образе» ----------
     if ($listMode) {
-        $contentsPath = Join-Path (Split-Path $IsoPath -Parent) ('{0}_{1}_contents.txt' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath), $selected)
+        $contentsPath = Join-Path $contentsDir ('{0}_{1}_contents.txt' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath), $selected)
         $inventoryContext = @{
             State        = $state
             WorkDir      = $WorkDir
@@ -440,6 +446,7 @@ try {
             WimPath      = $wimPath
             IsoPath      = $IsoPath
             Index        = $selected
+            DirectMount  = $sourceIsWim
             Profile      = $lunqProfile
             ContentsPath = $contentsPath
             Header       = @(
@@ -581,6 +588,12 @@ catch {
 finally {
     # Папку нельзя удалять, пока в ней смонтирован образ: DISM потеряет его, и понадобится dism /Cleanup-Wim.
     $stillMounted = $state.Mounted -or ((Test-Path -LiteralPath $isoDir) -and (Test-LunqAnyMounted -Paths $allMountDirs))
+    # ISO, оставшийся подключённым после ошибки или Ctrl+C между шагами. Пока смонтирован образ,
+    # который может быть взят прямо с ISO («Что в образе»), ISO не отключается.
+    if (-not $stillMounted) {
+        try { Dismount-LunqStateIso -State $state }
+        catch { Write-Warning $_.Exception.Message }
+    }
     if ($stillMounted) { Write-Info (Get-LunqText 'Main.WorkDirKept' $WorkDir) }
     elseif ($state.WorkDirOwned -and -not $KeepWorkDir -and (Test-Path -LiteralPath $isoDir)) {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue

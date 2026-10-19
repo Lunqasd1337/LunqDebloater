@@ -17,9 +17,18 @@
     Export-WindowsImage -SourceImagePath $SourceImage -SourceIndex $SourceIndex `
         -DestinationImagePath $temp -CompressionType $CompressionType -CheckIntegrity | Out-Null
 
-    if (-not $KeepSource) { Remove-Item -LiteralPath $SourceImage -Force }
-    if (Test-Path -LiteralPath $DestinationImage) { Remove-Item -LiteralPath $DestinationImage -Force }
-    Move-Item -LiteralPath $temp -Destination $DestinationImage
+    if (-not $KeepSource -and $SourceImage -ne $DestinationImage) { Remove-Item -LiteralPath $SourceImage -Force }
+    Set-LunqFileFromTemp -Temp $temp -Path $DestinationImage
+}
+
+function Set-LunqFileFromTemp {
+    # Ставит готовый временный файл на место прежнего одной операцией. Если сначала удалить прежний,
+    # а перенос не удастся (файл держит антивирус), не останется ни того, ни другого, а в install.wim
+    # уже встроены обновления и драйверы.
+    param([Parameter(Mandatory)][string]$Temp, [Parameter(Mandatory)][string]$Path)
+    # [NullString]: обычный $null PowerShell передал бы как пустую строку, а это не «без резервной копии».
+    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($Temp, $Path, [NullString]::Value) }
+    else { Move-Item -LiteralPath $Temp -Destination $Path }
 }
 
 function Optimize-LunqWim {
@@ -36,8 +45,7 @@ function Optimize-LunqWim {
         if ($image.ImageIndex -eq $BootIndex) { $params.SetBootable = $true }
         Export-WindowsImage @params | Out-Null
     }
-    Remove-Item -LiteralPath $Path -Force
-    Move-Item -LiteralPath $temp -Destination $Path
+    Set-LunqFileFromTemp -Temp $temp -Path $Path
 }
 
 function Invoke-LunqComponentCleanup {
@@ -62,8 +70,8 @@ function Find-Oscdimg {
 
     if ($Path) {
         if (Test-Path -LiteralPath $Path -PathType Leaf) { return $Path }
-        # Вместо файла часто указывают папку Oscdimg из ADK: тогда oscdimg.exe ищется в ней.
-        # Без этого папка проходила проверку и ошибка всплывала только на последнем шаге.
+        # Вместо файла часто указывают папку Oscdimg из ADK: тогда oscdimg.exe ищется в ней, и ошибка
+        # в пути видна в проверке перед сборкой, а не на последнем шаге.
         $inFolder = Join-Path $Path 'oscdimg.exe'
         if ((Test-Path -LiteralPath $Path -PathType Container) -and (Test-Path -LiteralPath $inFolder -PathType Leaf)) { return $inFolder }
         throw (Get-LunqText 'Image.OscdimgNotFoundAt' $Path)

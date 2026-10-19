@@ -101,6 +101,7 @@
     'Main.StepCopyEditionHint'   = 'Редакция копируется из ISO в рабочую папку, чтобы её можно было открыть. Исходный ISO не изменяется.'
     'Main.StepOpenImage'         = 'Открытие образа'
     'Main.StepOpenImageHint'     = 'Образ монтируется только для чтения, в нём ничего не меняется.'
+    'Main.DirectMountFailed'     = 'install.wim не смонтировался прямо с ISO ({0}), редакция будет скопирована в рабочую папку.'
     'Main.StepReadInventory'     = 'Чтение приложений и компонентов'
     'Main.StepReadInventoryHint' = 'Списки сравниваются с профилем, чтобы было видно, что уже в нём есть.'
     'Main.InventoryHeader'       = 'Содержимое образа: [{0}] {1}, {2}'

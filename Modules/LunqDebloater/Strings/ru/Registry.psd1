@@ -12,6 +12,7 @@
     'Registry.UnknownRoot'           = 'Неизвестный корень реестра: {0}'
     'Registry.UnknownActionAllowed'  = 'неизвестное действие ''{0}''. Допустимо: {1}'
     'Registry.PathHasHive'           = 'Path указывается без HKLM\ и имени куста ({0}): куст задаёт поле Hive.'
+    'Registry.PathMalformed'         = 'Path пишется через одиночный \, без \ в начале и в конце и без /.'
     'Registry.PathCurrentControlSet' = 'в кусте SYSTEM образа нет CurrentControlSet, пишите ControlSet001 вместо него.'
     'Registry.UnknownAction'         = 'неизвестное действие ''{0}'''
     'Registry.DefaultValueName'      = '(по умолчанию)'

@@ -102,11 +102,25 @@ function New-LunqUnattendXml {
     $lines.Add('    </component>')
     $lines.Add('  </settings>')
 
-    if ($Unattend.Region) {
+    if ($Unattend.Region -or $Unattend.LocalAccount) {
         $lines.Add('  <settings pass="specialize">')
-        $lines.Add("    <component name=`"Microsoft-Windows-Shell-Setup`" $attrs>")
-        $lines.Add("      <TimeZone>$(& $e $Unattend.Region.TimeZone)</TimeZone>")
-        $lines.Add('    </component>')
+        if ($Unattend.Region) {
+            $lines.Add("    <component name=`"Microsoft-Windows-Shell-Setup`" $attrs>")
+            $lines.Add("      <TimeZone>$(& $e $Unattend.Region.TimeZone)</TimeZone>")
+            $lines.Add('    </component>')
+        }
+        if ($Unattend.LocalAccount) {
+            # Запасной путь к локальной учётной записи: если OOBE всё же покажет вход в учётную запись
+            # Майкрософт, BypassNRO добавляет на этот экран вариант «У меня нет Интернета».
+            $lines.Add("    <component name=`"Microsoft-Windows-Deployment`" $attrs>")
+            $lines.Add('      <RunSynchronous>')
+            $lines.Add('        <RunSynchronousCommand wcm:action="add">')
+            $lines.Add('          <Order>1</Order>')
+            $lines.Add('          <Path>reg.exe add &quot;HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE&quot; /v BypassNRO /t REG_DWORD /d 1 /f</Path>')
+            $lines.Add('        </RunSynchronousCommand>')
+            $lines.Add('      </RunSynchronous>')
+            $lines.Add('    </component>')
+        }
         $lines.Add('  </settings>')
     }
 

@@ -57,7 +57,8 @@ function Read-YesNo {
     # всё остальное означает «нет».
     param([Parameter(Mandatory)][string]$Prompt)
     $answer = Read-Host "    $Prompt [Y/N]"
-    return ($answer.Trim().ToLower() -in @('y', 'yes', 'д', 'да'))
+    # [string]: при закрытом вводе Read-Host возвращает $null.
+    return (([string]$answer).Trim().ToLower() -in @('y', 'yes', 'д', 'да'))
 }
 
 function Format-Size {

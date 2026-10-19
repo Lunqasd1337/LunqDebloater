@@ -27,6 +27,15 @@ function Dismount-IsoImage {
     if ($Iso.Owned) { Dismount-DiskImage -ImagePath $Iso.IsoPath | Out-Null }
 }
 
+function Dismount-LunqStateIso {
+    # Отключает ISO, который шаги сборки держат подключённым в State.Iso между шагами.
+    param([Parameter(Mandatory)][hashtable]$State)
+    if (-not $State.Iso) { return }
+    $iso = $State.Iso
+    $State.Iso = $null
+    Dismount-IsoImage -Iso $iso
+}
+
 function Get-IsoEditions {
     # Список редакций прямо из подключённого ISO, ещё до копирования файлов.
     param([Parameter(Mandatory)][string]$IsoRoot)
@@ -45,6 +54,7 @@ function Get-IsoImageInfo {
 
     $image = Get-WindowsImage -ImagePath (Get-InstallImagePath -IsoRoot $IsoRoot) -Index $Index
     $version = [version]$image.Version
+    # Числа из перечисления ImageArchitecture модуля DISM: 0 x86, 5 ARM, 9 x64, 12 ARM64.
     $architecture = switch ([int]$image.Architecture) {
         0 { 'x86' }; 5 { 'arm' }; 9 { 'amd64' }; 12 { 'arm64' }; default { "unknown($($image.Architecture))" }
     }
@@ -105,26 +115,18 @@ function Test-LunqImageRequirements {
 }
 
 function Copy-IsoContent {
-    # Монтирует ISO, копирует его содержимое в рабочую папку и снимает атрибут «только чтение».
+    # Копирует содержимое подключённого ISO в рабочую папку и снимает атрибут «только чтение».
     # install.wim и install.esd (4-7 ГБ) не копируются: шаг Export берёт редакцию прямо с ISO.
     param(
-        [Parameter(Mandatory)][string]$IsoPath,
+        [Parameter(Mandatory)][string]$IsoRoot,
         [Parameter(Mandatory)][string]$Destination
     )
 
-    $iso = Mount-IsoImage -IsoPath $IsoPath
-    $source = $iso.Root
-    try {
-        Write-Info (Get-LunqText 'Iso.Copying' $source)
-
-        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-        # robocopy возвращает коды < 8 при успехе.
-        $code = Invoke-Native robocopy.exe @($source, $Destination, '/E', '/XF', 'install.wim', 'install.esd', '/A-:R', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') -SuccessCodes (0..7)
-        if ($code -ge 8) { throw (Get-LunqText 'Iso.RobocopyFailed' $code) }
-    }
-    finally {
-        Dismount-IsoImage -Iso $iso
-    }
+    Write-Info (Get-LunqText 'Iso.Copying' $IsoRoot)
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    # robocopy возвращает коды < 8 при успехе.
+    $code = Invoke-Native robocopy.exe @($IsoRoot, $Destination, '/E', '/XF', 'install.wim', 'install.esd', '/A-:R', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') -SuccessCodes (0..7)
+    if ($code -ge 8) { throw (Get-LunqText 'Iso.RobocopyFailed' $code) }
 }
 
 function Get-InstallImagePath {
@@ -239,7 +241,7 @@ function Select-IsoFile {
             }
         }
         if (-not $path) {
-            $path = (Read-Host ('    ' + (Get-LunqText 'Iso.PathPrompt'))).Trim().Trim('"')
+            $path = ([string](Read-Host ('    ' + (Get-LunqText 'Iso.PathPrompt')))).Trim().Trim('"')
         }
         if ($path -and (Test-Path -LiteralPath $path -PathType Leaf) -and $path -like '*.iso') {
             return (Resolve-Path -LiteralPath $path).Path

@@ -101,6 +101,19 @@ function Test-LunqAnyMounted {
     return ($null -eq $mounted) -or ($mounted.Count -gt 0)
 }
 
+function Test-LunqWritableFolder {
+    # Можно ли создать файл в папке. Атрибут «только чтение» у папки в Windows запись не запрещает,
+    # поэтому надёжнее всего записать пробный файл.
+    param([Parameter(Mandatory)][string]$Folder)
+    $probe = Join-Path $Folder (".lunq_write_test_{0}.tmp" -f [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.File]::WriteAllText($probe, '')
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+        return $true
+    }
+    catch { return $false }
+}
+
 function Test-LunqOutputPath {
     # Можно ли записать итоговый ISO: папка есть, писать в неё можно, и это не исходный ISO.
     # Возвращает текст проблемы или $null.
@@ -110,12 +123,7 @@ function Test-LunqOutputPath {
     if (Test-Path -LiteralPath $OutputIso -PathType Container) { return (Get-LunqText 'Checks.OutputIsFolder') }
     $folder = Split-Path $OutputIso -Parent
     if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { return (Get-LunqText 'Checks.OutputNoFolder' $folder) }
-    $probe = Join-Path $folder (".lunq_write_test_{0}.tmp" -f [guid]::NewGuid().ToString('N'))
-    try {
-        [IO.File]::WriteAllText($probe, '')
-        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
-    }
-    catch { return (Get-LunqText 'Checks.OutputNotWritable' $folder) }
+    if (-not (Test-LunqWritableFolder -Folder $folder)) { return (Get-LunqText 'Checks.OutputNotWritable' $folder) }
     # Прошлый ISO, подключённый в Проводнике как диск, не даст его заменить. Без этой проверки
     # сборка узнала бы об этом только на последнем шаге, через час работы.
     if (Test-Path -LiteralPath $OutputIso -PathType Leaf) {

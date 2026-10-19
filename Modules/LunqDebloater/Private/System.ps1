@@ -123,12 +123,15 @@ function Get-LunqPrivateNames {
 
 function Copy-LunqAnonymized {
     # Копирует текстовый файл построчно с заменами. Лог DISM бывает большим, поэтому целиком он
-    # в память не читается. Лог DISM записан не в UTF-8 (кодировка ANSI), а копия пишется в UTF-8
-    # с BOM: в ней бывают русские строки, которых нет в кодовой странице ANSI, например в английской Windows.
+    # в память не читается. Копия пишется в UTF-8 с BOM: в ней бывают русские строки, которых нет
+    # в кодовой странице ANSI, например в английской Windows.
+    # -Ansi: файл без BOM в кодировке ANSI, как лог DISM. Без него файл без BOM читается как UTF-8,
+    # если он в нём корректен: так сохранён профиль, и чтение в ANSI превратило бы русский текст в мусор.
     param(
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination,
         [Parameter(Mandatory)][Collections.IDictionary]$Replace,
+        [switch]$Ansi,
         # Больше нуля: вместо всего файла записать строки с ошибками, предупреждениями и метками
         # шагов, а затем последние $KeepTail строк целиком. Так делается для большого лога DISM.
         [int]$KeepTail = 0
@@ -144,7 +147,16 @@ function Copy-LunqAnonymized {
         foreach ($p in $patterns) { $Text = $p.Regex.Replace($Text, $p.Value) }
         $Text
     }
-    $reader = New-Object IO.StreamReader($Source, [Text.Encoding]::Default, $true)
+    $encoding = [Text.Encoding]::Default
+    if (-not $Ansi) {
+        # Профиль и лог запуска небольшие, поэтому проверить весь файл на UTF-8 ничего не стоит.
+        try {
+            $null = (New-Object Text.UTF8Encoding($false, $true)).GetString([IO.File]::ReadAllBytes($Source))
+            $encoding = New-Object Text.UTF8Encoding($false)
+        }
+        catch { }   # не UTF-8: файл в ANSI
+    }
+    $reader = New-Object IO.StreamReader($Source, $encoding, $true)
     try {
         $writer = New-Object IO.StreamWriter($Destination, $false, (New-Object Text.UTF8Encoding($true)))
         try {
@@ -191,8 +203,9 @@ function New-LunqBugReport {
     try {
         foreach ($file in $files) {
             $keepTail = 0
-            if ($file -eq $Log.DismPath -and (Get-Item -LiteralPath $file).Length -gt $MaxDismBytes) { $keepTail = $DismTail }
-            Copy-LunqAnonymized -Source $file -Destination (Join-Path $temp (Split-Path $file -Leaf)) -Replace $Replace -KeepTail $keepTail
+            $isDism = $file -eq $Log.DismPath
+            if ($isDism -and (Get-Item -LiteralPath $file).Length -gt $MaxDismBytes) { $keepTail = $DismTail }
+            Copy-LunqAnonymized -Source $file -Destination (Join-Path $temp (Split-Path $file -Leaf)) -Replace $Replace -KeepTail $keepTail -Ansi:$isDism
         }
         Compress-Archive -Path (Join-Path $temp '*') -DestinationPath $zip -Force
     }

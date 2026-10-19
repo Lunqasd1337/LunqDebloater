@@ -18,6 +18,8 @@
     'Profile.CategoriesIntro'      = 'Profile categories. [x] will be applied, [ ] skipped.'
     'Profile.CategoriesPrompt'     = 'Category numbers to turn them on or off (separated by spaces), or Enter to continue'
     'Profile.NoSuchCategoryNumber' = 'Number {0} is not in the list.'
+    'Profile.ProfileSkipped'       = 'Profile {0} was skipped: {1}'
+    'Profile.NoValidProfiles'      = 'None of the profiles in {0} could be read.'
     'Profile.NoProfiles'           = 'The folder {0} has no profiles (*.json).'
     'Profile.Single'               = 'Profile: {0}'
     'Profile.ChooseIntro'          = 'The profile decides what is removed and changed in the image:'

@@ -87,6 +87,29 @@ Describe 'Dismount-OfflineHives' {
     }
 }
 
+Describe 'Set-LunqRegistry' {
+    It 'невыгруженный куст после ошибки не заменяет её настоящую причину' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            # Второй куст не загружается, а первый потом так и не выгружается.
+            $script:loads = 0
+            Mock Invoke-Native {
+                switch ($Arguments[0]) {
+                    'load' { $script:loads++; if ($script:loads -ge 2) { 1 } else { 0 } }
+                    'query' { 0 }
+                    default { 1 }
+                }
+            }
+            Mock Start-Sleep { }
+            Mock Write-Warning { }
+            Mock Write-Info { }
+            $config = [pscustomobject]@{ Registry = @([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'x'; Name = 'v'; Type = 'REG_DWORD'; Value = 1 }) }
+            { Set-LunqRegistry -MountPath $Root -Config $config } | Should -Throw '*Не удалось загрузить куст*'
+            Should -Invoke Write-Warning -Scope It -ParameterFilter { $Message -like '*LUNQ_*' }
+        }
+    }
+}
+
 Describe 'Set-LunqBuildStamp' {
     It 'загружает только куст SOFTWARE' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

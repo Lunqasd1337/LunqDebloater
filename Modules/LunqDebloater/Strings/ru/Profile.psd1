@@ -18,6 +18,8 @@
     'Profile.CategoriesIntro'      = 'Категории профиля. [x] будет применена, [ ] пропущена.'
     'Profile.CategoriesPrompt'     = 'Номера категорий, чтобы включить или выключить их (через пробел), или Enter, чтобы продолжить'
     'Profile.NoSuchCategoryNumber' = 'Номера {0} нет в списке.'
+    'Profile.ProfileSkipped'       = 'Профиль {0} пропущен: {1}'
+    'Profile.NoValidProfiles'      = 'В папке {0} нет ни одного профиля, который удалось прочитать.'
     'Profile.NoProfiles'           = 'В папке {0} нет профилей (*.json).'
     'Profile.Single'               = 'Профиль: {0}'
     'Profile.ChooseIntro'          = 'Профиль определяет, что будет удалено и изменено в образе:'
