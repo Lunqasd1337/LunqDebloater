@@ -195,6 +195,8 @@
     'Main.BugReport'             = 'Для отчёта об ошибке приложите этот архив (имя пользователя и компьютера в нём заменены): {0}'
     'Main.StepOnlineAppxHint'    = 'У новых и у уже существующих пользователей этого компьютера.'
     'Main.StepOnlineRegistryHint' = 'Прежние значения запоминаются для отката.'
+    'Main.StepUninstall'         = 'Удаление программ'
+    'Main.StepUninstallHint'     = 'Программы из профиля удаляются их собственными скриптами из папки ThirdParty. -Restore поставит их обратно.'
     'Main.StepSaveRestore'       = 'Данные для отката'
     'Main.StepSaveRestoreHint'   = '{0}'
     'Main.ActionOnline'          = 'Применить профиль к этому компьютеру (без ISO)'

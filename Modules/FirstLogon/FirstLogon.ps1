@@ -1,6 +1,7 @@
 ﻿# LunqDebloater: первичная настройка после установки Windows.
 # Запускается при первом входе (FirstLogonCommands из Windows\System32\Sysprep\unattend.xml).
-# Ставит программы из Apps.txt через winget и выполняет скрипты *.ps1 из папки User.
+# Ставит программы из Apps.txt через winget, удаляет программы из профиля (папка Uninstall)
+# и выполняет скрипты *.ps1 из папки User.
 # Пока не всё сделано, повторяет работу при следующих входах (до 5 попыток): если нет
 # интернета или winget, если программа не поставилась или окно закрыли на середине.
 
@@ -11,6 +12,8 @@ $appsFile = Join-Path $userDir 'Apps.txt'
 $log = Join-Path $root 'FirstLogon.log'
 $appsInstalledFile = Join-Path $root 'apps.installed'
 $scriptsDoneFile = Join-Path $root 'scripts.done'
+$uninstallDir = Join-Path $root 'Uninstall'
+$uninstallDoneFile = Join-Path $root 'uninstall.done'
 $attemptsFile = Join-Path $root 'attempts.txt'
 $taskName = 'LunqFirstLogon'
 $maxAttempts = 5
@@ -19,62 +22,70 @@ $maxAttempts = 5
 # Язык записан при сборке в Language.txt рядом со скриптом; без него берётся язык системы.
 $texts = @{
     ru = @{
-        NoAdmin        = 'Первичная настройка пропущена: нужны права администратора.'
-        WindowTitle    = 'LunqDebloater: первичная настройка'
-        Header         = 'LunqDebloater: первичная настройка Windows'
-        DoNotClose     = 'Не закрывайте это окно, оно закроется само.'
-        TaskFailed     = 'Не удалось создать задание для повторной попытки: {0}'
-        ProtectFailed  = 'Не удалось закрыть {0} от других пользователей: {1}'
-        AppsHeader     = '==> Установка программ ({0})'
-        WaitInternet   = 'Жду подключения к интернету (до 5 минут)...'
-        WaitWinget     = 'Жду, пока Windows зарегистрирует winget (до 10 минут)...'
-        NoInternet     = 'Нет подключения к интернету.'
-        NoWinget       = 'winget не найден.'
-        AppFailed      = 'Не удалось установить {0} (код {1})'
-        ScriptsHeader  = '==> Ваши скрипты ({0})'
-        ScriptExitCode = '{0} завершился с кодом {1}'
-        ScriptError    = 'Ошибка в {0}: {1}'
-        ScriptsLater   = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
-        AppsNextLogon  = 'Неустановленные программы будут поставлены при следующем входе в Windows.'
-        AppsGaveUp     = 'Не все программы установлены за {0} попыток. Поставьте их вручную, список в {1}'
-        AppsNoRetry    = 'Не все программы установлены, а повторить попытку при следующем входе нельзя. Поставьте их вручную, список в {0}'
-        Done           = '==> Готово'
-        Installed      = 'Установлено программ: {0}'
-        Failed         = 'С ошибками: {0}'
-        LogPath        = 'Подробности в логе: {0}'
-        Closing        = '    Окно закроется через 60 секунд или по нажатию любой клавиши.'
-        WifiHeader     = '==> Сети Wi-Fi ({0})'
-        WifiFailed     = 'Не удалось добавить сеть {0} (код {1})'
-        WifiAdded      = 'Добавлено сетей: {0}'
+        NoAdmin         = 'Первичная настройка пропущена: нужны права администратора.'
+        WindowTitle     = 'LunqDebloater: первичная настройка'
+        Header          = 'LunqDebloater: первичная настройка Windows'
+        DoNotClose      = 'Не закрывайте это окно, оно закроется само.'
+        TaskFailed      = 'Не удалось создать задание для повторной попытки: {0}'
+        ProtectFailed   = 'Не удалось закрыть {0} от других пользователей: {1}'
+        AppsHeader      = '==> Установка программ ({0})'
+        WaitInternet    = 'Жду подключения к интернету (до 5 минут)...'
+        WaitWinget      = 'Жду, пока Windows зарегистрирует winget (до 10 минут)...'
+        NoInternet      = 'Нет подключения к интернету.'
+        NoWinget        = 'winget не найден.'
+        AppFailed       = 'Не удалось установить {0} (код {1})'
+        ScriptsHeader   = '==> Ваши скрипты ({0})'
+        ScriptExitCode  = '{0} завершился с кодом {1}'
+        ScriptError     = 'Ошибка в {0}: {1}'
+        ScriptsLater    = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
+        UninstallHeader = '==> Удаление программ ({0})'
+        UninstallFailed = 'Не удалось удалить {0} (код {1})'
+        UninstallError  = 'Ошибка при удалении {0}: {1}'
+        UninstallLater  = 'Удаление программ ({0}) выполнится после установки программ, при следующем входе.'
+        AppsNextLogon   = 'Неустановленные программы будут поставлены при следующем входе в Windows.'
+        AppsGaveUp      = 'Не все программы установлены за {0} попыток. Поставьте их вручную, список в {1}'
+        AppsNoRetry     = 'Не все программы установлены, а повторить попытку при следующем входе нельзя. Поставьте их вручную, список в {0}'
+        Done            = '==> Готово'
+        Installed       = 'Установлено программ: {0}'
+        Failed          = 'С ошибками: {0}'
+        LogPath         = 'Подробности в логе: {0}'
+        Closing         = '    Окно закроется через 60 секунд или по нажатию любой клавиши.'
+        WifiHeader      = '==> Сети Wi-Fi ({0})'
+        WifiFailed      = 'Не удалось добавить сеть {0} (код {1})'
+        WifiAdded       = 'Добавлено сетей: {0}'
     }
     en = @{
-        NoAdmin        = 'Initial setup skipped: administrator rights are required.'
-        WindowTitle    = 'LunqDebloater: initial setup'
-        Header         = 'LunqDebloater: initial Windows setup'
-        DoNotClose     = 'Do not close this window, it will close by itself.'
-        TaskFailed     = 'Could not create the task for another attempt: {0}'
-        ProtectFailed  = 'Could not hide {0} from other users: {1}'
-        AppsHeader     = '==> Installing apps ({0})'
-        WaitInternet   = 'Waiting for an internet connection (up to 5 minutes)...'
-        WaitWinget     = 'Waiting for Windows to register winget (up to 10 minutes)...'
-        NoInternet     = 'No internet connection.'
-        NoWinget       = 'winget was not found.'
-        AppFailed      = 'Could not install {0} (code {1})'
-        ScriptsHeader  = '==> Your scripts ({0})'
-        ScriptExitCode = '{0} exited with code {1}'
-        ScriptError    = 'Error in {0}: {1}'
-        ScriptsLater   = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
-        AppsNextLogon  = 'Apps that were not installed will be installed at the next sign-in to Windows.'
-        AppsGaveUp     = 'Not all apps were installed after {0} attempts. Install them manually, the list is in {1}'
-        AppsNoRetry    = 'Not all apps were installed, and they cannot be retried at the next sign-in. Install them manually, the list is in {0}'
-        Done           = '==> Done'
-        Installed      = 'Apps installed: {0}'
-        Failed         = 'With errors: {0}'
-        LogPath        = 'Details are in the log: {0}'
-        Closing        = '    This window will close in 60 seconds or when you press any key.'
-        WifiHeader     = '==> Wi-Fi networks ({0})'
-        WifiFailed     = 'Could not add the network {0} (code {1})'
-        WifiAdded      = 'Networks added: {0}'
+        NoAdmin         = 'Initial setup skipped: administrator rights are required.'
+        WindowTitle     = 'LunqDebloater: initial setup'
+        Header          = 'LunqDebloater: initial Windows setup'
+        DoNotClose      = 'Do not close this window, it will close by itself.'
+        TaskFailed      = 'Could not create the task for another attempt: {0}'
+        ProtectFailed   = 'Could not hide {0} from other users: {1}'
+        AppsHeader      = '==> Installing apps ({0})'
+        WaitInternet    = 'Waiting for an internet connection (up to 5 minutes)...'
+        WaitWinget      = 'Waiting for Windows to register winget (up to 10 minutes)...'
+        NoInternet      = 'No internet connection.'
+        NoWinget        = 'winget was not found.'
+        AppFailed       = 'Could not install {0} (code {1})'
+        ScriptsHeader   = '==> Your scripts ({0})'
+        ScriptExitCode  = '{0} exited with code {1}'
+        ScriptError     = 'Error in {0}: {1}'
+        ScriptsLater    = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
+        UninstallHeader = '==> Uninstalling programs ({0})'
+        UninstallFailed = 'Could not uninstall {0} (code {1})'
+        UninstallError  = 'Error while uninstalling {0}: {1}'
+        UninstallLater  = 'Uninstalling programs ({0}) will run after the apps are installed, at the next sign-in.'
+        AppsNextLogon   = 'Apps that were not installed will be installed at the next sign-in to Windows.'
+        AppsGaveUp      = 'Not all apps were installed after {0} attempts. Install them manually, the list is in {1}'
+        AppsNoRetry     = 'Not all apps were installed, and they cannot be retried at the next sign-in. Install them manually, the list is in {0}'
+        Done            = '==> Done'
+        Installed       = 'Apps installed: {0}'
+        Failed          = 'With errors: {0}'
+        LogPath         = 'Details are in the log: {0}'
+        Closing         = '    This window will close in 60 seconds or when you press any key.'
+        WifiHeader      = '==> Wi-Fi networks ({0})'
+        WifiFailed      = 'Could not add the network {0} (code {1})'
+        WifiAdded       = 'Networks added: {0}'
     }
 }
 $language = ''
@@ -265,6 +276,42 @@ if ($todo.Count -gt 0) {
     }
 }
 
+# Программы из профиля, которые DISM не удалил из образа (Uninstall.json кладёт сборка). Как и
+# скрипты, они ждут программ из Apps.txt: среди них может быть браузер на замену Edge. Каждый
+# скрипт удаления идёт в отдельном PowerShell, чтобы его exit и переменные не задели этот скрипт,
+# и отмечается сделанным сразу: с ошибкой повторно не запускается.
+$uninstallTodo = @()
+$uninstallFile = Join-Path $uninstallDir 'Uninstall.json'
+if (Test-Path -LiteralPath $uninstallFile) {
+    $doneUninstall = @(Read-Lines $uninstallDoneFile)
+    try { $uninstallTodo = @((Get-Content -LiteralPath $uninstallFile -Raw -Encoding UTF8 | ConvertFrom-Json).Programs | Where-Object { $_ -and $doneUninstall -notcontains $_.Name }) }
+    catch { Write-Line (Get-Text 'UninstallError' $uninstallFile $_.Exception.Message) 'Yellow' }
+}
+if ($uninstallTodo.Count -gt 0 -and $appsPending -and -not $finalRun) {
+    Write-Host ''
+    Write-Line (Get-Text 'UninstallLater' $uninstallTodo.Count) 'Yellow'
+}
+elseif ($uninstallTodo.Count -gt 0) {
+    Write-Host ''
+    Write-Host (Get-Text 'UninstallHeader' $uninstallTodo.Count) -ForegroundColor Cyan
+    $powershell = (Get-Process -Id $PID).Path
+    foreach ($program in $uninstallTodo) {
+        Write-Line $program.Title
+        $global:LASTEXITCODE = 0
+        try {
+            $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $uninstallDir $program.Script)) + @($program.Arguments)
+            # Out-Host: вывод скрипта попадает и в окно, и в лог.
+            & $powershell @arguments | Out-Host
+            if ($global:LASTEXITCODE -ne 0) {
+                Write-Line (Get-Text 'UninstallFailed' $program.Title $global:LASTEXITCODE) 'Yellow'
+                $failed += $program.Title
+            }
+        }
+        catch { Write-Line (Get-Text 'UninstallError' $program.Title $_.Exception.Message) 'Yellow'; $failed += $program.Title }
+        Add-Content -LiteralPath $uninstallDoneFile -Value $program.Name -Encoding UTF8
+    }
+}
+
 # Каждый скрипт отмечается выполненным сразу после завершения: скрипт с ошибкой повторно
 # не запускается, а не дошедшие до конца (окно закрыли) выполнятся при следующем входе.
 $doneScripts = @(Read-Lines $scriptsDoneFile)
@@ -309,6 +356,7 @@ else {
     # Apps.txt и лог остаются. unattend.xml тоже удаляется, чтобы его не подхватил Sysprep.
     Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $uninstallDir -Recurse -Force -ErrorAction SilentlyContinue
     # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
     # можно открыть без прав администратора.
     try {

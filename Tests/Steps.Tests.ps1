@@ -179,8 +179,11 @@ Describe 'Get-LunqOnlineSteps' {
     It '-Online: шаги профиля для этой Windows и запись данных для отката последней' {
         InModuleScope LunqDebloater {
             $names = { param($c) @(Get-LunqOnlineSteps -Context $c | Where-Object { $_.When } | ForEach-Object { $_.Name }) }
-            & $names @{ SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Appx', 'Capabilities', 'Features', 'Registry', 'SaveRestore')
-            & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Registry', 'SaveRestore')
+            & $names @{ SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; Config = $null; RestorePath = 'r.json' } | Should -Be @('Appx', 'Capabilities', 'Features', 'Registry', 'SaveRestore')
+            & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $false; Config = $null; RestorePath = 'r.json' } | Should -Be @('Registry', 'SaveRestore')
+            # Программы из Uninstall удаляются после реестра, до записи данных для отката.
+            & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true; Config = [pscustomobject]@{ Uninstall = @('MicrosoftEdge') }; RestorePath = 'r.json' } |
+                Should -Be @('Uninstall', 'SaveRestore')
         }
     }
 

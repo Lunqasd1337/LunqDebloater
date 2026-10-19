@@ -27,6 +27,9 @@ function Format-FirstLogonSummary {
     if ($FirstLogon.Scripts.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Scripts' $FirstLogon.Scripts.Count }
     $wifi = Get-LunqFirstLogonWifi $FirstLogon
     if ($wifi.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Wifi' $wifi.Count }
+    # Uninstall есть, только если его дали категории профиля.
+    $uninstall = Get-ConfigList $FirstLogon 'Uninstall'
+    if ($uninstall.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Uninstall' (($uninstall | ForEach-Object { Get-LunqUninstallTitle $_ }) -join ', ') }
     return ($parts -join ', ')
 }
 
@@ -78,7 +81,9 @@ function Install-LunqFirstLogon {
     param(
         [Parameter(Mandatory)][string]$MountPath,
         [Parameter(Mandatory)]$FirstLogon,
-        [Parameter(Mandatory)][string]$Architecture
+        [Parameter(Mandatory)][string]$Architecture,
+        # Куда записать удаляемые при первом входе программы, чтобы -Restore мог их вернуть.
+        $Restore
     )
 
     $result = New-LunqResult (Get-LunqText 'PostInstall.Title') 'FirstLogon'
@@ -114,6 +119,12 @@ function Install-LunqFirstLogon {
         foreach ($file in @(Get-ChildItem -LiteralPath $FirstLogon.WifiPath -Filter '*.xml' -File)) {
             Copy-Item -LiteralPath $file.FullName -Destination $wifiTarget -Force
         }
+    }
+    $uninstall = Get-ConfigList $FirstLogon 'Uninstall'
+    if ($uninstall.Count -gt 0) {
+        # Программы из профиля, которые DISM из образа не удалит: их удаляет первый вход.
+        Copy-LunqUninstallers -Destination (Join-Path $target 'Uninstall') -Names $uninstall
+        if ($Restore) { foreach ($name in $uninstall) { Add-LunqRestoreItem -Restore $Restore -Kind Uninstall -Name $name } }
     }
     Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
     # Скрипт первого входа работает без модуля, поэтому язык интерфейса ему передаётся файлом.

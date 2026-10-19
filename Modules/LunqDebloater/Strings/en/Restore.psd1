@@ -4,6 +4,8 @@
     'Restore.Appx'           = 'Restoring the app {0}'
     'Restore.Capability'     = 'Restoring the capability {0}'
     'Restore.Feature'        = 'Enabling the feature {0}'
+    'Restore.Uninstall'      = 'Installing {0} back (an internet connection is needed)'
+    'Restore.ExitCode'       = 'code {0}'
     'Restore.Failed'         = 'Could not restore {0}: {1}'
     'Restore.Category'       = 'Restore: {0}'
     'Restore.ReportSection'  = 'Restore summary'

@@ -162,6 +162,12 @@
           "description": "Registry changes in the image.",
           "type": "array",
           "items": { "$ref": "#/definitions/registryEntry" }
+        },
+        "Uninstall": {
+          "description": "Programs that DISM cannot remove from the image. Their scripts from the ThirdParty folder uninstall them at the first sign-in, with -Online right away.",
+          "type": "array",
+          "items": { "enum": ["MicrosoftEdge"] },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false

@@ -216,7 +216,7 @@ By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the
 You can have the programs you need installed and your scripts run at the first sign-in to the installed Windows:
 
 1. `Config\Apps.txt` already has a ready-made list: 7-Zip, DirectX and all versions of the Visual C++ Redistributable that games and many programs need. Add your own programs (winget Ids, one per line) or comment out the ones you do not need with `#`. There are more examples at the end of the file.
-2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them. `RemoveEdge.ps1` is already there: it silently removes Microsoft Edge with he3als' [EdgeRemover](https://github.com/he3als/EdgeRemover) script. If you need Edge, delete `RemoveEdge.ps1` and the `EdgeRemover` folder; if not, add another browser to `Apps.txt`, otherwise the system is left without one.
+2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
 At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again. Your scripts and the log are accessible to administrators only, and if setting these rights failed, the log says so. In the ISO itself and on the flash drive they are not protected inside `install.wim`: anyone who gets the ISO can read them, so do not give others an ISO with passwords in its scripts. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
@@ -334,6 +334,7 @@ Everything that is removed and changed is described in `Config\Profile.json`. Ed
       "Capabilities": [],                         // Get-WindowsCapability, * allowed
       "Features":     ["Recall"],                 // Get-WindowsOptionalFeature
       "Packages":     [],                         // CBS packages, be careful
+      "Uninstall":    [],                         // programs that the first sign-in uninstalls: MicrosoftEdge
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1 },
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
@@ -375,6 +376,7 @@ Categories in `Profile.json`:
 | `store` | Microsoft Store |
 | `drivers` | Drivers from Windows Update |
 | `onedrive` | OneDrive |
+| `edge` | Microsoft Edge (off by default) |
 
 To skip categories without editing the profile: `-SkipCategory drivers,store`. In step-by-step mode the script shows the list of categories, and you can turn them on and off by number.
 
@@ -398,6 +400,8 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 ```
 
 The `drivers` category turns off driver downloads from Windows Update and is off by default. If the system has no built-in driver for the network card or Wi-Fi, there is no internet after installation and you have to install the driver by hand. Turn it on (`"Enabled": true` in the profile or by number in step-by-step mode) only if you add the drivers you need to the image yourself (see "Drivers").
+
+The `edge` category uninstalls Microsoft Edge with he3als' [EdgeRemover](https://github.com/he3als/EdgeRemover) script (kept unchanged in `ThirdParty\EdgeRemover`). DISM cannot remove Edge from the image, so in the built Windows the first sign-in uninstalls it, after the programs from `Apps.txt`, and `-Online` uninstalls it right away. WebView2 stays: many programs do not work without it. `-Restore` installs Edge back, which needs an internet connection. The category is off by default: turn it on (`"Enabled": true` in the profile or by its number in the step-by-step mode) only if `Apps.txt` has another browser, otherwise no browser is left after setup.
 
 The default profile does not touch Microsoft Store, App Installer (winget), Terminal, Photos, Calculator, Notepad and Windows Security. The `Packages` lists are empty on purpose: removing CBS packages can break the installation of updates.
 

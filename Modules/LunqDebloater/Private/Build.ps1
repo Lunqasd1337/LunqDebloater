@@ -81,7 +81,7 @@ function Get-LunqBuildSteps {
         @{
             Name = 'FirstLogon'; When = [bool]$c.FirstLogon
             Title = Get-LunqText 'Main.StepFirstLogon'; Hint = Get-LunqText 'Main.StepFirstLogonHint'
-            Run = { param($c) Install-LunqFirstLogon -MountPath $c.MountDir -FirstLogon $c.FirstLogon -Architecture $c.Architecture }
+            Run = { param($c) Install-LunqFirstLogon -MountPath $c.MountDir -FirstLogon $c.FirstLogon -Architecture $c.Architecture -Restore $c.Restore }
         },
         @{
             Name = 'Unattend'; When = [bool]$c.SetupAnswers
@@ -242,6 +242,12 @@ function Get-LunqOnlineSteps {
             Name = 'Registry'; When = -not $c.SkipRegistry
             Title = Get-LunqText 'Main.StepRegistry'; Hint = Get-LunqText 'Main.StepOnlineRegistryHint'
             Run = { param($c) Set-LunqRegistry -Online -Config $c.Config -Restore $c.Restore }
+        },
+        @{
+            # В образе эти программы удаляет первый вход (шаг FirstLogon), здесь их можно удалить сразу.
+            Name = 'Uninstall'; When = (Get-ConfigList $c.Config 'Uninstall').Count -gt 0
+            Title = Get-LunqText 'Main.StepUninstall'; Hint = Get-LunqText 'Main.StepUninstallHint'
+            Run = { param($c) Remove-LunqPrograms -Config $c.Config -Restore $c.Restore }
         },
         @{
             Name = 'SaveRestore'; When = $true

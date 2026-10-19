@@ -9,7 +9,7 @@ function New-LunqTestApp {
 
     $app = Join-Path $Root 'app'
     New-Item -ItemType Directory -Path $app -Force | Out-Null
-    foreach ($item in 'LunqDebloater.ps1', 'Modules', 'Config') {
+    foreach ($item in 'LunqDebloater.ps1', 'Modules', 'Config', 'ThirdParty') {
         Copy-Item -LiteralPath (Join-Path $script:RepoRoot $item) -Destination $app -Recurse -Force
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Mocks\TestMocks.ps1') -Destination (Join-Path $app 'Modules\LunqDebloater\Private\ZZ.TestMocks.ps1')

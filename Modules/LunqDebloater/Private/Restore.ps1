@@ -2,7 +2,7 @@
 # кладёт их в образ (Windows\LunqDebloater\Restore.json), -Online дописывает в тот же файл на этой
 # Windows. -Restore возвращает выбранные категории и убирает из файла то, что вернулось.
 
-$script:RestoreKinds = @('Appx', 'Capabilities', 'Features', 'Packages')
+$script:RestoreKinds = @('Appx', 'Capabilities', 'Features', 'Packages', 'Uninstall')
 
 function Get-LunqRestorePath {
     # Файл данных для отката на этой Windows. В образе он лежит по тому же пути от корня системы.
@@ -20,6 +20,7 @@ function New-LunqRestoreCategory {
         Capabilities = New-Object System.Collections.Generic.List[psobject]
         Features     = New-Object System.Collections.Generic.List[psobject]
         Packages     = New-Object System.Collections.Generic.List[psobject]
+        Uninstall    = New-Object System.Collections.Generic.List[psobject]
         Registry     = New-Object System.Collections.Generic.List[psobject]
         RegistryKeys = New-Object System.Collections.Generic.List[psobject]
     }
@@ -56,7 +57,7 @@ function Find-LunqItemCategory {
     # Категория профиля, шаблон которой подошёл к имени: первая включённая.
     param([Parameter(Mandatory)]$LunqProfile, [Parameter(Mandatory)][string]$Kind, [Parameter(Mandatory)][string]$Name)
     foreach ($category in @($LunqProfile.Categories | Where-Object { $_.Enabled })) {
-        if (Test-NamePattern -Name $Name -Patterns @($category.$Kind)) { return $category.Id }
+        if (Test-NamePattern -Name $Name -Patterns (Get-ConfigList $category $Kind)) { return $category.Id }
     }
     return 'profile'
 }
@@ -178,6 +179,7 @@ function ConvertTo-LunqRestoreProfile {
             Capabilities = @($c.Capabilities | ForEach-Object { $_.Name })
             Features     = @($c.Features | ForEach-Object { $_.Name })
             Packages     = @($c.Packages | ForEach-Object { $_.Name })
+            Uninstall    = @($c.Uninstall | ForEach-Object { $_.Name })
             Registry     = @(@($c.Registry) + @($c.RegistryKeys))
         }
     }
@@ -276,6 +278,20 @@ function Restore-LunqCategory {
     # Системные пакеты штатно не возвращаются: только переустановкой Windows.
     foreach ($pkg in $Category.Packages) { $result.Skipped.Add($pkg.Name) }
 
+    $keepUninstall = New-Object System.Collections.Generic.List[psobject]
+    foreach ($program in $Category.Uninstall) {
+        $programTitle = Get-LunqUninstallTitle $program.Name
+        Write-Info (Get-LunqText 'Restore.Uninstall' $programTitle)
+        # Программу ставит обратно тот же скрипт, что удалял. Ему нужен интернет.
+        $code = Invoke-LunqUninstaller -Name $program.Name -Action Restore
+        if ($code -eq 0) { $result.Done.Add($programTitle) }
+        else {
+            Write-Warning (Get-LunqText 'Restore.Failed' $programTitle (Get-LunqText 'Restore.ExitCode' $code))
+            $result.Failed.Add($programTitle)
+            $keepUninstall.Add($program)
+        }
+    }
+
     $keepRegistry = New-Object System.Collections.Generic.List[psobject]
     # Записи текущего пользователя по тому же ключу, что у профиля Default: «DefaultUser|путь|имя».
     $currentUser = @($Category.Registry | Where-Object { $_.Hive -eq 'CurrentUser' } |
@@ -305,6 +321,7 @@ function Restore-LunqCategory {
     $Category.Appx.Clear(); foreach ($i in $keepAppx) { $Category.Appx.Add($i) }
     $Category.Capabilities.Clear(); foreach ($i in $keepCaps) { $Category.Capabilities.Add($i) }
     $Category.Features.Clear(); foreach ($i in $keepFeatures) { $Category.Features.Add($i) }
+    $Category.Uninstall.Clear(); foreach ($i in $keepUninstall) { $Category.Uninstall.Add($i) }
     $Category.Registry.Clear(); foreach ($i in $keepRegistry) { $Category.Registry.Add($i) }
     $Category.RegistryKeys.Clear(); foreach ($i in $keepKeys) { $Category.RegistryKeys.Add($i) }
     $result | Add-Member -NotePropertyName StoreLinks -NotePropertyValue @($storeLinks)

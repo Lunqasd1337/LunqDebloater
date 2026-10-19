@@ -4,7 +4,8 @@
 
 ## 1.11.0
 
-- **Удаление Edge при первом входе.** В `Config\Scripts` лежит `RemoveEdge.ps1`: после установки программ он удаляет Microsoft Edge скриптом [EdgeRemover](https://github.com/he3als/EdgeRemover) от he3als (папка `Config\Scripts\EdgeRemover`). Скрипт запускается с `-UninstallEdge -NonInteractive`, поэтому меню EdgeRemover не открывается и первый вход не ждёт нажатия клавиши. Если Edge нужен, удалите `RemoveEdge.ps1` и папку `EdgeRemover` или соберите с `-SkipScripts`. Браузера после этого не остаётся, если его нет в `Apps.txt`: там закомментированы Firefox и Chrome.
+- **Удаление Microsoft Edge категорией профиля.** Новая категория `edge` («Microsoft Edge») удаляет Edge скриптом [EdgeRemover](https://github.com/he3als/EdgeRemover) от he3als, который лежит без изменений в `ThirdParty\EdgeRemover`. DISM не может убрать Edge из образа, поэтому в собранной Windows его удаляет первый вход, после программ из `Apps.txt`, а `-Online` удаляет его сразу. `-Restore` ставит Edge обратно, для этого нужен интернет. WebView2 остаётся. Категория по умолчанию выключена: включайте её по номеру в списке категорий или `"Enabled": true` в профиле, только если в `Apps.txt` есть другой браузер.
+- В категориях профиля появилось поле `Uninstall`: программы, которые удаляются своим скриптом, а не средствами DISM. Пока это только `MicrosoftEdge`.
 
 ## 1.10.1
 

@@ -212,6 +212,16 @@
       "Registry": [
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue", "Description": { "ru": "Не устанавливать OneDrive при первом входе", "en": "Do not install OneDrive at first sign-in" } }
       ]
+    },
+    {
+      "Id": "edge",
+      "Name": { "ru": "Microsoft Edge", "en": "Microsoft Edge" },
+      "Enabled": false,
+      "Description": {
+        "ru": "Удаляет Edge скриптом EdgeRemover от he3als: в собранной Windows при первом входе, после программ из Apps.txt, с -Online сразу. WebView2 остаётся. Включайте, только если в Apps.txt есть другой браузер: иначе браузера не останется.",
+        "en": "Uninstalls Edge with he3als' EdgeRemover script: in the built Windows at the first sign-in, after the programs from Apps.txt, with -Online right away. WebView2 stays. Turn this on only if Apps.txt has another browser: otherwise no browser is left."
+      },
+      "Uninstall": ["MicrosoftEdge"]
     }
   ]
 }

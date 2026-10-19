@@ -82,6 +82,26 @@ Describe 'Install-LunqFirstLogon' {
         # По этой пометке скрипт первого входа узнаёт свой unattend.xml и удаляет его в конце.
         Get-Content -LiteralPath (Join-Path $mount 'Windows\System32\Sysprep\unattend.xml') -Raw | Should -Match 'Created by LunqDebloater'
     }
+
+    It 'программы из Uninstall: скрипты удаления в образе и запись для отката' {
+        $mount = Join-Path $TestDrive 'uninstallmount'
+        New-Item -ItemType Directory -Path $mount -Force | Out-Null
+        $restore = & (Get-Module LunqDebloater) {
+            param($m)
+            $lunqProfile = [pscustomobject]@{ Categories = @([pscustomobject]@{ Id = 'edge'; Name = 'Microsoft Edge'; Enabled = $true; Uninstall = @('MicrosoftEdge') }) }
+            $restore = New-LunqRestoreData -LunqProfile $lunqProfile -Source Image
+            $logon = [pscustomobject]@{ AppsPath = 'Apps.txt'; Apps = @(); ScriptsPath = 'Scripts'; Scripts = @(); Uninstall = @('MicrosoftEdge') }
+            $result = Install-LunqFirstLogon -MountPath $m -FirstLogon $logon -Architecture amd64 -Restore $restore
+            $result.Summary | Should -Be 'удаление: Microsoft Edge'
+            $restore
+        } $mount 6>$null
+        $lunq = Join-Path $mount 'Windows\Setup\Scripts\Lunq'
+        Test-Path -LiteralPath (Join-Path $lunq 'Uninstall\Uninstall.json') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $lunq 'Uninstall\EdgeRemover\RemoveEdge.ps1') | Should -BeTrue
+        # Своих скриптов нет: папка User пуста, а в итоге нет «скриптов: 0».
+        @(Get-ChildItem -LiteralPath (Join-Path $lunq 'User')).Count | Should -Be 0
+        @($restore.Categories[0].Uninstall | ForEach-Object { $_.Name }) | Should -Be @('MicrosoftEdge')
+    }
 }
 
 Describe 'Файл ответов' {

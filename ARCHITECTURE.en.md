@@ -28,6 +28,8 @@ Modules\
     Strings\ru\*.psd1        Interface texts in Russian
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
+ThirdParty\
+  EdgeRemover\              he3als' script that uninstalls Edge, unchanged (the analyzer does not check it)
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
 Tests\                       Pester tests and stubs
 .github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
@@ -49,6 +51,7 @@ Tests\                       Pester tests and stubs
 | `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
 | `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
+| `Uninstall.ps1` | Programs from the profile's `Uninstall` field that DISM cannot remove from the image: the table of scripts from `ThirdParty` (`$script:LunqUninstallers`), running them on this Windows (`Remove-LunqPrograms`, restore through `Invoke-LunqUninstaller -Action Restore`) and putting them into the image with `Uninstall.json` for the first sign-in (`Copy-LunqUninstallers`) |
 | `Registry.ps1` | Offline registry hives, setting and deleting values and keys, the build stamp in `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
 | `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
@@ -74,7 +77,7 @@ Tests\                       Pester tests and stubs
 9. **Build** by the list of steps (below), then the result from `Write-LunqReport`. After the result, not as a step, the recipe and the HTML report are written next to the ISO: a failure there does not spoil the finished ISO.
 10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.
 
-Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
+Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`, and the Uninstall step uninstalls the programs from `Uninstall` right away. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
 
 Before every change the removal functions and `Set-LunqRegistry` record in `Context.Restore` what was removed and what was there (for `DeleteKey` the key is exported with `reg export`). In a build this is saved into the image at the Save step; with `-Online` it is appended to `%SystemRoot%\LunqDebloater\Restore.json` as the last step (and on error too).
 
@@ -93,7 +96,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Updates | Installs updates in ascending KB order | there are updates |
 | Drivers | Adds drivers one `.inf` at a time | there are drivers |
 | Recovery | Services `Winre.wim` inside the system: updates, Safe OS DU, disk drivers | `-UpdatesToSetup` or `-DriversToSetup`, and there is something for WinRE |
-| FirstLogon | Puts programs, scripts and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs or scripts |
+| FirstLogon | Puts programs, scripts, the uninstall scripts from `Uninstall` and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts or `Uninstall` in the enabled categories |
 | Unattend | Puts `autounattend.xml` into the ISO root | answer file is on |
 | Appx | Removes the profile's Appx | without `-SkipAppx` |
 | Capabilities | Removes capabilities | without `-SkipComponents` |
@@ -149,6 +152,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
+| `Tests\Uninstall.Tests.ps1` | Uninstalling programs from `Uninstall`: running the script from `ThirdParty` with the right parameters, `Uninstall.json` for the image, EdgeRemover's parameters |
 | `Tests\Registry.Tests.ps1` | Parsing registry values from the profile and real registry writes (writes on Windows only) |
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |

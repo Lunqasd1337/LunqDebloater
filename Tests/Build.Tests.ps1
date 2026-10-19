@@ -176,6 +176,19 @@ Describe 'Сборка с параметрами' {
         Get-Content -LiteralPath (Get-ChildItem -LiteralPath $out -Filter '*_dism.log').FullName -Raw | Should -Match 'LunqDebloater .+: step 1/\d+: Prepare'
     }
 
+    It 'категория edge: EdgeRemover кладётся в образ для первого входа и запоминается для отката' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; Category = 'edge' }
+        $run.Error | Should -BeNullOrEmpty
+        # Обязательные шаги и профиль (11) и первый вход: Edge удаляется уже в установленной Windows.
+        Assert-Steps -Output $run.Output -Expected 12
+        $run.Output | Should -Match 'После установки:\s+удаление: Microsoft Edge'
+        $lunq = Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq'
+        Test-Path -LiteralPath (Join-Path $lunq 'Uninstall\EdgeRemover\RemoveEdge.ps1') | Should -BeTrue
+        (Get-Content -LiteralPath (Join-Path $lunq 'Uninstall\Uninstall.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Programs[0].Name | Should -Be 'MicrosoftEdge'
+        $saved = Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        @($saved.Categories | Where-Object { $_.Id -eq 'edge' } | ForEach-Object { $_.Uninstall } | ForEach-Object { $_.Name }) | Should -Be @('MicrosoftEdge')
+    }
+
     It 'с -SkipAppx -SkipComponents -SkipRegistry шагов профиля нет' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true }
         $run.Error | Should -BeNullOrEmpty
@@ -646,6 +659,28 @@ Describe 'Этот компьютер без ISO и откат' {
 
         $again.Output | Should -Match 'Телеметрия и диагностика: возвращено'
         Test-Path -LiteralPath $restorePath | Should -BeFalse
+    }
+
+    It '-Online с категорией edge удаляет Edge сразу, -Restore ставит его обратно' {
+        $root = Join-Path $TestDrive 'online-edge'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'edge'; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true; Force = $true }
+            $saved = Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        $online.Output | Should -Match 'Шаг 1 из 2\. Удаление программ'
+        $online.Output | Should -Match 'Удаление программ: удалено 1, ошибок 0'
+        @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
+        $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
+        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })
+        $calls.Count | Should -Be 2
+        $calls[0] | Should -BeLike '*|-File|*ThirdParty*EdgeRemover*RemoveEdge.ps1|-UninstallEdge|-NonInteractive|*'
+        $calls[1] | Should -BeLike '*RemoveEdge.ps1|-InstallEdge|-NonInteractive|*'
+        Test-Path -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') | Should -BeFalse
     }
 
     It '-Online с приложениями: удалённое с диска приложение возвращается через Microsoft Store' {
