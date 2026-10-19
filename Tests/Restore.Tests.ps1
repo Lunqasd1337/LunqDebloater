@@ -161,6 +161,25 @@ Describe 'Откат категории' {
         }
     }
 
+    It 'удалённая программа ставится обратно своим скриптом, а не вернувшаяся остаётся в категории' {
+        InModuleScope LunqDebloater {
+            $category = New-LunqRestoreCategory -Id 'edge' -Name 'Microsoft Edge'
+            $category.Uninstall.Add([pscustomobject]@{ Name = 'MicrosoftEdge' })
+            Mock Invoke-LunqUninstaller { 0 }
+            $r = Restore-LunqCategory -Category $category
+            @($r.Done) | Should -Be @('Microsoft Edge')
+            $category.Uninstall.Count | Should -Be 0
+            Should -Invoke Invoke-LunqUninstaller -Times 1 -Exactly -ParameterFilter { $Name -eq 'MicrosoftEdge' -and $Action -eq 'Restore' }
+
+            # Без интернета EdgeRemover не скачает Edge: программа ждёт следующего -Restore.
+            $category.Uninstall.Add([pscustomobject]@{ Name = 'MicrosoftEdge' })
+            Mock Invoke-LunqUninstaller { 404 }
+            $r = Restore-LunqCategory -Category $category
+            @($r.Failed) | Should -Be @('Microsoft Edge')
+            $category.Uninstall.Count | Should -Be 1
+        }
+    }
+
     It 'запись реестра не вернулась: она остаётся в категории для следующей попытки' {
         InModuleScope LunqDebloater {
             Mock Invoke-RegistryEntry { 'Failed' }

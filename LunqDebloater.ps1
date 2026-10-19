@@ -444,7 +444,7 @@ try {
             $HostWifi = [switch]$use.wifi
             # Скачанные Safe OS и Setup Dynamic Update нужны только вместе с обновлением установщика.
             if ($DownloadUpdates) { $UpdatesToSetup = [switch]$true }
-            if (@($options | Where-Object { $_.Key -eq 'cleanup' -and $_.Available }).Count -gt 0) { $CleanupComponents = [switch]$use.cleanup }
+            $CleanupComponents = [switch]$use.cleanup
         }
         $useUpdates = $use.updates
         $useDrivers = $use.drivers
@@ -530,7 +530,9 @@ try {
     $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
 
     $firstLogon = $null
-    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0)) {
+    # Программы из поля Uninstall включённых категорий: их удаляет первый вход.
+    $uninstall = Get-ConfigList $config 'Uninstall'
+    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0 -or $uninstall.Count -gt 0)) {
         $logonApps = @()
         if ($useApps) { $logonApps = $foundLogon.Apps }
         $logonScripts = @()
@@ -542,6 +544,7 @@ try {
             Scripts     = $logonScripts
             Wifi        = $wifiNames
             WifiPath    = $hostWifiDir
+            Uninstall   = $uninstall
         }
     }
 

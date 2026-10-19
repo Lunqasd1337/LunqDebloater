@@ -25,9 +25,13 @@ AfterAll {
 Describe 'Read-LunqProfile' {
     It 'читает профиль по умолчанию' {
         $p = Read-LunqProfile -Path $script:ProfilePath
-        $p.Categories.Count | Should -Be 9
+        $p.Categories.Count | Should -Be 10
         $p.Requirements.Build | Should -Be 26300
         ($p.Categories | Where-Object Id -eq 'drivers').Enabled | Should -BeFalse
+        # Без другого браузера в Apps.txt удаление Edge оставило бы систему без браузера.
+        $edge = $p.Categories | Where-Object Id -eq 'edge'
+        $edge.Enabled | Should -BeFalse
+        $edge.Uninstall | Should -Be @('MicrosoftEdge')
         ($p.Categories | Where-Object Id -eq 'telemetry').Enabled | Should -BeTrue
     }
 
@@ -96,7 +100,7 @@ Describe 'Read-LunqProfile' {
     It 'списки в категориях профиля по умолчанию отсортированы' {
         $json = Get-Content -LiteralPath $script:ProfilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($category in $json.Categories) {
-            foreach ($list in 'Appx', 'Capabilities', 'Features', 'Packages') {
+            foreach ($list in 'Appx', 'Capabilities', 'Features', 'Packages', 'Uninstall') {
                 if (-not ($category.PSObject.Properties.Name -contains $list)) { continue }
                 $names = [string[]]@($category.$list)
                 $sorted = [string[]]@($names)
@@ -155,6 +159,16 @@ Describe 'Get-LunqEffectiveConfig' {
         $config.Appx.Remove | Should -Contain 'Microsoft.BingNews'
         @($config.Registry | Where-Object { $_.LunqCategory -eq 'ai' }).Count | Should -Be 0
         @($config.Registry | Where-Object { $_.LunqCategory -eq 'telemetry' }).Count | Should -Be 13
+    }
+
+    It 'Uninstall: только программы со скриптом удаления, в общий список только из включённых категорий' {
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'browser'; Uninstall = @('GoogleChrome') }) }
+        { Read-LunqProfile -Path $path } | Should -Throw "*'browser'*'GoogleChrome'*MicrosoftEdge*"
+        $p = Read-LunqProfile -Path $script:ProfilePath
+        (Get-LunqEffectiveConfig -LunqProfile $p).Uninstall.Count | Should -Be 0
+        ($p.Categories | Where-Object Id -eq 'edge').Enabled = $true
+        (Get-LunqEffectiveConfig -LunqProfile $p).Uninstall | Should -Be @('MicrosoftEdge')
+        (& (Get-Module LunqDebloater) { param($c) Get-CategoryCounts $c } ($p.Categories | Where-Object Id -eq 'edge')) | Should -Be 'удаление: Microsoft Edge'
     }
 
     It 'неизвестный Id в -SkipCategory даёт понятную ошибку' {

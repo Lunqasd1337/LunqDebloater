@@ -1,5 +1,6 @@
 ﻿function New-LunqOption {
-    # Пункт сводки «Что войдёт в образ». Parent: Key пункта, без которого этот не имеет смысла.
+    # Пункт сводки «Что войдёт в образ». Parent: Key пункта, без которого этот не имеет смысла,
+    # или несколько Key, если пункту хватает любого из них.
     # Action: пункт не включается и не выключается, а запускает действие (например, выбор папки).
     param(
         [Parameter(Mandatory)][string]$Key,
@@ -7,7 +8,7 @@
         [bool]$Enabled = $true,
         [bool]$Available = $true,
         [string[]]$Details = @(),
-        [string]$Parent,
+        [string[]]$Parent,
         [switch]$Action
     )
     return [pscustomobject]@{
@@ -17,12 +18,15 @@
 }
 
 function Test-LunqOption {
-    # Включён ли пункт с учётом родителя.
+    # Включён ли пункт с учётом родителя. Из нескольких родителей достаточно одного включённого.
     param([Parameter(Mandatory)]$Options, [Parameter(Mandatory)][string]$Key)
     $option = $Options | Where-Object { $_.Key -eq $Key }
     if (-not $option -or -not $option.Available -or -not $option.Enabled) { return $false }
-    if ($option.Parent) { return (Test-LunqOption -Options $Options -Key $option.Parent) }
-    return $true
+    if (-not $option.Parent) { return $true }
+    foreach ($parent in $option.Parent) {
+        if (Test-LunqOption -Options $Options -Key $parent) { return $true }
+    }
+    return $false
 }
 
 function Select-LunqBuildOptions {
@@ -67,8 +71,15 @@ function Select-LunqBuildOptions {
                 $action = $option.Key
                 continue
             }
-            if ($option.Parent -and -not (Test-LunqOption -Options $Options -Key $option.Parent)) {
-                Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($numbers[$option.Parent]))
+            $parentOn = -not $option.Parent
+            foreach ($parent in $option.Parent) {
+                if (Test-LunqOption -Options $Options -Key $parent) { $parentOn = $true }
+            }
+            if (-not $parentOn) {
+                # Родитель без номера (например, обновлений в папке нет) включить нельзя, его не называем.
+                $parentNumbers = @($option.Parent | ForEach-Object { $numbers[$_] } | Where-Object { $_ })
+                if ($parentNumbers.Count -gt 1) { Write-Warning (Get-LunqText 'Options.NeedsAnyParent' $parsed ($parentNumbers -join ', ')) }
+                else { Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($parentNumbers -join '')) }
                 continue
             }
             $option.Enabled = -not $option.Enabled
@@ -170,14 +181,16 @@ function New-LunqContentOptions {
 
     return @(
         (New-LunqOption -Key 'updates' -Enabled $Use.updates -Available $hasUpdates -Name $updatesName -Details $updatesDetails),
-        (New-LunqOption -Key 'cleanup' -Parent 'updates' -Enabled $Use.cleanup -Available $hasUpdates `
-            -Name (Get-LunqText 'Main.OptCleanup') `
-            -Details (Get-LunqText 'Main.OptCleanupHint')),
         (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ($Use.updatesToSetup -or $foundDU.Count -gt 0) -Available $hasUpdates `
             -Name (Get-LunqText 'Main.OptUpdatesToSetup') `
             -Details $updatesToSetupDetails),
         (New-LunqOption -Key 'pickUpdates' -Action -Name (Get-LunqText 'Main.OptPickUpdates') -Details (Get-LunqText 'Main.OptPickUpdatesHint')),
         (New-LunqOption -Key 'download' -Enabled $Use.download -Name (Get-LunqText 'Main.OptDownload') -Details (Get-LunqText 'Main.OptDownloadHint')),
+        # Очистка нужна и обновлениям из папки, и скачанным, поэтому у неё два родителя. Она стоит
+        # после скачивания, чтобы её было видно и тогда, когда папка с обновлениями пуста.
+        (New-LunqOption -Key 'cleanup' -Parent 'updates', 'download' -Enabled $Use.cleanup `
+            -Name (Get-LunqText 'Main.OptCleanup') `
+            -Details (Get-LunqText 'Main.OptCleanupHint')),
         (New-LunqOption -Key 'drivers' -Enabled $Use.drivers -Available $hasDrivers -Name $driversName -Details $driversDetails),
         (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled $Use.driversToSetup -Available $hasDrivers `
             -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) `

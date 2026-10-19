@@ -9,10 +9,13 @@ function New-LunqTestApp {
 
     $app = Join-Path $Root 'app'
     New-Item -ItemType Directory -Path $app -Force | Out-Null
-    foreach ($item in 'LunqDebloater.ps1', 'Modules', 'Config') {
+    foreach ($item in 'LunqDebloater.ps1', 'Modules', 'Config', 'ThirdParty') {
         Copy-Item -LiteralPath (Join-Path $script:RepoRoot $item) -Destination $app -Recurse -Force
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Mocks\TestMocks.ps1') -Destination (Join-Path $app 'Modules\LunqDebloater\Private\ZZ.TestMocks.ps1')
+    # Скрипты в Config\Scripts меняются вместе с тем, что пользователь хочет при первом входе,
+    # и от них зависят шаги и сводка сборки. Тесты начинают с пустой папки и кладут скрипты сами.
+    Get-ChildItem -LiteralPath (Join-Path $app 'Config\Scripts') -Force | Where-Object { $_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force
 
     # Вне Windows PowerShell 5.1 (например, PowerShell 7 на Linux) скрипт перезапустил бы себя
     # в powershell.exe или отказался бы работать, поэтому в копии эти проверки выключаются.

@@ -28,6 +28,8 @@ Modules\
     Strings\ru\*.psd1        Тексты интерфейса на русском
     Strings\en\*.psd1        Те же ключи на английском
   FirstLogon\FirstLogon.ps1  Скрипт первого входа, который кладётся в образ
+ThirdParty\
+  EdgeRemover\              Скрипт he3als для удаления Edge, без изменений (анализатор его не проверяет)
 Schemas\Profile.schema.json  JSON-схема профиля для VS Code
 Tests\                       Тесты Pester и заглушки
 .github\                     GitHub Actions, шаблоны issue и PR, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
@@ -49,6 +51,7 @@ Tests\                       Тесты Pester и заглушки
 | `Image.ps1` | Экспорт редакции, пересжатие WIM (`Optimize-LunqWim`), очистка хранилища компонентов, поиск `oscdimg` и сборка ISO |
 | `Servicing.ps1` | Обновления и драйверы: в систему, в WinRE (`Update-LunqRecovery`) и в установщик (`Update-LunqSetup`), Safe OS и Setup Dynamic Update и их распознавание по содержимому `.cab` (`Split-LunqDynamicUpdates`), выгрузка драйверов этого компьютера (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Удаление Appx, компонентов (capabilities), отключение функций и удаление CBS-пакетов |
+| `Uninstall.ps1` | Программы из поля `Uninstall` профиля, которые DISM не удалит из образа: таблица скриптов из `ThirdParty` (`$script:LunqUninstallers`), их запуск на этой Windows (`Remove-LunqPrograms`, откат через `Invoke-LunqUninstaller -Action Restore`) и раскладка в образ с `Uninstall.json` для первого входа (`Copy-LunqUninstallers`) |
 | `Registry.ps1` | Офлайн-кусты реестра, запись и удаление значений и ключей, отметка о сборке в `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | Программы и скрипты первого входа: копирование в образ, `unattend.xml` в Sysprep |
 | `Unattend.ps1` | `autounattend.xml` в корне ISO: регион, обход требований, локальная учётная запись |
@@ -74,7 +77,7 @@ Tests\                       Тесты Pester и заглушки
 9. **Сборка** по списку шагов (ниже), затем итог `Write-LunqReport`. После итога, уже не шагом, рядом с ISO пишутся рецепт и HTML-отчёт: сбой здесь не портит готовый ISO.
 10. **При ошибке** кусты реестра выгружаются, образ отключается без сохранения. Рабочая папка удаляется, только если этот запуск сам её создал (шаг Prepare) и в ней ничего не смонтировано, иначе DISM потеряет образ.
 
-Другие режимы ответвляются раньше. `-Schedule` (с `-Recipe`) только создаёт или удаляет задание. `-Recipe` в начале подставляет значения из рецепта во все параметры, не заданные в командной строке, и дальше идёт обычная сборка без вопросов. `-Restore` читает `Restore.json`, даёт выбрать категории и вызывает `Invoke-LunqRestore`. `-Online` проходит выбор профиля и категорий, как сборка, и выполняет `Invoke-LunqBuild -Online`: шаги `Get-LunqOnlineSteps` вызывают те же функции удаления и реестра с `-Online` вместо `-MountPath`. `-DownloadUpdates` скачивает обновления после чтения редакции, когда известны выпуск и архитектура, и до проверки версии.
+Другие режимы ответвляются раньше. `-Schedule` (с `-Recipe`) только создаёт или удаляет задание. `-Recipe` в начале подставляет значения из рецепта во все параметры, не заданные в командной строке, и дальше идёт обычная сборка без вопросов. `-Restore` читает `Restore.json`, даёт выбрать категории и вызывает `Invoke-LunqRestore`. `-Online` проходит выбор профиля и категорий, как сборка, и выполняет `Invoke-LunqBuild -Online`: шаги `Get-LunqOnlineSteps` вызывают те же функции удаления и реестра с `-Online` вместо `-MountPath`, а программы из `Uninstall` удаляет сразу шаг Uninstall. `-DownloadUpdates` скачивает обновления после чтения редакции, когда известны выпуск и архитектура, и до проверки версии.
 
 Перед каждым изменением функции удаления и `Set-LunqRegistry` записывают в `Context.Restore`, что убрано и как было (для `DeleteKey` выгрузка ключа через `reg export`). При сборке это сохраняется в образ на шаге Save, при `-Online` дописывается к `%SystemRoot%\LunqDebloater\Restore.json` последним шагом (и при ошибке тоже).
 
@@ -93,7 +96,7 @@ Tests\                       Тесты Pester и заглушки
 | Updates | Ставит обновления по возрастанию KB | есть обновления |
 | Drivers | Добавляет драйверы по одному `.inf` | есть драйверы |
 | Recovery | Обслуживает `Winre.wim` внутри системы: обновления, Safe OS DU, драйверы дисков | `-UpdatesToSetup` или `-DriversToSetup`, и есть что ставить в WinRE |
-| FirstLogon | Кладёт программы, скрипты и `FirstLogon.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы или скрипты |
+| FirstLogon | Кладёт программы, скрипты, скрипты удаления из `Uninstall` и `FirstLogon.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы, скрипты или `Uninstall` во включённых категориях |
 | Unattend | Кладёт `autounattend.xml` в корень ISO | файл ответов включён |
 | Appx | Удаляет Appx из профиля | без `-SkipAppx` |
 | Capabilities | Удаляет компоненты | без `-SkipComponents` |
@@ -149,6 +152,7 @@ Tests\                       Тесты Pester и заглушки
 | `Tests\Steps.Tests.ps1` | Шаги сборки по отдельности: какие выполняются при каких настройках, отдельный шаг с заглушкой, отметка о сборке |
 | `Tests\Install.Tests.ps1` | Загрузчик: раскладка релиза, обновление с сохранением правок в `Config`, работа без сети |
 | `Tests\FirstLogon.Tests.ps1` | Скрипт первого входа в отдельном процессе с ненастоящим winget, сетью и планировщиком |
+| `Tests\Uninstall.Tests.ps1` | Удаление программ из `Uninstall`: запуск скрипта из `ThirdParty` с нужными параметрами, `Uninstall.json` для образа, параметры EdgeRemover |
 | `Tests\Registry.Tests.ps1` | Разбор значений реестра из профиля и настоящая запись в реестр (запись только в Windows) |
 | `Tests\Removal.Tests.ps1` | Удаление CBS-пакетов: только установленные пакеты по шаблонам профиля, ошибки и ненайденные шаблоны в итоге |
 | `Tests\TestHelpers.ps1` | Копия скрипта в `TestDrive`, переменные окружения для заглушек, запуск и разбор шагов |

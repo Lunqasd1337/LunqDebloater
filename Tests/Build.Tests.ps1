@@ -176,6 +176,19 @@ Describe 'Сборка с параметрами' {
         Get-Content -LiteralPath (Get-ChildItem -LiteralPath $out -Filter '*_dism.log').FullName -Raw | Should -Match 'LunqDebloater .+: step 1/\d+: Prepare'
     }
 
+    It 'категория edge: EdgeRemover кладётся в образ для первого входа и запоминается для отката' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; Category = 'edge' }
+        $run.Error | Should -BeNullOrEmpty
+        # Обязательные шаги и профиль (11) и первый вход: Edge удаляется уже в установленной Windows.
+        Assert-Steps -Output $run.Output -Expected 12
+        $run.Output | Should -Match 'После установки:\s+удаление: Microsoft Edge'
+        $lunq = Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq'
+        Test-Path -LiteralPath (Join-Path $lunq 'Uninstall\EdgeRemover\RemoveEdge.ps1') | Should -BeTrue
+        (Get-Content -LiteralPath (Join-Path $lunq 'Uninstall\Uninstall.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Programs[0].Name | Should -Be 'MicrosoftEdge'
+        $saved = Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        @($saved.Categories | Where-Object { $_.Id -eq 'edge' } | ForEach-Object { $_.Uninstall } | ForEach-Object { $_.Name }) | Should -Be @('MicrosoftEdge')
+    }
+
     It 'с -SkipAppx -SkipComponents -SkipRegistry шагов профиля нет' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true }
         $run.Error | Should -BeNullOrEmpty
@@ -408,12 +421,12 @@ Describe 'Пошаговый режим' {
     }
 
     # В сводке без обновлений и драйверов в Config пункты со стрелкой идут первыми:
-    # [1] папка с обновлениями, [2] скачать обновления, [3] папка с драйверами, [4] драйверы
-    # этого компьютера, дальше [5] программы, [6] программы этого компьютера, [7] сети Wi-Fi
-    # и [8] файл ответов.
+    # [1] папка с обновлениями, [2] скачать обновления, [3] очистка хранилища компонентов,
+    # [4] папка с драйверами, [5] драйверы этого компьютера, дальше [6] программы,
+    # [7] программы этого компьютера, [8] сети Wi-Fi и [9] файл ответов.
     It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
-        # «8 3»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '8 3', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        # «9 4»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Драйверы: 3 шт\.'
         $run.Output | Should -Match 'add driver net\.inf'
@@ -433,7 +446,7 @@ Describe 'Пошаговый режим' {
     It 'драйверы этого компьютера выгружаются и встраиваются' {
         $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
         try {
-            $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y')
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '5', 'y')
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
@@ -444,7 +457,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '', '5', 'y') -Prepare {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y') -Prepare {
             param($t)
             $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
             $env:LUNQ_TEST_FOLDER = $empty.FullName
@@ -452,6 +465,16 @@ Describe 'Пошаговый режим' {
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'нет файлов \.inf'
         $run.Output | Should -Not -Match 'add driver'
+    }
+
+    It 'очистка хранилища включается вместе со скачиванием обновлений, без папки с обновлениями' {
+        # «3»: очистка без обновлений не включается, «2 3»: скачать обновления и очистить хранилище.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '5', 'y')
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Пункт 3 работает только вместе с пунктом 2'
+        $run.Output | Should -Match 'Обновления из каталога готовы'
+        $run.Output | Should -Match 'Очистка WinSxS:\s+да'
+        @(Get-Content -LiteralPath $script:Test.NativeLog | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -BeGreaterThan 0
     }
 }
 
@@ -646,6 +669,28 @@ Describe 'Этот компьютер без ISO и откат' {
 
         $again.Output | Should -Match 'Телеметрия и диагностика: возвращено'
         Test-Path -LiteralPath $restorePath | Should -BeFalse
+    }
+
+    It '-Online с категорией edge удаляет Edge сразу, -Restore ставит его обратно' {
+        $root = Join-Path $TestDrive 'online-edge'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'edge'; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true; Force = $true }
+            $saved = Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        $online.Output | Should -Match 'Шаг 1 из 2\. Удаление программ'
+        $online.Output | Should -Match 'Удаление программ: удалено 1, ошибок 0'
+        @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
+        $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
+        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })
+        $calls.Count | Should -Be 2
+        $calls[0] | Should -BeLike '*|-File|*ThirdParty*EdgeRemover*RemoveEdge.ps1|-UninstallEdge|-NonInteractive|*'
+        $calls[1] | Should -BeLike '*RemoveEdge.ps1|-InstallEdge|-NonInteractive|*'
+        Test-Path -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') | Should -BeFalse
     }
 
     It '-Online с приложениями: удалённое с диска приложение возвращается через Microsoft Store' {

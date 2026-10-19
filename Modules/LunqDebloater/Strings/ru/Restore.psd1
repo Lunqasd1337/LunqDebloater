@@ -4,6 +4,8 @@
     'Restore.Appx'           = 'Возвращаю приложение {0}'
     'Restore.Capability'     = 'Возвращаю компонент {0}'
     'Restore.Feature'        = 'Включаю компонент {0}'
+    'Restore.Uninstall'      = 'Ставлю обратно {0} (нужен интернет)'
+    'Restore.ExitCode'       = 'код {0}'
     'Restore.Failed'         = 'Не удалось вернуть {0}: {1}'
     'Restore.Category'       = 'Откат: {0}'
     'Restore.ReportSection'  = 'Итог отката'

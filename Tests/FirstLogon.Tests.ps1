@@ -138,6 +138,23 @@ function global:netsh { Add-Content -LiteralPath $global:NetshLog -Value ($args 
         return $output
     }
 
+    function Add-FakeUninstall {
+        # Папка Uninstall, как её кладёт сборка, но с ненастоящим скриптом: он пишет в лог, с какими
+        # параметрами его запустили, и завершается с заданным кодом.
+        param([Parameter(Mandatory)]$Test, [int]$ExitCode = 0)
+        $dir = Join-Path $Test.Lunq 'Uninstall\Fake'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $log = Join-Path $Test.Root 'uninstall.log'
+        Set-Content -LiteralPath (Join-Path $dir 'Remove.ps1') -Encoding UTF8 -Value @"
+param([switch]`$UninstallEdge, [switch]`$NonInteractive)
+Add-Content -LiteralPath '$log' -Value (@(`$PSBoundParameters.Keys | Sort-Object) -join ',')
+exit $ExitCode
+"@
+        $json = '{"Programs":[{"Name":"MicrosoftEdge","Title":"Microsoft Edge","Script":"Fake\\Remove.ps1","Arguments":["-UninstallEdge","-NonInteractive"]}]}'
+        Set-Content -LiteralPath (Join-Path $Test.Lunq 'Uninstall\Uninstall.json') -Value $json -Encoding UTF8
+        return $log
+    }
+
     function Get-Lines([string]$Path) { if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path -Encoding UTF8 | Where-Object { $_ }) } else { @() } }
 }
 
@@ -299,5 +316,36 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath $t.Task | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
         Get-Lines $t.WingetLog | Should -BeNullOrEmpty
+    }
+
+    It 'программы из профиля удаляются после программ в отдельном PowerShell, без меню, один раз' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $log = Add-FakeUninstall -Test $t -ExitCode 0
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match '==> Удаление программ \(1\)'
+        Get-Lines $log | Should -Be @('NonInteractive,UninstallEdge')
+        Get-Lines (Join-Path $t.Lunq 'uninstall.done') | Should -Be @('MicrosoftEdge')
+        # Всё сделано: скрипты удаления с диска убраны, как и копии своих скриптов.
+        Test-Path -LiteralPath (Join-Path $t.Lunq 'Uninstall') | Should -BeFalse
+        $out | Should -Not -Match 'С ошибками'
+    }
+
+    It 'пока программы не поставились, удаление ждёт: на замену Edge может ставиться браузер' {
+        $t = New-FirstLogonTest -Apps @('Mozilla.Firefox')
+        $log = Add-FakeUninstall -Test $t -ExitCode 0
+        $out = Invoke-FirstLogon -Test $t -Offline
+        $out | Should -Match 'Удаление программ \(1\) выполнится после установки программ'
+        Test-Path -LiteralPath $log | Should -BeFalse
+        $out = Invoke-FirstLogon -Test $t
+        Get-Lines $log | Should -Be @('NonInteractive,UninstallEdge')
+    }
+
+    It 'скрипт удаления с ошибкой попадает в итог и повторно не запускается' {
+        $t = New-FirstLogonTest
+        $log = Add-FakeUninstall -Test $t -ExitCode 3
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Не удалось удалить Microsoft Edge \(код 3\)'
+        $out | Should -Match 'С ошибками: Microsoft Edge'
+        Get-Lines (Join-Path $t.Lunq 'uninstall.done') | Should -Be @('MicrosoftEdge')
     }
 }

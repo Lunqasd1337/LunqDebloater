@@ -190,7 +190,7 @@ The catalog shows Safe OS and Setup Dynamic Update packages in the same search a
 
 The same subfolders are used in a folder chosen in the summary or with `-UpdatesPath`. If there are none, for example in Downloads, the Dynamic Updates can stay next to the other updates: the script recognizes them by the contents of the `.cab`. A Setup Dynamic Update has no DISM package (`.mum` file) in it, and a Safe OS Dynamic Update is named `Package_for_SafeOSDU`. The summary marks such files. They are added only together with the Windows Setup and WinRE update (see "Windows Setup and recovery environment"). Take them for the same Windows version as the cumulative update.
 
-Updates are installed right after the image is mounted, before apps and components are removed. The order follows Microsoft: first packages without a KB number (language packs and features on demand), then Windows updates in ascending KB order, and .NET updates (`ndp` in the name) last. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under the updates): old versions of system files are deleted and the image gets smaller.
+Updates are installed right after the image is mounted, before apps and components are removed. The order follows Microsoft: first packages without a KB number (language packs and features on demand), then Windows updates in ascending KB order, and .NET updates (`ndp` in the name) last. A cumulative update takes a long time to install (10-30 minutes) and needs extra space. After updates it makes sense to turn on `-CleanupComponents` (in the summary it is the item under downloading updates, and it works both for an updates folder and for downloaded updates): old versions of system files are deleted and the image gets smaller.
 
 ## Drivers
 
@@ -334,6 +334,7 @@ Everything that is removed and changed is described in `Config\Profile.json`. Ed
       "Capabilities": [],                         // Get-WindowsCapability, * allowed
       "Features":     ["Recall"],                 // Get-WindowsOptionalFeature
       "Packages":     [],                         // CBS packages, be careful
+      "Uninstall":    [],                         // programs that the first sign-in uninstalls: MicrosoftEdge
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1 },
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
@@ -375,6 +376,7 @@ Categories in `Profile.json`:
 | `store` | Microsoft Store |
 | `drivers` | Drivers from Windows Update |
 | `onedrive` | OneDrive |
+| `edge` | Microsoft Edge (off by default) |
 
 To skip categories without editing the profile: `-SkipCategory drivers,store`. In step-by-step mode the script shows the list of categories, and you can turn them on and off by number.
 
@@ -398,6 +400,8 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 ```
 
 The `drivers` category turns off driver downloads from Windows Update and is off by default. If the system has no built-in driver for the network card or Wi-Fi, there is no internet after installation and you have to install the driver by hand. Turn it on (`"Enabled": true` in the profile or by number in step-by-step mode) only if you add the drivers you need to the image yourself (see "Drivers").
+
+The `edge` category uninstalls Microsoft Edge with he3als' [EdgeRemover](https://github.com/he3als/EdgeRemover) script (kept unchanged in `ThirdParty\EdgeRemover`). DISM cannot remove Edge from the image, so in the built Windows the first sign-in uninstalls it, after the programs from `Apps.txt`, and `-Online` uninstalls it right away. WebView2 stays: many programs do not work without it. `-Restore` installs Edge back, which needs an internet connection. The category is off by default: turn it on (`"Enabled": true` in the profile or by its number in the step-by-step mode) only if `Apps.txt` has another browser, otherwise no browser is left after setup.
 
 The default profile does not touch Microsoft Store, App Installer (winget), Terminal, Photos, Calculator, Notepad and Windows Security. The `Packages` lists are empty on purpose: removing CBS packages can break the installation of updates.
 
