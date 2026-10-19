@@ -7,4 +7,9 @@
     'PostInstall.ConvertedToBom' = 'Пересохранено в UTF-8 с BOM, чтобы русский текст работал в Windows PowerShell 5.1: {0}'
     'PostInstall.Added'          = 'Добавлено: {0}. Запустится при первом входе в Windows.'
     'PostInstall.Wifi'           = 'сетей Wi-Fi: {0}'
+    'PostInstall.RemoveEdge'     = 'удаление Microsoft Edge'
+    'PostInstall.EdgeTitle'      = 'Microsoft Edge'
+    'PostInstall.EdgeRemoved'    = 'удалён. Поставить снова: -Restore -Category edge, затем winget install Microsoft.Edge'
+    'PostInstall.EdgeNotFound'   = 'не найден, удалять нечего'
+    'PostInstall.EdgeFailed'     = 'не удалось удалить (код установщика {0})'
 }

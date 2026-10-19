@@ -27,7 +27,18 @@ function Format-FirstLogonSummary {
     if ($FirstLogon.Scripts.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Scripts' $FirstLogon.Scripts.Count }
     $wifi = Get-LunqFirstLogonWifi $FirstLogon
     if ($wifi.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Wifi' $wifi.Count }
+    if ((Get-LunqFirstLogonActions $FirstLogon) -contains 'RemoveEdge') { $parts += Get-LunqText 'PostInstall.RemoveEdge' }
     return ($parts -join ', ')
+}
+
+# Действия, которые категория профиля может поручить первому входу (поле FirstLogon).
+$script:FirstLogonActions = @('RemoveEdge')
+
+function Get-LunqFirstLogonActions {
+    # Действия из категорий профиля для первого входа. Свойства Actions может не быть.
+    param([Parameter(Mandatory)]$FirstLogon)
+    if (-not $FirstLogon.PSObject.Properties['Actions'] -or -not $FirstLogon.Actions) { return , @() }
+    return , @($FirstLogon.Actions)
 }
 
 function Get-LunqFirstLogonWifi {
@@ -116,6 +127,13 @@ function Install-LunqFirstLogon {
         }
     }
     Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\FirstLogon.ps1') -Destination $target -Force
+    $actions = Get-LunqFirstLogonActions $FirstLogon
+    if ($actions.Count -gt 0) {
+        [IO.File]::WriteAllLines((Join-Path $target 'Actions.txt'), [string[]]$actions, (New-Object Text.UTF8Encoding($false)))
+        if ($actions -contains 'RemoveEdge') {
+            Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\RemoveEdge.ps1') -Destination $target -Force
+        }
+    }
     # Скрипт первого входа работает без модуля, поэтому язык интерфейса ему передаётся файлом.
     [IO.File]::WriteAllText((Join-Path $target 'Language.txt'), (Get-LunqLanguage), (New-Object Text.UTF8Encoding($false)))
 
@@ -134,5 +152,36 @@ function Install-LunqFirstLogon {
     foreach ($app in $FirstLogon.Apps) { $result.Done.Add($app) }
     $result.Summary = Format-FirstLogonSummary -FirstLogon $FirstLogon
     Write-Info (Get-LunqText 'PostInstall.Added' $result.Summary)
+    return $result
+}
+
+function Invoke-LunqEdgeUninstall {
+    # Тот же скрипт, что и при первом входе. Отдельная функция, чтобы тесты не трогали настоящий Edge.
+    return (& (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\RemoveEdge.ps1'))
+}
+
+function Remove-LunqEdge {
+    # -Online: Edge удаляется сразу. Вернуть его через -Restore нельзя, поэтому итог подсказывает,
+    # как поставить его снова.
+    $result = New-LunqResult (Get-LunqText 'PostInstall.EdgeTitle') 'Edge'
+    # Сбой скрипта не должен останавливать -Online до записи данных для отката.
+    try { $edge = Invoke-LunqEdgeUninstall }
+    catch {
+        Write-Warning $_.Exception.Message
+        $edge = [pscustomobject]@{ Status = 'Failed'; ExitCode = -1 }
+    }
+    if ($edge.Status -eq 'Removed') {
+        $result.Done.Add('Microsoft Edge')
+        $result.Summary = Get-LunqText 'PostInstall.EdgeRemoved'
+    }
+    elseif ($edge.Status -eq 'NotInstalled') {
+        $result.Skipped.Add('Microsoft Edge')
+        $result.Summary = Get-LunqText 'PostInstall.EdgeNotFound'
+    }
+    else {
+        $result.Failed.Add('Microsoft Edge')
+        $result.Summary = Get-LunqText 'PostInstall.EdgeFailed' $edge.ExitCode
+    }
+    Write-Info ('{0}: {1}' -f $result.Title, $result.Summary)
     return $result
 }

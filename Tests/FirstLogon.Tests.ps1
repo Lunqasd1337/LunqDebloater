@@ -211,6 +211,35 @@ Describe 'Скрипт первого входа' {
         $out | Should -Match 'Установлено программ: 1'
     }
 
+    It 'Edge удаляется один раз, до программ, даже если программы ждут следующего входа' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'Actions.txt') -Value 'RemoveEdge'
+        # Настоящий RemoveEdge.ps1 запустил бы установщик Edge: вместо него заглушка, которая считает вызовы.
+        $calls = Join-Path $t.Root 'edge.log'
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'RemoveEdge.ps1') -Value "Add-Content -LiteralPath '$calls' -Value 'call'; [pscustomobject]@{ Status = 'Removed'; ExitCode = 19 }"
+        $out = Invoke-FirstLogon -Test $t -Offline
+        $out | Should -Match 'Удаление Microsoft Edge'
+        $out | Should -Match 'Microsoft Edge удалён\.'
+        $out | Should -Match 'Нет подключения к интернету'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Not -Match 'Удаление Microsoft Edge'
+        Get-Lines $calls | Should -Be @('call')
+        Get-Lines (Join-Path $t.Lunq 'actions.done') | Should -Be @('RemoveEdge')
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+    }
+
+    It 'Edge не удалился: ошибка в итоге, а при следующем входе установщик не запускается снова' {
+        $t = New-FirstLogonTest
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'Actions.txt') -Value 'RemoveEdge'
+        Set-Content -LiteralPath (Join-Path $t.Lunq 'RemoveEdge.ps1') -Value "[pscustomobject]@{ Status = 'Failed'; ExitCode = 93 }"
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Не удалось удалить Microsoft Edge \(код 93\)'
+        $out | Should -Match 'С ошибками: Microsoft Edge'
+        Get-Lines (Join-Path $t.Lunq 'actions.done') | Should -Be @('RemoveEdge')
+        # Только действие, без программ и скриптов: за собой убрано сразу.
+        Test-Path -LiteralPath $t.Task | Should -BeFalse
+    }
+
     It 'по-английски, если в Language.txt записано en' {
         $t = New-FirstLogonTest -Apps @('7zip.7zip', 'Mozilla.Firefox --scope machine') -Language en
         $out = Invoke-FirstLogon -Test $t
@@ -299,5 +328,66 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath $t.Task | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $t.User 'secret.txt') | Should -BeFalse
         Get-Lines $t.WingetLog | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Скрипт удаления Edge' {
+    BeforeAll {
+        $script:RemoveEdge = Join-Path (Split-Path $PSScriptRoot -Parent) 'Modules\FirstLogon\RemoveEdge.ps1'
+
+        function New-EdgeTest {
+            # Папка Microsoft\Edge в миниатюре: msedge.exe, установщики двух версий, запись в «Программах» и ярлык.
+            param([switch]$NoEdge)
+            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0, 8))
+            $edge = Join-Path $root 'Edge'
+            $app = Join-Path $edge 'Application'
+            if (-not $NoEdge) {
+                foreach ($version in '129.0.2792.89', '130.0.2849.46') {
+                    New-Item -ItemType Directory -Path (Join-Path $app "$version\Installer") -Force | Out-Null
+                    Set-Content -LiteralPath (Join-Path $app "$version\Installer\setup.exe") -Value 'setup'
+                }
+                Set-Content -LiteralPath (Join-Path $app 'msedge.exe') -Value 'edge'
+            }
+            # Раздел реестра в тесте это папка: скрипт только проверяет его и удаляет.
+            $key = Join-Path $root 'Uninstall\Microsoft Edge'
+            New-Item -ItemType Directory -Path $key -Force | Out-Null
+            $shortcut = Join-Path $root 'Microsoft Edge.lnk'
+            Set-Content -LiteralPath $shortcut -Value 'lnk'
+            return [pscustomobject]@{ Edge = $edge; Exe = (Join-Path $app 'msedge.exe'); Key = $key; Shortcut = $shortcut; Calls = (Join-Path $root 'calls.txt') }
+        }
+    }
+
+    It 'запускает установщик самой новой версии и убирает запись в «Программах» и ярлык' {
+        $t = New-EdgeTest
+        $runner = {
+            param($Path, $Arguments)
+            Set-Content -LiteralPath $t.Calls -Value (@($Path) + $Arguments)
+            Remove-Item -LiteralPath $t.Exe
+            19
+        }.GetNewClosure()
+        $r = & $script:RemoveEdge -EdgeDir $t.Edge -UninstallKey $t.Key -Shortcuts @($t.Shortcut) -Runner $runner
+        $r.Status | Should -Be 'Removed'
+        $r.ExitCode | Should -Be 19
+        $calls = @(Get-Content -LiteralPath $t.Calls)
+        $calls[0] | Should -Match '130\.0\.2849\.46[\\/]Installer[\\/]setup\.exe$'
+        $calls[1..3] | Should -Be @('--uninstall', '--system-level', '--force-uninstall')
+        Test-Path -LiteralPath $t.Key | Should -BeFalse
+        Test-Path -LiteralPath $t.Shortcut | Should -BeFalse
+    }
+
+    It 'установщик отказался: Failed с его кодом, запись в «Программах» остаётся' {
+        $t = New-EdgeTest
+        $r = & $script:RemoveEdge -EdgeDir $t.Edge -UninstallKey $t.Key -Shortcuts @($t.Shortcut) -Runner { param($Path, $Arguments) 93 }
+        $r.Status | Should -Be 'Failed'
+        $r.ExitCode | Should -Be 93
+        Test-Path -LiteralPath $t.Key | Should -BeTrue
+    }
+
+    It 'Edge уже нет: установщик не запускается, но оставшаяся запись в «Программах» убирается' {
+        # Именно по такой записи Store показывает Edge установленным после удаления файлов.
+        $t = New-EdgeTest -NoEdge
+        $r = & $script:RemoveEdge -EdgeDir $t.Edge -UninstallKey $t.Key -Shortcuts @() -Runner { throw 'установщик не должен запускаться' }
+        $r.Status | Should -Be 'NotInstalled'
+        Test-Path -LiteralPath $t.Key | Should -BeFalse
     }
 }

@@ -181,6 +181,9 @@ Describe 'Get-LunqOnlineSteps' {
             $names = { param($c) @(Get-LunqOnlineSteps -Context $c | Where-Object { $_.When } | ForEach-Object { $_.Name }) }
             & $names @{ SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Appx', 'Capabilities', 'Features', 'Registry', 'SaveRestore')
             & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $false; RestorePath = 'r.json' } | Should -Be @('Registry', 'SaveRestore')
+            # Edge удаляется после реестра: без AllowUninstall из категории edge установщик откажется.
+            $config = [pscustomobject]@{ FirstLogon = @('RemoveEdge') }
+            & $names @{ SkipAppx = $true; SkipComponents = $true; SkipRegistry = $false; RestorePath = 'r.json'; Config = $config } | Should -Be @('Registry', 'Edge', 'SaveRestore')
         }
     }
 

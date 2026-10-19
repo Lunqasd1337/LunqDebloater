@@ -2,6 +2,11 @@
 
 Версия LunqDebloater видна в заголовке окна, в логе, в итоге сборки и в реестре собранного образа (`reg query HKLM\SOFTWARE\LunqDebloater`).
 
+## 1.11.0
+
+- **Удаление Microsoft Edge.** Новая категория профиля `edge` (по умолчанию выключена) удаляет Edge при первом входе его собственным установщиком, а с `-Online` сразу. Edge уходит целиком, вместе с записью в «Программах», поэтому Microsoft Store не показывает его установленным, как после `DISM /Remove-Edge`. Категория разрешает установщику удаление вне ЕЭЗ (`AllowUninstall`) и не даёт Microsoft Edge Update поставить Edge снова. WebView2 остаётся. Вернуть Edge: `-Restore -Category edge`, затем `winget install Microsoft.Edge`.
+- В категориях профиля появилось поле `FirstLogon`: действия при первом входе. Пока одно, `RemoveEdge`.
+
 ## 1.10.1
 
 - Накопительное обновление 24H2 и 25H2 вместе с контрольным KB5043080 больше не падает с «An error occurred applying the Unattend.xml file from the .msu package». Microsoft требует ставить их одним вызовом DISM из папки, где лежат только они, поэтому все накопительные обновления Windows из `Config\Updates` теперь ставятся так: в отдельную папку, установка самого нового через `dism.exe /Add-Package`. Обновление .NET, языковые пакеты и `.cab` ставятся по-прежнему по одному.

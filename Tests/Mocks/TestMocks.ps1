@@ -141,6 +141,14 @@ function Test-LunqRegistryKey {
 # Файл отката этой Windows лежит в папке теста, а не в C:\Windows.
 function Get-LunqRestorePath { return (Join-Path $env:LUNQ_TEST_ROOT 'Windows\LunqDebloater\Restore.json') }
 
+# Удаление Edge с -Online: настоящий установщик Edge не запускается. LUNQ_TEST_EDGE задаёт итог.
+function Invoke-LunqEdgeUninstall {
+    Write-Host '    [mock] remove edge'
+    $status = 'Removed'
+    if ($env:LUNQ_TEST_EDGE) { $status = $env:LUNQ_TEST_EDGE }
+    return [pscustomobject]@{ Status = $status; ExitCode = 19 }
+}
+
 # Приложения, установленные у пользователей этой Windows (для -Online).
 function Get-LunqInstalledAppx {
     return @([pscustomobject]@{ Name = 'Microsoft.BingNews'; PackageFullName = 'Microsoft.BingNews_4.1.0.0_x64__8wekyb3d8bbwe'; PackageFamilyName = 'Microsoft.BingNews_8wekyb3d8bbwe' })

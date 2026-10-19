@@ -25,9 +25,13 @@ AfterAll {
 Describe 'Read-LunqProfile' {
     It 'читает профиль по умолчанию' {
         $p = Read-LunqProfile -Path $script:ProfilePath
-        $p.Categories.Count | Should -Be 9
+        $p.Categories.Count | Should -Be 10
         $p.Requirements.Build | Should -Be 26300
         ($p.Categories | Where-Object Id -eq 'drivers').Enabled | Should -BeFalse
+        # Edge удаляется только по выбору: категория выключена.
+        $edge = $p.Categories | Where-Object Id -eq 'edge'
+        $edge.Enabled | Should -BeFalse
+        $edge.FirstLogon | Should -Be @('RemoveEdge')
         ($p.Categories | Where-Object Id -eq 'telemetry').Enabled | Should -BeTrue
     }
 
@@ -106,6 +110,11 @@ Describe 'Read-LunqProfile' {
         }
     }
 
+    It 'неизвестное действие первого входа отвергается, а не пропускается молча' {
+        $path = New-TestProfile @{ Categories = @(@{ Id = 'browser'; FirstLogon = @('RemoveEgde') }) }
+        { Read-LunqProfile -Path $path } | Should -Throw "*у категории 'browser' неизвестное действие первого входа 'RemoveEgde'. Допустимо: RemoveEdge"
+    }
+
     It 'сразу отвергает DWORD, который не число' {
         $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = 'x'; Name = 'v'; Type = 'REG_DWORD'; Value = 'abc' }) }) }
         { Read-LunqProfile -Path $path } | Should -Throw '*не число*'
@@ -155,6 +164,15 @@ Describe 'Get-LunqEffectiveConfig' {
         $config.Appx.Remove | Should -Contain 'Microsoft.BingNews'
         @($config.Registry | Where-Object { $_.LunqCategory -eq 'ai' }).Count | Should -Be 0
         @($config.Registry | Where-Object { $_.LunqCategory -eq 'telemetry' }).Count | Should -Be 13
+    }
+
+    It 'действия первого входа берутся только из включённых категорий' {
+        $p = Read-LunqProfile -Path $script:ProfilePath
+        (Get-LunqEffectiveConfig -LunqProfile $p).FirstLogon.Count | Should -Be 0
+        Set-LunqOnlyCategories -LunqProfile $p -Ids 'edge', 'ads'
+        $config = Get-LunqEffectiveConfig -LunqProfile $p
+        $config.FirstLogon | Should -Be @('RemoveEdge')
+        @($config.Registry | Where-Object { $_.LunqCategory -eq 'edge' } | ForEach-Object { $_.Name }) | Should -Be @('AllowUninstall', 'Install{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}')
     }
 
     It 'неизвестный Id в -SkipCategory даёт понятную ошибку' {

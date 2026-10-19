@@ -212,6 +212,22 @@
       "Registry": [
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue", "Description": { "ru": "Не устанавливать OneDrive при первом входе", "en": "Do not install OneDrive at first sign-in" } }
       ]
+    },
+    {
+      "Id": "edge",
+      "Name": { "ru": "Microsoft Edge", "en": "Microsoft Edge" },
+      "Enabled": false,
+      "Description": {
+        "ru": "Удаляет Microsoft Edge при первом входе его собственным установщиком, поэтому Store не считает его установленным, и не даёт Windows поставить его снова. WebView2 остаётся: без него не работают виджеты, новый Outlook, Teams и многие программы. Вернуть Edge: -Restore -Category edge, затем winget install Microsoft.Edge.",
+        "en": "Removes Microsoft Edge at first sign-in with its own installer, so the Store does not think it is installed, and stops Windows from installing it again. WebView2 stays: widgets, the new Outlook, Teams and many apps need it. To get Edge back: -Restore -Category edge, then winget install Microsoft.Edge."
+      },
+      "FirstLogon": [
+        "RemoveEdge"
+      ],
+      "Registry": [
+        { "Hive": "SOFTWARE", "Path": "WOW6432Node\\Microsoft\\EdgeUpdateDev", "Name": "AllowUninstall", "Type": "REG_DWORD", "Value": 1, "Description": { "ru": "Разрешить установщику удалить Edge и вне ЕЭЗ", "en": "Let the installer remove Edge outside the EEA too" } },
+        { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\EdgeUpdate", "Name": "Install{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", "Type": "REG_DWORD", "Value": 0, "Description": { "ru": "Не давать Microsoft Edge Update снова поставить Edge", "en": "Do not let Microsoft Edge Update install Edge again" } }
+      ]
     }
   ]
 }

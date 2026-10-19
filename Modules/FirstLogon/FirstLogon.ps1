@@ -1,6 +1,7 @@
 ﻿# LunqDebloater: первичная настройка после установки Windows.
 # Запускается при первом входе (FirstLogonCommands из Windows\System32\Sysprep\unattend.xml).
-# Ставит программы из Apps.txt через winget и выполняет скрипты *.ps1 из папки User.
+# Выполняет действия из категорий профиля (Actions.txt, например удаление Edge), ставит
+# программы из Apps.txt через winget и выполняет скрипты *.ps1 из папки User.
 # Пока не всё сделано, повторяет работу при следующих входах (до 5 попыток): если нет
 # интернета или winget, если программа не поставилась или окно закрыли на середине.
 
@@ -11,6 +12,8 @@ $appsFile = Join-Path $userDir 'Apps.txt'
 $log = Join-Path $root 'FirstLogon.log'
 $appsInstalledFile = Join-Path $root 'apps.installed'
 $scriptsDoneFile = Join-Path $root 'scripts.done'
+$actionsFile = Join-Path $root 'Actions.txt'
+$actionsDoneFile = Join-Path $root 'actions.done'
 $attemptsFile = Join-Path $root 'attempts.txt'
 $taskName = 'LunqFirstLogon'
 $maxAttempts = 5
@@ -46,6 +49,11 @@ $texts = @{
         WifiHeader     = '==> Сети Wi-Fi ({0})'
         WifiFailed     = 'Не удалось добавить сеть {0} (код {1})'
         WifiAdded      = 'Добавлено сетей: {0}'
+        EdgeHeader     = '==> Удаление Microsoft Edge'
+        EdgeRemoved    = 'Microsoft Edge удалён.'
+        EdgeNotFound   = 'Microsoft Edge не найден, удалять нечего.'
+        EdgeFailed     = 'Не удалось удалить Microsoft Edge (код {0}).'
+        EdgeError      = 'Ошибка при удалении Microsoft Edge: {0}'
     }
     en = @{
         NoAdmin        = 'Initial setup skipped: administrator rights are required.'
@@ -75,6 +83,11 @@ $texts = @{
         WifiHeader     = '==> Wi-Fi networks ({0})'
         WifiFailed     = 'Could not add the network {0} (code {1})'
         WifiAdded      = 'Networks added: {0}'
+        EdgeHeader     = '==> Removing Microsoft Edge'
+        EdgeRemoved    = 'Microsoft Edge removed.'
+        EdgeNotFound   = 'Microsoft Edge was not found, nothing to remove.'
+        EdgeFailed     = 'Could not remove Microsoft Edge (code {0}).'
+        EdgeError      = 'Error while removing Microsoft Edge: {0}'
     }
 }
 $language = ''
@@ -190,15 +203,35 @@ if (Test-Path -LiteralPath $wifiDir) {
     Remove-Item -LiteralPath $wifiDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-$attempt = 1
-if (Test-Path -LiteralPath $attemptsFile) { $attempt = [int](Get-Content -LiteralPath $attemptsFile -Raw) + 1 }
-Set-Content -LiteralPath $attemptsFile -Value $attempt
-$lastAttempt = $attempt -ge $maxAttempts
-
 function Read-Lines([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
     return @(Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
+
+$failed = @()
+
+# Действия из категорий профиля. Они не ждут интернета и выполняются один раз: неудача
+# тоже отмечается, иначе каждый вход снова запускал бы установщик Edge.
+$doneActions = @(Read-Lines $actionsDoneFile)
+foreach ($action in @(Read-Lines $actionsFile | Where-Object { $doneActions -notcontains $_ })) {
+    if ($action -eq 'RemoveEdge') {
+        Write-Host ''
+        Write-Host (Get-Text 'EdgeHeader') -ForegroundColor Cyan
+        try {
+            $edge = & (Join-Path $root 'RemoveEdge.ps1')
+            if ($edge.Status -eq 'Removed') { Write-Line (Get-Text 'EdgeRemoved') }
+            elseif ($edge.Status -eq 'NotInstalled') { Write-Line (Get-Text 'EdgeNotFound') }
+            else { Write-Line (Get-Text 'EdgeFailed' $edge.ExitCode) 'Yellow'; $failed += 'Microsoft Edge' }
+        }
+        catch { Write-Line (Get-Text 'EdgeError' $_.Exception.Message) 'Yellow'; $failed += 'Microsoft Edge' }
+    }
+    Add-Content -LiteralPath $actionsDoneFile -Value $action -Encoding UTF8
+}
+
+$attempt = 1
+if (Test-Path -LiteralPath $attemptsFile) { $attempt = [int](Get-Content -LiteralPath $attemptsFile -Raw) + 1 }
+Set-Content -LiteralPath $attemptsFile -Value $attempt
+$lastAttempt = $attempt -ge $maxAttempts
 
 # Задание на следующий вход ставится сразу, до работы: если окно закроют или компьютер
 # выключится на середине, недоделанное продолжится при следующем входе.
@@ -223,7 +256,6 @@ if (-not $task -and -not $lastAttempt) {
 $finalRun = $lastAttempt -or -not $retryScheduled
 
 $installed = @()
-$failed = @()
 $appsPending = $false
 
 $apps = @(Read-Lines $appsFile | Where-Object { -not $_.StartsWith('#') })

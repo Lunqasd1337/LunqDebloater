@@ -162,6 +162,12 @@
           "description": "Registry changes in the image.",
           "type": "array",
           "items": { "$ref": "#/definitions/registryEntry" }
+        },
+        "FirstLogon": {
+          "description": "Actions for the first sign-in after setup (with -Online they run right away). RemoveEdge: remove Microsoft Edge with its own installer, WebView2 stays.",
+          "type": "array",
+          "items": { "enum": ["RemoveEdge"] },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false

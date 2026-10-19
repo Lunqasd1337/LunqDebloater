@@ -334,6 +334,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
       "Capabilities": [],                         // Get-WindowsCapability, можно с *
       "Features":     ["Recall"],                 // Get-WindowsOptionalFeature
       "Packages":     [],                         // CBS-пакеты, осторожно
+      "FirstLogon":   [],                         // действия при первом входе: RemoveEdge
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1 },
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
@@ -345,6 +346,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 ```
 
 Пустые списки в категории можно не писать.
+
+`FirstLogon` перечисляет, что сделать при первом входе в установленную Windows (с `-Online` это делается сразу). Пока есть одно действие, `RemoveEdge`: Microsoft Edge удаляется его собственным установщиком. Так он убирается целиком, вместе с записью в «Программах», и Microsoft Store не показывает его установленным, как бывает после `DISM /Remove-Edge`, который стирает только файлы. WebView2 остаётся. Этим пользуется категория `edge`.
 
 Тексты `Name` и `Description` (у профиля, категорий и записей реестра) можно писать строкой или переводами: `{ "ru": "...", "en": "..." }`. Скрипт берёт язык интерфейса, затем английский. Строка `"$schema"` подключает схему [Schemas/Profile.schema.json](Schemas/Profile.schema.json): по ней VS Code подсказывает поля и подчёркивает ошибки.
 
@@ -375,6 +378,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\Lun
 | `store` | Microsoft Store |
 | `drivers` | Драйверы из Windows Update |
 | `onedrive` | OneDrive |
+| `edge` | Microsoft Edge (по умолчанию выключена): удаление при первом входе, запрет переустановки через Microsoft Edge Update |
 
 Пропустить категории без правки профиля: `-SkipCategory drivers,store`. В пошаговом режиме скрипт показывает список категорий, и их можно включать и выключать по номерам.
 
@@ -413,6 +417,7 @@ Get-WindowsOptionalFeature -Path C:\LunqWork\mount | Where State -eq Enabled | S
 | `Modules\LunqDebloater\Private\` | Функции по темам: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (сводка «Что войдёт в образ»), `Build` (шаги сборки), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Тексты интерфейса: `ru\*.psd1` и `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | Скрипт первого входа, который кладётся в образ |
+| `Modules\FirstLogon\RemoveEdge.ps1` | Удаление Microsoft Edge его установщиком (категория `edge`) |
 | `Schemas\Profile.schema.json` | JSON-схема профиля |
 | `Tests\` | Тесты Pester и заглушка модуля DISM |
 

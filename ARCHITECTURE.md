@@ -28,6 +28,7 @@ Modules\
     Strings\ru\*.psd1        Тексты интерфейса на русском
     Strings\en\*.psd1        Те же ключи на английском
   FirstLogon\FirstLogon.ps1  Скрипт первого входа, который кладётся в образ
+  FirstLogon\RemoveEdge.ps1  Удаление Edge его установщиком: при первом входе и с -Online
 Schemas\Profile.schema.json  JSON-схема профиля для VS Code
 Tests\                       Тесты Pester и заглушки
 .github\                     GitHub Actions, шаблоны issue и PR, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
@@ -50,7 +51,7 @@ Tests\                       Тесты Pester и заглушки
 | `Servicing.ps1` | Обновления и драйверы: в систему, в WinRE (`Update-LunqRecovery`) и в установщик (`Update-LunqSetup`), Safe OS и Setup Dynamic Update и их распознавание по содержимому `.cab` (`Split-LunqDynamicUpdates`), выгрузка драйверов этого компьютера (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Удаление Appx, компонентов (capabilities), отключение функций и удаление CBS-пакетов |
 | `Registry.ps1` | Офлайн-кусты реестра, запись и удаление значений и ключей, отметка о сборке в `HKLM\SOFTWARE\LunqDebloater` |
-| `PostInstall.ps1` | Программы и скрипты первого входа: копирование в образ, `unattend.xml` в Sysprep |
+| `PostInstall.ps1` | Программы, скрипты и действия первого входа: копирование в образ, `unattend.xml` в Sysprep, удаление Edge с `-Online` (`Remove-LunqEdge`) |
 | `Unattend.ps1` | `autounattend.xml` в корне ISO: регион, обход требований, локальная учётная запись |
 | `Inventory.ps1` | Режим «Что в образе»: список Appx, компонентов и функций с пометками категорий профиля |
 | `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) и значения отметки о сборке |
@@ -74,7 +75,7 @@ Tests\                       Тесты Pester и заглушки
 9. **Сборка** по списку шагов (ниже), затем итог `Write-LunqReport`. После итога, уже не шагом, рядом с ISO пишутся рецепт и HTML-отчёт: сбой здесь не портит готовый ISO.
 10. **При ошибке** кусты реестра выгружаются, образ отключается без сохранения. Рабочая папка удаляется, только если этот запуск сам её создал (шаг Prepare) и в ней ничего не смонтировано, иначе DISM потеряет образ.
 
-Другие режимы ответвляются раньше. `-Schedule` (с `-Recipe`) только создаёт или удаляет задание. `-Recipe` в начале подставляет значения из рецепта во все параметры, не заданные в командной строке, и дальше идёт обычная сборка без вопросов. `-Restore` читает `Restore.json`, даёт выбрать категории и вызывает `Invoke-LunqRestore`. `-Online` проходит выбор профиля и категорий, как сборка, и выполняет `Invoke-LunqBuild -Online`: шаги `Get-LunqOnlineSteps` вызывают те же функции удаления и реестра с `-Online` вместо `-MountPath`. `-DownloadUpdates` скачивает обновления после чтения редакции, когда известны выпуск и архитектура, и до проверки версии.
+Другие режимы ответвляются раньше. `-Schedule` (с `-Recipe`) только создаёт или удаляет задание. `-Recipe` в начале подставляет значения из рецепта во все параметры, не заданные в командной строке, и дальше идёт обычная сборка без вопросов. `-Restore` читает `Restore.json`, даёт выбрать категории и вызывает `Invoke-LunqRestore`. `-Online` проходит выбор профиля и категорий, как сборка, и выполняет `Invoke-LunqBuild -Online`: шаги `Get-LunqOnlineSteps` вызывают те же функции удаления и реестра с `-Online` вместо `-MountPath`, а действие `RemoveEdge` выполняется сразу после реестра, шагом Edge. `-DownloadUpdates` скачивает обновления после чтения редакции, когда известны выпуск и архитектура, и до проверки версии.
 
 Перед каждым изменением функции удаления и `Set-LunqRegistry` записывают в `Context.Restore`, что убрано и как было (для `DeleteKey` выгрузка ключа через `reg export`). При сборке это сохраняется в образ на шаге Save, при `-Online` дописывается к `%SystemRoot%\LunqDebloater\Restore.json` последним шагом (и при ошибке тоже).
 
@@ -93,7 +94,7 @@ Tests\                       Тесты Pester и заглушки
 | Updates | Ставит обновления по возрастанию KB | есть обновления |
 | Drivers | Добавляет драйверы по одному `.inf` | есть драйверы |
 | Recovery | Обслуживает `Winre.wim` внутри системы: обновления, Safe OS DU, драйверы дисков | `-UpdatesToSetup` или `-DriversToSetup`, и есть что ставить в WinRE |
-| FirstLogon | Кладёт программы, скрипты и `FirstLogon.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы или скрипты |
+| FirstLogon | Кладёт программы, скрипты, `FirstLogon.ps1`, действия категорий (`Actions.txt`) и `RemoveEdge.ps1` в `Windows\Setup\Scripts\Lunq` | есть программы, скрипты или действия |
 | Unattend | Кладёт `autounattend.xml` в корень ISO | файл ответов включён |
 | Appx | Удаляет Appx из профиля | без `-SkipAppx` |
 | Capabilities | Удаляет компоненты | без `-SkipComponents` |
@@ -113,7 +114,7 @@ Tests\                       Тесты Pester и заглушки
 
 ## Профиль
 
-`Read-LunqProfile` читает JSON, проверяет поля и записи реестра (тип, число, действие) и приводит тексты к языку интерфейса через `Get-LunqLocalized`. `Get-LunqEffectiveConfig` собирает включённые категории в общие списки `Appx`, `Capabilities`, `Features`, `Packages` и `Registry`. У каждой записи реестра остаётся `LunqCategory`, чтобы итог считался по категориям. Имена сравниваются шаблонами `-like` (`Test-NamePattern`), а шаблоны, которые ничего не нашли, попадают в `NotMatched`.
+`Read-LunqProfile` читает JSON, проверяет поля и записи реестра (тип, число, действие) и приводит тексты к языку интерфейса через `Get-LunqLocalized`. `Get-LunqEffectiveConfig` собирает включённые категории в общие списки `Appx`, `Capabilities`, `Features`, `Packages`, `Registry` и `FirstLogon` (действия первого входа, их имена проверяются по `$script:FirstLogonActions`). У каждой записи реестра остаётся `LunqCategory`, чтобы итог считался по категориям. Имена сравниваются шаблонами `-like` (`Test-NamePattern`), а шаблоны, которые ничего не нашли, попадают в `NotMatched`.
 
 ## Реестр образа
 
@@ -153,7 +154,7 @@ Tests\                       Тесты Pester и заглушки
 | `Tests\Removal.Tests.ps1` | Удаление CBS-пакетов: только установленные пакеты по шаблонам профиля, ошибки и ненайденные шаблоны в итоге |
 | `Tests\TestHelpers.ps1` | Копия скрипта в `TestDrive`, переменные окружения для заглушек, запуск и разбор шагов |
 | `Tests\Mocks\Dism\Dism.psm1` | Заглушка модуля DISM: ничего не монтирует, создаёт файлы-пустышки там, где их потом ищет скрипт, в том числе драйверы для `Export-WindowsDriver` |
-| `Tests\Mocks\TestMocks.ps1` | Заглушки функций модуля, которые трогают систему: права администратора, подключение ISO, место на дисках, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), окно выбора папки и запись в реестр. Копируется в модуль копии скрипта как `Private\ZZ.TestMocks.ps1`, чтобы подключиться последним |
+| `Tests\Mocks\TestMocks.ps1` | Заглушки функций модуля, которые трогают систему: права администратора, подключение ISO, место на дисках, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), окно выбора папки, запись в реестр и удаление Edge (`Invoke-LunqEdgeUninstall`). Копируется в модуль копии скрипта как `Private\ZZ.TestMocks.ps1`, чтобы подключиться последним |
 
 Поведение заглушек настраивается переменными `LUNQ_TEST_*`: например, `LUNQ_TEST_DISM_EXIT` (код выхода dism.exe), `LUNQ_TEST_FAIL_APPX` (сбой посреди сборки), `LUNQ_TEST_IMAGE_VERSION`, `LUNQ_TEST_HOST_BUILD`, `LUNQ_TEST_NOT_ADMIN`, `LUNQ_TEST_FOLDER` (что «выбрано» в окне выбора папки), `LUNQ_TEST_NO_HOST_DRIVERS`, `LUNQ_TEST_ISO_WIM` (на ISO `install.wim` вместо `install.esd`). Вызовы внешних программ пишутся в `LUNQ_TEST_NATIVE_LOG`, записи реестра в `LUNQ_TEST_REG_LOG`, и тесты сверяют их. Сквозные тесты по умолчанию идут на русском и сравнивают русский вывод, английские тесты проверяют, что в выводе нет кириллицы.
 

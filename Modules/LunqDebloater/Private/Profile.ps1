@@ -49,7 +49,7 @@ $script:ProfileFields = @{
     'Capabilities' = @('Remove')
     'Features'     = @('Disable', 'RemovePayload')
     'Packages'     = @('Remove')
-    'Category'     = @('Id', 'Name', 'Description', 'Enabled', 'Appx', 'Capabilities', 'Features', 'Packages', 'Registry')
+    'Category'     = @('Id', 'Name', 'Description', 'Enabled', 'Appx', 'Capabilities', 'Features', 'Packages', 'Registry', 'FirstLogon')
     'Registry'     = @('Hive', 'Path', 'Name', 'Action', 'Type', 'Value', 'Description')
 }
 
@@ -98,6 +98,11 @@ function Read-LunqProfile {
             $name = Get-LunqLocalized (Get-ConfigValue $raw 'Name')
             if (-not $name) { $name = $id }
             $enabled = ConvertTo-LunqProfileBool (Get-ConfigValue $raw 'Enabled') -Default $true -Field "Categories[$id].Enabled" -Path $Path
+            # Действия первого входа: опечатка в имени иначе молча оставила бы, например, Edge на месте.
+            $actions = Get-ConfigList $raw 'FirstLogon'
+            foreach ($action in $actions) {
+                if ($script:FirstLogonActions -notcontains $action) { throw (Get-LunqText 'Profile.UnknownFirstLogonAction' $Path $id $action ($script:FirstLogonActions -join ', ')) }
+            }
             $categories.Add([pscustomobject]@{
                     Id           = $id
                     Name         = [string]$name
@@ -110,6 +115,7 @@ function Read-LunqProfile {
                     Features     = Get-ConfigList $raw 'Features'
                     Packages     = Get-ConfigList $raw 'Packages'
                     Registry     = Get-ConfigList $raw 'Registry'
+                    FirstLogon   = $actions
                 })
         }
     }
@@ -124,6 +130,7 @@ function Read-LunqProfile {
                 Features     = Get-ConfigList $config 'Features', 'Disable'
                 Packages     = Get-ConfigList $config 'Packages', 'Remove'
                 Registry     = Get-ConfigList $config 'Registry'
+                FirstLogon   = @()
             })
     }
 
@@ -181,6 +188,8 @@ function Get-CategoryCounts {
     if ($Category.Features.Count) { $parts += Get-LunqText 'Profile.CountFeatures' $Category.Features.Count }
     if ($Category.Packages.Count) { $parts += Get-LunqText 'Profile.CountPackages' $Category.Packages.Count }
     if ($Category.Registry.Count) { $parts += Get-LunqText 'Profile.CountRegistry' $Category.Registry.Count }
+    $actions = Get-ConfigList $Category 'FirstLogon'
+    if ($actions.Count) { $parts += Get-LunqText 'Profile.CountFirstLogon' $actions.Count }
     return ($parts -join ', ')
 }
 
@@ -266,6 +275,8 @@ function Get-LunqEffectiveConfig {
         Features     = [pscustomobject]@{ Disable = & $collect 'Features'; RemovePayload = $LunqProfile.RemoveFeaturePayload }
         Packages     = [pscustomobject]@{ Remove = & $collect 'Packages' }
         Registry     = @($registry)
+        # Категории из рецепта или тестов могут быть без поля FirstLogon.
+        FirstLogon   = @($enabled | ForEach-Object { Get-ConfigList $_ 'FirstLogon' } | ForEach-Object { $_ } | Select-Object -Unique)
     }
 }
 

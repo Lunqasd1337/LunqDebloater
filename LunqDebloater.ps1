@@ -530,7 +530,9 @@ try {
     $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
 
     $firstLogon = $null
-    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0)) {
+    # Действия первого входа из включённых категорий профиля, например удаление Edge.
+    $logonActions = @($config.FirstLogon)
+    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0 -or $logonActions.Count -gt 0)) {
         $logonApps = @()
         if ($useApps) { $logonApps = $foundLogon.Apps }
         $logonScripts = @()
@@ -542,6 +544,7 @@ try {
             Scripts     = $logonScripts
             Wifi        = $wifiNames
             WifiPath    = $hostWifiDir
+            Actions     = $logonActions
         }
     }
 

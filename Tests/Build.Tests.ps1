@@ -615,6 +615,32 @@ Describe 'Копия этого компьютера' {
     }
 }
 
+Describe 'Удаление Microsoft Edge' {
+    It 'категория edge кладёт удаление Edge в первый вход и пишет AllowUninstall в реестр образа' {
+        $run = Start-TestBuild -Parameters @{ Category = 'edge'; SkipApps = $true; SkipScripts = $true; SkipUpdates = $true; SkipDrivers = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'После установки:\s+удаление Microsoft Edge'
+        $run.Output | Should -Match 'реестр: 2, при первом входе: 1'
+        $lunq = Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq'
+        Get-Content -LiteralPath (Join-Path $lunq 'Actions.txt') | Should -Be @('RemoveEdge')
+        Test-Path -LiteralPath (Join-Path $lunq 'RemoveEdge.ps1') | Should -BeTrue
+        Get-Content -LiteralPath $script:Test.RegLog -Raw | Should -Match 'AllowUninstall'
+        # Сама сборка Edge не трогает: удаляет его только скрипт первого входа.
+        $run.Output | Should -Not -Match '\[mock\] remove edge'
+    }
+
+    It '-Online удаляет Edge сразу, после записи реестра' {
+        $root = Join-Path $TestDrive 'onlineedge'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try { $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'edge'; Force = $true } }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        $online.Output | Should -Match '(?s)Внесение настроек реестра.*Шаг 5 из 6\. Удаление Microsoft Edge.*\[mock\] remove edge'
+        $online.Output | Should -Match 'Microsoft Edge: удалён\. Поставить снова: -Restore -Category edge'
+    }
+}
+
 Describe 'Этот компьютер без ISO и откат' {
     It '-Online применяет выбранные категории и запоминает, как было, -Restore возвращает' {
         $root = Join-Path $TestDrive 'online'

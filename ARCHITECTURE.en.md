@@ -28,6 +28,7 @@ Modules\
     Strings\ru\*.psd1        Interface texts in Russian
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
+  FirstLogon\RemoveEdge.ps1  Removes Edge with its installer: at first sign-in and with -Online
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
 Tests\                       Pester tests and stubs
 .github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
@@ -50,7 +51,7 @@ Tests\                       Pester tests and stubs
 | `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
 | `Registry.ps1` | Offline registry hives, setting and deleting values and keys, the build stamp in `HKLM\SOFTWARE\LunqDebloater` |
-| `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
+| `PostInstall.ps1` | First sign-in programs, scripts and actions: copying them into the image, `unattend.xml` in Sysprep, Edge removal with `-Online` (`Remove-LunqEdge`) |
 | `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
 | `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
@@ -74,7 +75,7 @@ Tests\                       Pester tests and stubs
 9. **Build** by the list of steps (below), then the result from `Write-LunqReport`. After the result, not as a step, the recipe and the HTML report are written next to the ISO: a failure there does not spoil the finished ISO.
 10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.
 
-Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
+Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`, and the `RemoveEdge` action runs right after the registry, as the Edge step. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
 
 Before every change the removal functions and `Set-LunqRegistry` record in `Context.Restore` what was removed and what was there (for `DeleteKey` the key is exported with `reg export`). In a build this is saved into the image at the Save step; with `-Online` it is appended to `%SystemRoot%\LunqDebloater\Restore.json` as the last step (and on error too).
 
@@ -93,7 +94,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Updates | Installs updates in ascending KB order | there are updates |
 | Drivers | Adds drivers one `.inf` at a time | there are drivers |
 | Recovery | Services `Winre.wim` inside the system: updates, Safe OS DU, disk drivers | `-UpdatesToSetup` or `-DriversToSetup`, and there is something for WinRE |
-| FirstLogon | Puts programs, scripts and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs or scripts |
+| FirstLogon | Puts programs, scripts, `FirstLogon.ps1`, category actions (`Actions.txt`) and `RemoveEdge.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts or actions |
 | Unattend | Puts `autounattend.xml` into the ISO root | answer file is on |
 | Appx | Removes the profile's Appx | without `-SkipAppx` |
 | Capabilities | Removes capabilities | without `-SkipComponents` |
@@ -113,7 +114,7 @@ Every step function returns a `New-LunqResult` object: `Title`, `Kind`, the list
 
 ## Profile
 
-`Read-LunqProfile` reads the JSON, validates the fields and the registry entries (type, number, action) and turns texts into the interface language with `Get-LunqLocalized`. `Get-LunqEffectiveConfig` merges the enabled categories into the common lists `Appx`, `Capabilities`, `Features`, `Packages` and `Registry`. Every registry entry keeps `LunqCategory`, so the summary is counted by category. Names are compared with `-like` patterns (`Test-NamePattern`), and patterns that found nothing go into `NotMatched`.
+`Read-LunqProfile` reads the JSON, validates the fields and the registry entries (type, number, action) and turns texts into the interface language with `Get-LunqLocalized`. `Get-LunqEffectiveConfig` merges the enabled categories into the common lists `Appx`, `Capabilities`, `Features`, `Packages`, `Registry` and `FirstLogon` (first sign-in actions, their names are checked against `$script:FirstLogonActions`). Every registry entry keeps `LunqCategory`, so the summary is counted by category. Names are compared with `-like` patterns (`Test-NamePattern`), and patterns that found nothing go into `NotMatched`.
 
 ## Image registry
 
@@ -153,7 +154,7 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Removal.Tests.ps1` | Removing CBS packages: only installed packages that match the profile patterns, failures and unmatched patterns in the result |
 | `Tests\TestHelpers.ps1` | A copy of the script in `TestDrive`, environment variables for the stubs, running it and parsing the steps |
 | `Tests\Mocks\Dism\Dism.psm1` | Stub of the DISM module: mounts nothing and creates placeholder files where the script looks for them later, including drivers for `Export-WindowsDriver` |
-| `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), the folder picker and registry writes. It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
+| `Tests\Mocks\TestMocks.ps1` | Stubs of the module functions that touch the system: administrator rights, ISO mounting, disk space, `Invoke-Native` (robocopy, reg.exe, oscdimg, expand.exe), the folder picker, registry writes and Edge removal (`Invoke-LunqEdgeUninstall`). It is copied into the module of the script copy as `Private\ZZ.TestMocks.ps1` so it loads last |
 
 The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DISM_EXIT` (dism.exe exit code), `LUNQ_TEST_FAIL_APPX` (a failure in the middle of the build), `LUNQ_TEST_IMAGE_VERSION`, `LUNQ_TEST_HOST_BUILD`, `LUNQ_TEST_NOT_ADMIN`, `LUNQ_TEST_FOLDER` (what is "chosen" in the folder picker), `LUNQ_TEST_NO_HOST_DRIVERS`, `LUNQ_TEST_ISO_WIM` (the ISO has `install.wim` instead of `install.esd`). Calls to external programs are written to `LUNQ_TEST_NATIVE_LOG`, registry writes to `LUNQ_TEST_REG_LOG`, and the tests check them. End-to-end tests run in Russian by default and compare the Russian output; the English tests check that the output has no Cyrillic.
 

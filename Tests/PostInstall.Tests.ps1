@@ -84,6 +84,54 @@ Describe 'Install-LunqFirstLogon' {
     }
 }
 
+Describe 'Удаление Edge' {
+    It 'действие профиля кладёт в образ Actions.txt и скрипт удаления Edge' {
+        $mount = Join-Path $TestDrive 'edgemount'
+        New-Item -ItemType Directory -Path $mount -Force | Out-Null
+        $result = & (Get-Module LunqDebloater) {
+            param($m)
+            $logon = [pscustomobject]@{ AppsPath = ''; Apps = @(); ScriptsPath = ''; Scripts = @(); Actions = @('RemoveEdge') }
+            Install-LunqFirstLogon -MountPath $m -FirstLogon $logon -Architecture amd64
+        } $mount 6>$null
+        $result.Summary | Should -Be 'удаление Microsoft Edge'
+        $lunq = Join-Path $mount 'Windows\Setup\Scripts\Lunq'
+        Get-Content -LiteralPath (Join-Path $lunq 'Actions.txt') | Should -Be @('RemoveEdge')
+        Test-Path -LiteralPath (Join-Path $lunq 'RemoveEdge.ps1') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $mount 'Windows\System32\Sysprep\unattend.xml') | Should -BeTrue
+    }
+
+    It 'без действий ни Actions.txt, ни скрипта удаления Edge в образе нет' {
+        $mount = Join-Path $TestDrive 'noedgemount'
+        New-Item -ItemType Directory -Path $mount -Force | Out-Null
+        $null = & (Get-Module LunqDebloater) {
+            param($m)
+            $logon = [pscustomobject]@{ AppsPath = ''; Apps = @(); ScriptsPath = ''; Scripts = @(); Wifi = @(); WifiPath = '' }
+            Install-LunqFirstLogon -MountPath $m -FirstLogon $logon -Architecture amd64
+        } $mount 6>$null
+        $lunq = Join-Path $mount 'Windows\Setup\Scripts\Lunq'
+        Test-Path -LiteralPath (Join-Path $lunq 'Actions.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $lunq 'RemoveEdge.ps1') | Should -BeFalse
+    }
+
+    It '-Online: итог по каждому исходу удаления, с подсказкой, как вернуть Edge' {
+        InModuleScope LunqDebloater {
+            Mock Write-Info { }
+            Mock Invoke-LunqEdgeUninstall { [pscustomobject]@{ Status = 'Removed'; ExitCode = 19 } }
+            $r = Remove-LunqEdge
+            $r.Done | Should -Be @('Microsoft Edge')
+            $r.Summary | Should -Match 'удалён\. Поставить снова: -Restore -Category edge, затем winget install Microsoft\.Edge'
+            Mock Invoke-LunqEdgeUninstall { [pscustomobject]@{ Status = 'NotInstalled'; ExitCode = 0 } }
+            $r = Remove-LunqEdge
+            $r.Skipped.Count | Should -Be 1
+            $r.Summary | Should -Be 'не найден, удалять нечего'
+            Mock Invoke-LunqEdgeUninstall { [pscustomobject]@{ Status = 'Failed'; ExitCode = 93 } }
+            $r = Remove-LunqEdge
+            $r.Failed | Should -Be @('Microsoft Edge')
+            $r.Summary | Should -Be 'не удалось удалить (код установщика 93)'
+        }
+    }
+}
+
 Describe 'Файл ответов' {
     BeforeAll {
         $regionInfo = [pscustomobject]@{ Locale = 'en-GB'; SystemLocale = 'ru-RU'; InputLocale = '0419:00000419;0409:00000409'; Keyboards = @('ru-RU', 'en-US'); TimeZone = 'Russian Standard Time' }

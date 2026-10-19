@@ -195,6 +195,8 @@
     'Main.BugReport'             = 'For a bug report attach this archive (the user and computer names in it are replaced): {0}'
     'Main.StepOnlineAppxHint'    = 'For new and existing users of this computer.'
     'Main.StepOnlineRegistryHint' = 'Previous values are saved for restore.'
+    'Main.StepEdge'              = 'Removing Microsoft Edge'
+    'Main.StepEdgeHint'          = 'With the Edge installer itself, WebView2 stays. -Restore does not bring Edge back.'
     'Main.StepSaveRestore'       = 'Restore data'
     'Main.StepSaveRestoreHint'   = '{0}'
     'Main.ActionOnline'          = 'Apply a profile to this computer (no ISO)'

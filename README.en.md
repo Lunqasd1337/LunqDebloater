@@ -334,6 +334,7 @@ Everything that is removed and changed is described in `Config\Profile.json`. Ed
       "Capabilities": [],                         // Get-WindowsCapability, * allowed
       "Features":     ["Recall"],                 // Get-WindowsOptionalFeature
       "Packages":     [],                         // CBS packages, be careful
+      "FirstLogon":   [],                         // actions at first sign-in: RemoveEdge
       "Registry": [
         { "Hive": "SOFTWARE", "Path": "Policies\\Microsoft\\Windows\\WindowsCopilot", "Name": "TurnOffWindowsCopilot", "Type": "REG_DWORD", "Value": 1 },
         { "Hive": "DefaultUser", "Path": "Software\\Microsoft\\Windows\\CurrentVersion\\Run", "Name": "OneDriveSetup", "Action": "DeleteValue" },
@@ -345,6 +346,8 @@ Everything that is removed and changed is described in `Config\Profile.json`. Ed
 ```
 
 Empty lists in a category can be left out.
+
+`FirstLogon` lists what to do at the first sign-in to the installed Windows (with `-Online` it happens right away). For now there is one action, `RemoveEdge`: Microsoft Edge is removed with its own installer. This removes it completely, together with its entry in Installed apps, so the Microsoft Store does not show it as installed, as happens after `DISM /Remove-Edge`, which only deletes the files. WebView2 stays. The `edge` category uses this.
 
 The texts `Name` and `Description` (of the profile, the categories and the registry entries) can be a plain string or translations: `{ "ru": "...", "en": "..." }`. The script takes the interface language, then English. The `"$schema"` line connects the schema [Schemas/Profile.schema.json](Schemas/Profile.schema.json): VS Code uses it to suggest fields and underline mistakes.
 
@@ -375,6 +378,7 @@ Categories in `Profile.json`:
 | `store` | Microsoft Store |
 | `drivers` | Drivers from Windows Update |
 | `onedrive` | OneDrive |
+| `edge` | Microsoft Edge (off by default): removal at first sign-in, no reinstall through Microsoft Edge Update |
 
 To skip categories without editing the profile: `-SkipCategory drivers,store`. In step-by-step mode the script shows the list of categories, and you can turn them on and off by number.
 
@@ -413,6 +417,7 @@ The code is laid out like this:
 | `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Build` (build steps), `Report`, `System` |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
+| `Modules\FirstLogon\RemoveEdge.ps1` | Removes Microsoft Edge with its own installer (the `edge` category) |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |
 | `Tests\` | Pester tests and a stub of the DISM module |
 

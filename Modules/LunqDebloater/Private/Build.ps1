@@ -244,6 +244,12 @@ function Get-LunqOnlineSteps {
             Run = { param($c) Set-LunqRegistry -Online -Config $c.Config -Restore $c.Restore }
         },
         @{
+            # После реестра: AllowUninstall из категории edge уже записан, без него установщик Edge отказывается.
+            Name = 'Edge'; When = (Get-ConfigList $c['Config'] 'FirstLogon') -contains 'RemoveEdge'
+            Title = Get-LunqText 'Main.StepEdge'; Hint = Get-LunqText 'Main.StepEdgeHint'
+            Run = { Remove-LunqEdge }
+        },
+        @{
             Name = 'SaveRestore'; When = $true
             Title = Get-LunqText 'Main.StepSaveRestore'; Hint = Get-LunqText 'Main.StepSaveRestoreHint' $c.RestorePath
             Run = { param($c) Save-LunqRestoreData -Restore $c.Restore -Path $c.RestorePath -Merge }
