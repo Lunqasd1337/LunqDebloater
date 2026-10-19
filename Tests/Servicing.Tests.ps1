@@ -129,3 +129,21 @@ Describe 'Обновления и драйверы' {
         @(Select-LunqPEDrivers (Get-LunqDriverFiles -Path $dir) -Cache $cache | ForEach-Object { $_.Name }) | Should -Be @('net.inf')
     }
 }
+
+Describe 'Get-FolderSize' {
+    It 'с -Cache папка обходится один раз, пока её не уберут из кэша' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $dir = Join-Path $Root 'SizeCache'
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            [IO.File]::WriteAllBytes((Join-Path $dir 'a.inf'), (New-Object byte[] 100))
+            $cache = @{}
+            Get-FolderSize $dir -Cache $cache | Should -Be 100
+            [IO.File]::WriteAllBytes((Join-Path $dir 'b.inf'), (New-Object byte[] 50))
+            Get-FolderSize $dir -Cache $cache | Should -Be 100
+            Get-FolderSize $dir | Should -Be 150
+            $cache.Remove($dir)
+            Get-FolderSize $dir -Cache $cache | Should -Be 150
+        }
+    }
+}

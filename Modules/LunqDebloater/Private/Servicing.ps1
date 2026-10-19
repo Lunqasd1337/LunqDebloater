@@ -165,9 +165,13 @@ function Export-LunqHostDrivers {
 }
 
 function Get-FolderSize {
-    param([Parameter(Mandatory)][string]$Path)
+    # -Cache (путь): сводка показывается заново после каждого действия, а в драйверах этого
+    # компьютера тысячи файлов. Кто меняет папку, убирает её из кэша.
+    param([Parameter(Mandatory)][string]$Path, [hashtable]$Cache)
+    if ($null -ne $Cache -and $Cache.ContainsKey($Path)) { return $Cache[$Path] }
     $sum = [long]0
     foreach ($f in @(Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue)) { $sum += $f.Length }
+    if ($null -ne $Cache) { $Cache[$Path] = $sum }
     return $sum
 }
 

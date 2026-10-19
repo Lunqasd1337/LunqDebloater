@@ -31,12 +31,13 @@ function Select-LunqFolder {
 }
 
 function Mount-IsoImage {
-    # Подключённый ISO изображает папка с sources\install.esd.
+    # Подключённый ISO изображает папка с sources\install.esd, а с LUNQ_TEST_ISO_WIM с install.wim.
     param([Parameter(Mandatory)][string]$IsoPath)
     if (-not (Test-Path -LiteralPath $IsoPath)) { throw "ISO not found: $IsoPath" }
     $root = Join-Path $env:LUNQ_TEST_ROOT 'isoroot'
     New-Item -ItemType Directory -Path (Join-Path $root 'sources') -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $root 'sources\install.esd') -Value 'esd'
+    if ($env:LUNQ_TEST_ISO_WIM) { Set-Content -LiteralPath (Join-Path $root 'sources\install.wim') -Value 'wim' }
+    else { Set-Content -LiteralPath (Join-Path $root 'sources\install.esd') -Value 'esd' }
     return [pscustomobject]@{ IsoPath = $IsoPath; Root = $root; Owned = $true }
 }
 

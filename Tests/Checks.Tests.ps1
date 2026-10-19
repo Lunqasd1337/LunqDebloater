@@ -205,3 +205,89 @@ Describe 'Test-LunqPrerequisites: остатки прошлого запуска
         $r.Warnings | Should -Be 1
     }
 }
+
+Describe 'Get-LunqContentsDir' {
+    It 'опись сохраняется рядом с ISO, если туда можно писать' {
+        $iso = Join-Path $TestDrive 'win.iso'
+        Get-LunqContentsDir -IsoPath $iso -FallbackDir (Join-Path $TestDrive 'Logs') | Should -Be "$TestDrive"
+    }
+
+    It 'папка ISO только для чтения: опись уходит в запасную папку, и об этом сказано' {
+        Mock -ModuleName LunqDebloater Test-LunqWritableFolder { $false }
+        Mock -ModuleName LunqDebloater Write-Info { }
+        $fallback = Join-Path $TestDrive 'Logs'
+        Get-LunqContentsDir -IsoPath 'D:\win.iso' -FallbackDir $fallback | Should -Be $fallback
+        Should -Invoke -ModuleName LunqDebloater Write-Info -Times 1 -Exactly -ParameterFilter { $Message -like '*не записать*' }
+    }
+}
+
+Describe 'Редакции в ISO' {
+    It 'Get-WindowsReleaseName: известная сборка даёт выпуск, неизвестная пустую строку' {
+        InModuleScope LunqDebloater {
+            Get-WindowsReleaseName -Build 26100 | Should -Be 'Windows 11 24H2'
+            Get-WindowsReleaseName -Build 12345 | Should -Be ''
+        }
+    }
+
+    It 'Get-EditionHint: <Name>' -TestCases @(
+        @{ Name = 'Windows 11 Pro'; Hint = 'BitLocker*' },
+        @{ Name = 'Windows 11 Pro for Workstations'; Hint = 'Pro для мощных*' },
+        @{ Name = 'Windows 11 Pro Education'; Hint = 'Pro для учебных*' },
+        @{ Name = 'Windows 11 Education'; Hint = 'для учебных заведений, по*' },
+        @{ Name = 'Windows 11 Корпоративная'; Hint = 'корпоративная*' },
+        @{ Name = 'Windows 11 Домашняя для одного языка'; Hint = 'Домашняя с одним*' },
+        @{ Name = 'Windows 11 Домашняя'; Hint = 'для домашнего*' },
+        @{ Name = 'Windows 11 Pro N'; Hint = 'BitLocker*Версия N*' },
+        @{ Name = 'Windows 11 IoT'; Hint = '' }
+    ) {
+        param($Name, $Hint)
+        InModuleScope LunqDebloater -Parameters @{ Name = $Name; Hint = $Hint } {
+            param($Name, $Hint)
+            Get-EditionHint -Name $Name | Should -BeLike $Hint
+        }
+    }
+
+    Context 'Select-LunqEdition' {
+        BeforeAll {
+            $script:images = @(
+                [pscustomobject]@{ ImageIndex = 1; ImageName = 'Windows 11 Home' },
+                [pscustomobject]@{ ImageIndex = 5; ImageName = 'Windows 11 Pro' })
+        }
+
+        BeforeEach {
+            Mock -ModuleName LunqDebloater Write-Host { }
+            Mock -ModuleName LunqDebloater Write-Info { }
+        }
+
+        It 'номер и имя из параметров' {
+            InModuleScope LunqDebloater -Parameters @{ Images = $images } {
+                param($Images)
+                Select-LunqEdition -Images $Images -Index 5 | Should -Be 5
+                Select-LunqEdition -Images $Images -Edition 'Windows 11 Home' | Should -Be 1
+                { Select-LunqEdition -Images $Images -Index 3 } | Should -Throw '*номером 3*'
+                { Select-LunqEdition -Images $Images -Edition 'Windows 11 Ultimate' } | Should -Throw "*'Windows 11 Ultimate' не найдена*"
+            }
+        }
+
+        It 'одна редакция выбирается без вопроса' {
+            InModuleScope LunqDebloater -Parameters @{ Images = $images } {
+                param($Images)
+                Mock Read-Host { throw 'вопроса быть не должно' }
+                Select-LunqEdition -Images @($Images[1]) | Should -Be 5
+            }
+        }
+
+        It 'неверный ответ переспрашивается' {
+            InModuleScope LunqDebloater -Parameters @{ Images = $images } {
+                param($Images)
+                $global:LunqEditionAnswers = New-Object System.Collections.Generic.Queue[object]
+                foreach ($answer in 'abc', '3', $null, '5') { $global:LunqEditionAnswers.Enqueue($answer) }
+                Mock Read-Host { $global:LunqEditionAnswers.Dequeue() }
+                Mock Write-Warning { }
+                Select-LunqEdition -Images $Images | Should -Be 5
+                Should -Invoke Write-Warning -Times 3 -Exactly
+                Remove-Variable -Name LunqEditionAnswers -Scope Global
+            }
+        }
+    }
+}

@@ -14,7 +14,7 @@ BeforeAll {
         # StrictMode, и обращение к отсутствующему ключу было бы ошибкой.
         param([hashtable]$Values = @{})
         $context = @{
-            State = @{ Mounted = $false; WorkDirOwned = $false; ImageInfo = $null }
+            State = @{ Mounted = $false; WorkDirOwned = $false; ImageInfo = $null; Iso = $null }
             WorkDir = 'work'; MountPaths = @(); MountDir = 'mount'; BootMountDir = 'bootmount'; ReMountDir = 'remount'
             IsoPath = 'C:\iso\Win11.iso'; IsoDir = 'iso'; WimPath = 'install.wim'; Index = 1; OutputIso = 'out.iso'; Oscdimg = 'oscdimg.exe'; Label = 'LUNQ_WIN11'
             Updates = @(); SafeOSUpdates = @(); SetupUpdates = @(); PEUpdates = @(); Drivers = @(); PEDrivers = @(); DriversPath = $null
@@ -35,11 +35,12 @@ Describe 'Get-LunqInventorySteps' {
     It 'режим «Что в образе»: четыре шага, образ монтируется только для чтения' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
             param($Root)
-            $names = @(Get-LunqInventorySteps -Context @{ WorkDir = 'work' } | Where-Object { $_.When } | ForEach-Object { $_.Name })
+            $names = @(Get-LunqInventorySteps -Context @{ WorkDir = 'work'; DirectMount = $false } | Where-Object { $_.When } | ForEach-Object { $_.Name })
             $names | Should -Be @('Prepare', 'CopyEdition', 'OpenImage', 'Inventory')
             $context = @{
-                State = @{ Mounted = $false; WorkDirOwned = $false }; WorkDir = (Join-Path $Root 'inv'); MountPaths = @('mount')
+                State = @{ Mounted = $false; WorkDirOwned = $false; Iso = $null }; WorkDir = (Join-Path $Root 'inv'); MountPaths = @('mount')
                 MountDir = (Join-Path $Root 'inv\mount'); WimPath = (Join-Path $Root 'inv\iso\sources\install.wim'); IsoPath = 'Win11.iso'; Index = 5
+                DirectMount = $false
                 Profile = [pscustomobject]@{ Name = 'p' }; ContentsPath = (Join-Path $Root 'contents.txt'); Header = @('header')
             }
             Mock Reset-LunqWorkDir { }
@@ -58,6 +59,65 @@ Describe 'Get-LunqInventorySteps' {
             $context.State.Inventory.Appx | Should -Be 3
             $context.State.Mounted | Should -BeFalse
             $context.State.StepTimes.Count | Should -Be 4
+            Should -Invoke Mount-IsoImage -Times 1 -Exactly
+            Should -Invoke Dismount-IsoImage -Times 1 -Exactly
+            $context.State.Iso | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'install.wim монтируется прямо с ISO: без копирования, ISO отключается после образа' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $names = @(Get-LunqInventorySteps -Context @{ WorkDir = 'work'; DirectMount = $true } | Where-Object { $_.When } | ForEach-Object { $_.Name })
+            $names | Should -Be @('Prepare', 'OpenImage', 'Inventory')
+            $context = @{
+                State = @{ Mounted = $false; WorkDirOwned = $false; Iso = $null }; WorkDir = (Join-Path $Root 'direct'); MountPaths = @('mount')
+                MountDir = (Join-Path $Root 'direct\mount'); WimPath = (Join-Path $Root 'direct\iso\sources\install.wim'); IsoPath = 'Win11.iso'; Index = 5
+                DirectMount = $true; Profile = [pscustomobject]@{ Name = 'p' }; ContentsPath = (Join-Path $Root 'contents.txt'); Header = @('header')
+            }
+            $script:Order = New-Object System.Collections.Generic.List[string]
+            Mock Reset-LunqWorkDir { }
+            Mock Mount-IsoImage { [pscustomobject]@{ Root = $Root } }
+            Mock Dismount-IsoImage { $script:Order.Add('iso') }
+            Mock Get-InstallImagePath { 'Q:\sources\install.wim' }
+            Mock Export-WindowsImage { }
+            Mock Mount-WindowsImage { }
+            Mock Dismount-WindowsImage { $script:Order.Add('image') }
+            Mock Write-LunqInventory { [pscustomobject]@{ Appx = 3 } }
+            Mock Write-Step { }
+            $null = Invoke-LunqBuild -Context $context -Inventory
+            Should -Invoke Export-WindowsImage -Times 0 -Exactly
+            Should -Invoke Mount-WindowsImage -Times 1 -Exactly -ParameterFilter { $ReadOnly -and $ImagePath -eq 'Q:\sources\install.wim' -and $Index -eq 5 }
+            @($script:Order) | Should -Be @('image', 'iso')
+            $context.State.Mounted | Should -BeFalse
+        }
+    }
+
+    It 'если install.wim не монтируется с ISO, редакция копируется, как install.esd' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $context = @{
+                State = @{ Mounted = $false; WorkDirOwned = $false; Iso = $null }; WorkDir = (Join-Path $Root 'fallback'); MountPaths = @('mount')
+                MountDir = (Join-Path $Root 'fallback\mount'); WimPath = (Join-Path $Root 'fallback\iso\sources\install.wim'); IsoPath = 'Win11.iso'; Index = 5
+                DirectMount = $true; Profile = [pscustomobject]@{ Name = 'p' }; ContentsPath = (Join-Path $Root 'contents.txt'); Header = @('header')
+            }
+            Mock Reset-LunqWorkDir { }
+            Mock Mount-IsoImage { [pscustomobject]@{ Root = $Root } }
+            Mock Dismount-IsoImage { }
+            Mock Get-InstallImagePath { 'Q:\sources\install.wim' }
+            Mock Export-WindowsImage { }
+            Mock Mount-WindowsImage { throw 'read-only media' } -ParameterFilter { $ImagePath -like 'Q:*' }
+            Mock Mount-WindowsImage { }
+            Mock Dismount-WindowsImage { }
+            Mock Write-LunqInventory { [pscustomobject]@{ Appx = 3 } }
+            Mock Write-Step { }
+            Mock Write-Warning { }
+            $null = Invoke-LunqBuild -Context $context -Inventory
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -match 'не смонтировался прямо с ISO' }
+            Should -Invoke Export-WindowsImage -Times 1 -Exactly -ParameterFilter { $SourceImagePath -eq 'Q:\sources\install.wim' }
+            Should -Invoke Mount-WindowsImage -Times 1 -Exactly -ParameterFilter { $ImagePath -eq $context.WimPath -and $ReadOnly }
+            Should -Invoke Dismount-IsoImage -Times 1 -Exactly
+            $context.State.Mounted | Should -BeFalse
         }
     }
 }

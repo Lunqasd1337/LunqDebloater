@@ -115,6 +115,35 @@ Describe 'Read-LunqProfile' {
         $path = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = 'x'; Action = 'Rename' }) }) }
         { Read-LunqProfile -Path $path } | Should -Throw '*неизвестное действие*'
     }
+    It 'отвергает путь реестра <Path>' -TestCases @(
+        @{ Path = 'Policies\X\' }, @{ Path = '\Policies\X' }, @{ Path = 'Policies\\X' }, @{ Path = 'Policies/X' }
+    ) {
+        param($Path)
+        $file = New-TestProfile @{ Categories = @(@{ Id = 'a'; Registry = @(@{ Hive = 'SOFTWARE'; Path = $Path; Action = 'DeleteKey' }) }) }
+        { Read-LunqProfile -Path $file } | Should -Throw '*одиночный \*'
+    }
+}
+
+Describe 'Select-LunqProfile' {
+    BeforeEach {
+        $script:dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:dir | Out-Null
+        Mock -ModuleName LunqDebloater Write-Host { }
+        Mock -ModuleName LunqDebloater Write-Info { }
+        Mock -ModuleName LunqDebloater Write-Warning { }
+    }
+
+    It 'сломанный профиль пропускается с предупреждением, исправный выбирается' {
+        Copy-Item -LiteralPath $script:ProfilePath -Destination (Join-Path $script:dir 'Profile.json')
+        Set-Content -LiteralPath (Join-Path $script:dir 'Broken.json') -Value '{ "Name": '
+        Select-LunqProfile -ProfileDir $script:dir | Should -Be (Join-Path $script:dir 'Profile.json')
+        Should -Invoke -ModuleName LunqDebloater Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like 'Профиль Broken.json пропущен:*' }
+    }
+
+    It 'если не прочитался ни один профиль, это ошибка' {
+        Set-Content -LiteralPath (Join-Path $script:dir 'Broken.json') -Value '{ "Name": '
+        { Select-LunqProfile -ProfileDir $script:dir } | Should -Throw '*нет ни одного профиля, который удалось прочитать*'
+    }
 }
 
 Describe 'Get-LunqEffectiveConfig' {

@@ -152,6 +152,8 @@ function Test-LunqRegistryEntry {
     # Ключ с HKLM\ в начале или CurrentControlSet в офлайн-кусте записался бы, но никогда бы не сработал.
     $path = [string](Get-ConfigValue $Entry 'Path')
     if ($path -match '^(?i)(HKLM|HKCU|HKU|HKCR|HKCC|HKEY_[A-Z_]+)(\\|:|$)') { return (Get-LunqText 'Registry.PathHasHive' $Matches[1]) }
+    # Ключ «X\» или «X/Y» записался бы не туда, а DeleteKey для «X\» получил бы пустое имя подключа.
+    if ($path -match '/|\\\\|^\\|\\$') { return (Get-LunqText 'Registry.PathMalformed') }
     if ([string](Get-ConfigValue $Entry 'Hive') -eq 'SYSTEM' -and $path -match '^(?i)CurrentControlSet(\\|$)') { return (Get-LunqText 'Registry.PathCurrentControlSet') }
     $action = [string](Get-ConfigValue $Entry 'Action')
     if (-not $action) { $action = 'Set' }
@@ -225,6 +227,9 @@ function Set-LunqRegistry {
     $entries = Get-ConfigList $Config 'Registry'
     if ($entries.Count -eq 0) { Write-Info (Get-LunqText 'Registry.ListEmpty'); return $result }
 
+    # Если шаг уже упал, невыгруженный куст только предупреждает: иначе его исключение заменило бы
+    # настоящую причину ошибки. Образ после ошибки всё равно отключается без сохранения.
+    $completed = $false
     try {
         # Внутри try: если не загрузится второй куст, первый всё равно выгрузится.
         Mount-OfflineHives -MountPath $MountPath
@@ -244,9 +249,10 @@ function Set-LunqRegistry {
             }
         }
         Write-Info (Get-LunqText 'Registry.Summary' $result.Done.Count $result.Skipped.Count $result.Failed.Count)
+        $completed = $true
         return $result
     }
     finally {
-        Dismount-OfflineHives -Strict
+        Dismount-OfflineHives -Strict:$completed
     }
 }

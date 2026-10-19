@@ -148,6 +148,23 @@ Describe 'Лог' {
         $text | Should -Match 'Компьютер <computer>, пользователь <user>, папка Users'
         Get-Content -LiteralPath (Join-Path $out 'LunqDebloater_1_dism.log') -Raw | Should -Match ([regex]::Escape('%USERPROFILE%\work'))
     }
+
+    It 'архив для отчёта: русский профиль в UTF-8 без BOM остаётся читаемым' {
+        $dir = Join-Path $TestDrive 'logs-utf8'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $log = [pscustomobject]@{ Path = Join-Path $dir 'LunqDebloater_2.log'; DismPath = Join-Path $dir 'LunqDebloater_2_dism.log' }
+        Set-Content -LiteralPath $log.Path -Value 'Запуск' -Encoding UTF8
+        # Так сохранён Config\Profile.json: UTF-8 без BOM.
+        $profilePath = Join-Path $dir 'Profile.json'
+        [IO.File]::WriteAllText($profilePath, '{ "Name": "Мой профиль", "Path": "C:\\Users\\Nikolai" }', (New-Object Text.UTF8Encoding($false)))
+
+        $zip = New-LunqBugReport -Log $log -ProfilePath $profilePath -Replace ([ordered]@{ 'Nikolai' = '<user>' })
+        $out = Join-Path $TestDrive 'report-utf8'
+        Expand-Archive -LiteralPath $zip -DestinationPath $out
+        $text = Get-Content -LiteralPath (Join-Path $out 'Profile.json') -Raw -Encoding UTF8
+        $text | Should -Match '"Мой профиль"'
+        $text | Should -Match '<user>'
+    }
 }
 
 Describe 'Один запуск за раз' {
@@ -272,12 +289,28 @@ Describe 'Строки интерфейса' {
             @(Get-ChildItem -LiteralPath (Join-Path $script:Repo 'Modules\LunqDebloater\Private') -Filter '*.ps1' -File)
         $missing = foreach ($file in $files) {
             $text = [IO.File]::ReadAllText($file.FullName)
-            foreach ($match in [regex]::Matches($text, "Get-LunqText\s+'([^']+)'")) {
-                $key = $match.Groups[1].Value
+            # Ключ в одинарных или в двойных кавычках без подстановок.
+            foreach ($match in [regex]::Matches($text, "Get-LunqText\s+(?:'([^']+)'|`"([^`"`$]+)`")")) {
+                $key = $match.Groups[1].Value + $match.Groups[2].Value
                 if (-not $script:Tables.ru.ContainsKey($key)) { "$($file.Name): $key" }
             }
         }
         @($missing) | Should -BeNullOrEmpty
+    }
+
+    It 'каждый ключ из таблиц используется в коде' {
+        # Ключ ищется как строка в кавычках: часть ключей сначала выбирается в переменную. Ключи с
+        # номером в конце (Report.UnattendRufus1) собираются в коде как "Report.UnattendRufus$i".
+        $files = @(Get-Item -LiteralPath (Join-Path $script:Repo 'LunqDebloater.ps1')) +
+            @(Get-ChildItem -LiteralPath (Join-Path $script:Repo 'Modules\LunqDebloater') -Recurse -File | Where-Object { '.ps1', '.psm1' -contains $_.Extension })
+        $code = ($files | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $unused = foreach ($key in $script:Tables.ru.Keys) {
+            if ($code.Contains("'$key'") -or $code.Contains("`"$key`"")) { continue }
+            $prefix = $key -replace '\d+$', ''
+            if ($prefix -ne $key -and $code.Contains("`"$prefix`$")) { continue }
+            $key
+        }
+        @($unused | Sort-Object) | Should -BeNullOrEmpty
     }
 
     It 'в английской таблице нет русских букв' {

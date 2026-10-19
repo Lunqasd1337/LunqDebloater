@@ -227,7 +227,7 @@ The answer file (`autounattend.xml` in the root of the ISO) answers some of the 
 | Do not ask about the license and privacy | `-Unattend` | The license is accepted automatically, all privacy settings (diagnostics, ads, location) are off, and their page is not shown |
 | Language, region and time zone as on this computer | `-Unattend` | The language of Setup and Windows is taken from the image, and the format, keyboard layouts and time zone from the computer that builds the ISO |
 | Bypass the Windows 11 requirements | `-BypassRequirements` | Setup does not check TPM 2.0, Secure Boot and the amount of memory. For computers that Windows 11 does not install on otherwise |
-| Local account | `-LocalAccount` | Windows does not ask you to sign in with a Microsoft account and asks for the name and password of a local account right away |
+| Local account | `-LocalAccount` | Windows does not ask you to sign in with a Microsoft account and asks for the name and password of a local account right away. The answer file also sets `BypassNRO` as a fallback: if the sign-in screen does appear, choose "I don't have internet" on the network step and create a local account |
 
 The installation disk, the product key (you can click "I don't have a product key") and the network are still chosen by hand: the answer file never erases anything by itself. It stores no passwords; the account name and password are entered during setup. If the image has programs or scripts for after installation, their command is written to this file too.
 

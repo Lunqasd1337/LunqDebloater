@@ -264,11 +264,18 @@ function Select-LunqProfile {
     $files = @(Get-ChildItem -LiteralPath $ProfileDir -Filter '*.json' -File | Sort-Object Name)
     if ($files.Count -eq 0) { throw (Get-LunqText 'Profile.NoProfiles' $ProfileDir) }
 
+    # Профиль с ошибкой пропускается: иначе один сломанный файл (старая копия, опечатка в JSON)
+    # не дал бы выбрать и исправные.
     $items = foreach ($file in $files) {
-        $loaded = Read-LunqProfile -Path $file.FullName
+        try { $loaded = Read-LunqProfile -Path $file.FullName }
+        catch {
+            Write-Warning (Get-LunqText 'Profile.ProfileSkipped' $file.Name $_.Exception.Message)
+            continue
+        }
         [pscustomobject]@{ Path = $file.FullName; Name = $loaded.Name; Description = $loaded.Description }
     }
     $items = @($items)
+    if ($items.Count -eq 0) { throw (Get-LunqText 'Profile.NoValidProfiles' $ProfileDir) }
 
     if ($items.Count -eq 1) {
         Write-Info (Get-LunqText 'Profile.Single' $items[0].Name)

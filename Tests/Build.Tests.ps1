@@ -72,6 +72,8 @@ Describe 'Сборка с параметрами' {
         Test-Path -LiteralPath (Join-Path $t.WorkDir 'iso\sources\install.esd') | Should -BeFalse
         $run.Output | Should -Match 'export \S*isoroot\S*install\.esd index 5 compression Fast'
         $run.Output | Should -Match 'export \S*install\.wim index 1 compression Max'
+        # ISO подключается дважды: для выбора редакции и один раз на копирование и экспорт.
+        @([regex]::Matches($run.Output, '\[mock\] dismount ISO')).Count | Should -Be 2
         # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
         @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 3
         $registry = Get-Content -LiteralPath $t.RegLog -Encoding UTF8
@@ -187,8 +189,9 @@ Describe 'Сборка с параметрами' {
         Test-Path -LiteralPath $xmlPath | Should -BeTrue
         $xml = [xml](Get-Content -LiteralPath $xmlPath -Raw -Encoding UTF8)
         $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
-        @(Select-Xml -Xml $xml -XPath '//u:RunSynchronousCommand' -Namespace $ns).Count | Should -Be 3
+        @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='windowsPE']//u:RunSynchronousCommand" -Namespace $ns).Count | Should -Be 3
         (Select-Xml -Xml $xml -XPath '//u:HideOnlineAccountScreens' -Namespace $ns).Node.InnerText | Should -Be 'true'
+        (Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns).Node.InnerText | Should -BeLike '*BypassNRO*'
         # Программы из Apps.txt есть, поэтому команда первого входа тоже в файле ответов.
         (Select-Xml -Xml $xml -XPath '//u:FirstLogonCommands//u:CommandLine' -Namespace $ns).Node.InnerText | Should -BeLike '*FirstLogon.ps1*'
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
@@ -224,6 +227,15 @@ Describe 'Сборка с параметрами' {
         Test-Path -LiteralPath $contents | Should -BeTrue
         Get-Content -LiteralPath $contents -Raw -Encoding UTF8 | Should -Match 'Microsoft\.BingNews\s+\[apps\]'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+    }
+
+    It 'режим «Что в образе» с install.wim на ISO: редакция монтируется прямо с ISO, без экспорта' {
+        $run = Start-TestBuild -Parameters @{ ListContents = $true } -Prepare { $env:LUNQ_TEST_ISO_WIM = '1' }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 3
+        $run.Output | Should -Match '\[mock\] mount .*isoroot.sources.install\.wim index 5'
+        $run.Output | Should -Not -Match '\[mock\] export'
+        Test-Path -LiteralPath (Join-Path $script:Test.Root 'Win11_5_contents.txt') | Should -BeTrue
     }
 }
 

@@ -122,7 +122,8 @@ function New-LunqContentOptions {
         $HostRegion,
         [Parameter(Mandatory)][string]$UpdatesDir,
         [Parameter(Mandatory)][string]$DriversDir,
-        [hashtable]$PEDriverCache = @{}
+        [hashtable]$PEDriverCache = @{},
+        [hashtable]$SizeCache = @{}
     )
     $foundDU = @($Found.SafeOS) + @($Found.SetupDU)
     $hasUpdates = ($Found.Updates.Count + $foundDU.Count) -gt 0
@@ -139,7 +140,7 @@ function New-LunqContentOptions {
         $updatesDetails = Get-LunqText 'Main.UpdatesNoneHint'
     }
     if ($hasDrivers) {
-        $driversName = Get-LunqText 'Main.DriversFound' $Found.Drivers.Count (Format-Size (Get-FolderSize $DriversDir))
+        $driversName = Get-LunqText 'Main.DriversFound' $Found.Drivers.Count (Format-Size (Get-FolderSize $DriversDir -Cache $SizeCache))
         $driversDetails = @((Get-LunqText 'Main.FoundIn' $DriversDir), (Get-LunqText 'Main.DriversFoundHint'))
     }
     else {
@@ -255,7 +256,7 @@ function Select-LunqFolder {
             return $null
         }
     }
-    $path = (Read-Host ('    ' + (Get-LunqText 'Options.FolderPrompt' $Description))).Trim().Trim('"')
+    $path = ([string](Read-Host ('    ' + (Get-LunqText 'Options.FolderPrompt' $Description)))).Trim().Trim('"')
     if (-not $path) { return $null }
     if (-not (Test-Path -LiteralPath $path -PathType Container)) {
         Write-Warning (Get-LunqText 'Options.FolderNotFound' $path)

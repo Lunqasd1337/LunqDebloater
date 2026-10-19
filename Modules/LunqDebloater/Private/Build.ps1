@@ -20,7 +20,13 @@ function Get-LunqBuildSteps {
         @{
             Name = 'CopyIso'; When = $true
             Title = Get-LunqText 'Main.StepCopyIso'; Hint = Get-LunqText 'Main.StepCopyIsoHint'
-            Run = { param($c) Copy-IsoContent -IsoPath $c.IsoPath -Destination $c.IsoDir }
+            Run = {
+                param($c)
+                # ISO остаётся подключённым до конца шага Export: подключать его второй раз незачем.
+                # Отключает его Export, а при ошибке LunqDebloater.ps1 через State.Iso.
+                $c.State.Iso = Mount-IsoImage -IsoPath $c.IsoPath
+                Copy-IsoContent -IsoRoot $c.State.Iso.Root -Destination $c.IsoDir
+            }
         },
         @{
             Name = 'Export'; When = $true
@@ -28,12 +34,12 @@ function Get-LunqBuildSteps {
             Run = {
                 param($c)
                 # Редакция берётся прямо с подключённого ISO: install.esd не копируется в рабочую папку.
-                $iso = Mount-IsoImage -IsoPath $c.IsoPath
+                if (-not $c.State.Iso) { $c.State.Iso = Mount-IsoImage -IsoPath $c.IsoPath }
                 try {
-                    Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $iso.Root) -SourceIndex $c.Index -DestinationImage $c.WimPath `
+                    Export-SingleEdition -SourceImage (Get-InstallImagePath -IsoRoot $c.State.Iso.Root) -SourceIndex $c.Index -DestinationImage $c.WimPath `
                         -CompressionType Fast -KeepSource
                 }
-                finally { Dismount-IsoImage -Iso $iso }
+                finally { Dismount-LunqStateIso -State $c.State }
                 # Сведения об образе нужны позже: язык для файла ответов.
                 $c.State.ImageInfo = Get-WindowsImage -ImagePath $c.WimPath -Index 1
                 Write-Info (Get-LunqText 'Main.ExportedInfo' $c.State.ImageInfo.ImageName $c.State.ImageInfo.Version)
@@ -159,9 +165,9 @@ function Get-LunqBuildSteps {
 }
 
 function Get-LunqInventorySteps {
-    # Шаги режима «Что в образе»: редакция копируется и монтируется только для чтения, а опись
-    # сохраняется в ContentsPath. Идут через Invoke-LunqBuild, как и сборка: время шагов и метки
-    # в логе DISM у них те же. Опись шаг кладёт в State.Inventory.
+    # Шаги режима «Что в образе»: редакция монтируется только для чтения (install.esd сначала
+    # копируется в рабочую папку), а опись сохраняется в ContentsPath. Идут через Invoke-LunqBuild,
+    # как и сборка: время шагов и метки в логе DISM у них те же. Опись шаг кладёт в State.Inventory.
     param([Parameter(Mandatory)][hashtable]$Context)
     $c = $Context
     return @(
@@ -176,26 +182,15 @@ function Get-LunqInventorySteps {
             }
         },
         @{
-            Name = 'CopyEdition'; When = $true
+            # install.wim монтируется прямо с ISO (шаг OpenImage), копировать нужно только install.esd.
+            Name = 'CopyEdition'; When = -not $c.DirectMount
             Title = Get-LunqText 'Main.StepCopyEdition'; Hint = Get-LunqText 'Main.StepCopyEditionHint'
-            Run = {
-                param($c)
-                $iso = Mount-IsoImage -IsoPath $c.IsoPath
-                try {
-                    Export-WindowsImage -SourceImagePath (Get-InstallImagePath -IsoRoot $iso.Root) -SourceIndex $c.Index `
-                        -DestinationImagePath $c.WimPath -CompressionType Fast | Out-Null
-                }
-                finally { Dismount-IsoImage -Iso $iso }
-            }
+            Run = { param($c) Copy-LunqInventoryEdition -Context $c }
         },
         @{
             Name = 'OpenImage'; When = $true
             Title = Get-LunqText 'Main.StepOpenImage'; Hint = Get-LunqText 'Main.StepOpenImageHint'
-            Run = {
-                param($c)
-                Mount-WindowsImage -ImagePath $c.WimPath -Index 1 -Path $c.MountDir -ReadOnly | Out-Null
-                $c.State.Mounted = $true
-            }
+            Run = { param($c) Mount-LunqInventoryImage -Context $c }
         },
         @{
             Name = 'Inventory'; When = $true
@@ -205,9 +200,46 @@ function Get-LunqInventorySteps {
                 $c.State.Inventory = Write-LunqInventory -MountPath $c.MountDir -LunqProfile $c.Profile -Path $c.ContentsPath -Header $c.Header
                 Dismount-WindowsImage -Path $c.MountDir -Discard | Out-Null
                 $c.State.Mounted = $false
+                # ISO можно отключить только после образа, смонтированного прямо с него.
+                Dismount-LunqStateIso -State $c.State
             }
         }
     )
+}
+
+function Copy-LunqInventoryEdition {
+    # Экспорт редакции в рабочую папку для режима «Что в образе»: install.esd нельзя смонтировать.
+    param([Parameter(Mandatory)][hashtable]$Context)
+    $c = $Context
+    if (-not $c.State.Iso) { $c.State.Iso = Mount-IsoImage -IsoPath $c.IsoPath }
+    try {
+        Export-WindowsImage -SourceImagePath (Get-InstallImagePath -IsoRoot $c.State.Iso.Root) -SourceIndex $c.Index `
+            -DestinationImagePath $c.WimPath -CompressionType Fast | Out-Null
+    }
+    finally { Dismount-LunqStateIso -State $c.State }
+}
+
+function Mount-LunqInventoryImage {
+    # Монтирует редакцию только для чтения. install.wim монтируется прямо с подключённого ISO:
+    # экспорт 4-7 ГБ в рабочую папку для одной описи не нужен, а ISO остаётся подключённым до
+    # шага Inventory. Если DISM не смонтирует WIM с ISO, редакция экспортируется, как install.esd.
+    param([Parameter(Mandatory)][hashtable]$Context)
+    $c = $Context
+    if ($c.DirectMount) {
+        $c.State.Iso = Mount-IsoImage -IsoPath $c.IsoPath
+        try {
+            Mount-WindowsImage -ImagePath (Get-InstallImagePath -IsoRoot $c.State.Iso.Root) -Index $c.Index -Path $c.MountDir -ReadOnly | Out-Null
+            $c.State.Mounted = $true
+            return
+        }
+        catch {
+            Write-Warning (Get-LunqText 'Main.DirectMountFailed' $_.Exception.Message)
+            Dismount-WindowsImage -Path $c.MountDir -Discard -ErrorAction SilentlyContinue | Out-Null
+        }
+        Copy-LunqInventoryEdition -Context $c
+    }
+    Mount-WindowsImage -ImagePath $c.WimPath -Index 1 -Path $c.MountDir -ReadOnly | Out-Null
+    $c.State.Mounted = $true
 }
 
 function Get-LunqBuildStampValues {

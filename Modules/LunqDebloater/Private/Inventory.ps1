@@ -1,4 +1,15 @@
-﻿function Write-LunqInventory {
+﻿function Get-LunqContentsDir {
+    # Папка для описи «Что в образе»: рядом с ISO, а если туда не записать (DVD, сетевая папка
+    # только для чтения), то FallbackDir. Проверяется до работы: иначе это выяснилось бы только
+    # после экспорта и монтирования редакции.
+    param([Parameter(Mandatory)][string]$IsoPath, [Parameter(Mandatory)][string]$FallbackDir)
+    $isoDir = Split-Path $IsoPath -Parent
+    if (Test-LunqWritableFolder -Folder $isoDir) { return $isoDir }
+    Write-Info (Get-LunqText 'Inventory.ContentsDirFallback' $isoDir $FallbackDir)
+    return $FallbackDir
+}
+
+function Write-LunqInventory {
     # Сохраняет в текстовый файл всё, что есть в образе, в виде, удобном для профиля.
     # Справа помечаются категории профиля, которые уже упоминают элемент.
     param(

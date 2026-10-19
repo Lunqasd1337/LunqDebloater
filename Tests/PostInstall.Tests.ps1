@@ -99,8 +99,10 @@ Describe 'Файл ответов' {
     It 'все пункты сразу дают корректный XML' {
         $xml = Get-Answers -Oobe -Region -Bypass -LocalAccount -Command 'cmd.exe /c start "" powershell.exe -File "x.ps1"'
         $xml | Should -Not -BeNullOrEmpty
-        @(Select-Xml -Xml $xml -XPath '//u:RunSynchronousCommand' -Namespace $ns).Count | Should -Be 3
+        @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='windowsPE']//u:RunSynchronousCommand" -Namespace $ns).Count | Should -Be 3
         (Select-Xml -Xml $xml -XPath '//u:HideOnlineAccountScreens' -Namespace $ns).Node.InnerText | Should -Be 'true'
+        (Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns).Node.InnerText | Should -BeLike '*BypassNRO*'
+        (Select-Xml -Xml $xml -XPath '//u:TimeZone' -Namespace $ns).Node.InnerText | Should -Be 'Russian Standard Time'
         (Select-Xml -Xml $xml -XPath '//u:ProtectYourPC' -Namespace $ns).Node.InnerText | Should -Be '3'
         (Select-Xml -Xml $xml -XPath '//u:FirstLogonCommands//u:CommandLine' -Namespace $ns).Node.InnerText | Should -Be 'cmd.exe /c start "" powershell.exe -File "x.ps1"'
     }
@@ -125,6 +127,15 @@ Describe 'Файл ответов' {
         Select-Xml -Xml $xml -XPath "//u:component[@name='Microsoft-Windows-International-Core-WinPE']" -Namespace $ns | Should -BeNullOrEmpty
         Select-Xml -Xml $xml -XPath '//u:TimeZone' -Namespace $ns | Should -BeNullOrEmpty
         Select-Xml -Xml $xml -XPath '//u:RunSynchronous' -Namespace $ns | Should -BeNullOrEmpty
+        Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']" -Namespace $ns | Should -BeNullOrEmpty
+    }
+
+    It 'локальная учётная запись без региона: в specialize только BypassNRO' {
+        $xml = Get-Answers -LocalAccount
+        Select-Xml -Xml $xml -XPath '//u:TimeZone' -Namespace $ns | Should -BeNullOrEmpty
+        $commands = @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns)
+        $commands.Count | Should -Be 1
+        $commands[0].Node.InnerText | Should -Be 'reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f'
     }
 
     It 'язык образа берётся без пометки (Default)' {
