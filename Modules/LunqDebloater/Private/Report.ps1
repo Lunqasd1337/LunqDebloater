@@ -3,11 +3,13 @@
     #   Done, Failed, Skipped: что сделано, что не удалось, что пропущено (например, уже нет в образе);
     #   NotMatched: шаблоны профиля, которые ничего не нашли;
     #   Summary: одна строка для итога вместо счётчиков (первый вход, файл ответов, очистка);
-    #   ByCategory: счётчики по категориям профиля (для реестра).
+    #   ByCategory: счётчики по категориям профиля (для реестра);
+    #   Total: сколько таких элементов было в образе до шага (для отчёта «до и после»).
     param([Parameter(Mandatory)][string]$Title, [Parameter(Mandatory)][string]$Kind)
     return [pscustomobject]@{
         Title      = $Title
         Kind       = $Kind
+        Total      = 0
         Done       = New-Object System.Collections.Generic.List[string]
         Failed     = New-Object System.Collections.Generic.List[string]
         Skipped    = New-Object System.Collections.Generic.List[string]
@@ -34,7 +36,9 @@ function Write-LunqReport {
         $StepTimes = @(),
         [string]$LogPath,
         [switch]$HasFirstLogon,
-        [switch]$HasUnattend
+        [switch]$HasUnattend,
+        # Профиль применён к этой Windows (-Online): вместо записи ISO на флешку подсказка про откат.
+        [string]$RestorePath
     )
 
     Write-Section (Get-LunqText 'Report.Section')
@@ -95,6 +99,10 @@ function Write-LunqReport {
     }
     if ($LogPath) { Write-Info (Get-LunqText 'Report.Log' $LogPath) }
     Write-Info ''
+    if ($RestorePath) {
+        Write-Info (Get-LunqText 'Report.OnlineNext' $RestorePath)
+        return
+    }
     Write-Info (Get-LunqText 'Report.Next')
     if ($HasUnattend) {
         # Файл ответов Rufus заменил бы autounattend.xml из ISO.

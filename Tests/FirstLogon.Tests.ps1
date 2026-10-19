@@ -85,7 +85,7 @@ public static class FakeWinget {
         # Обёртка: заглушки и запуск скрипта. Часы идут вперёд на каждый Start-Sleep, так что
         # ожидание интернета «до 5 минут» проходит мгновенно.
         $wrapper = @'
-param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked)
+param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked, [switch]$WifiFails)
 $env:PATH = $Bin + [IO.Path]::PathSeparator + $env:PATH
 $env:WINDIR = $Windows
 $global:Now = [datetime]'2026-01-01'
@@ -115,6 +115,10 @@ function global:Set-Acl { param($LiteralPath, $AclObject, $ErrorAction) if ($glo
 function global:Start-Transcript { }
 function global:Stop-Transcript { }
 function global:Add-AppxPackage { }
+# netsh: вызов пишется в лог, а с -WifiFails сеть не добавляется.
+$global:NetshLog = Join-Path $State 'netsh.log'
+$global:WifiFails = [bool]$WifiFails
+function global:netsh { Add-Content -LiteralPath $global:NetshLog -Value ($args -join ' '); if ($global:WifiFails) { $global:LASTEXITCODE = 1 } else { $global:LASTEXITCODE = 0 } }
 & (Join-Path $Lunq 'FirstLogon.ps1')
 '@
         Set-Content -LiteralPath (Join-Path $root 'wrapper.ps1') -Value $wrapper -Encoding UTF8
@@ -123,12 +127,13 @@ function global:Add-AppxPackage { }
 
     function Invoke-FirstLogon {
         # Один вход в Windows: запуск скрипта в отдельном процессе. Возвращает вывод.
-        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked)
+        param([Parameter(Mandatory)]$Test, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked, [switch]$WifiFails)
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Test.Root 'wrapper.ps1'), '-Lunq', $Test.Lunq, '-Windows', $Test.Windows, '-Bin', $Test.Bin, '-State', $Test.Root)
         if ($Offline) { $arguments += '-Offline' }
         if ($NoTask) { $arguments += '-NoTask' }
         if ($AclFails) { $arguments += '-AclFails' }
         if ($NcsiBlocked) { $arguments += '-NcsiBlocked' }
+        if ($WifiFails) { $arguments += '-WifiFails' }
         $output = & $script:PowerShell @arguments 2>&1 | Out-String
         return $output
     }
@@ -177,6 +182,33 @@ Describe 'Скрипт первого входа' {
         $out = Invoke-FirstLogon -Test $t -NcsiBlocked
         $out | Should -Not -Match 'Жду подключения к интернету'
         Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+    }
+
+    It 'сети Wi-Fi добавляются до программ, а их файлы с паролями сразу удаляются' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $wifi = Join-Path $t.Lunq 'Wifi'
+        New-Item -ItemType Directory -Path $wifi -Force | Out-Null
+        foreach ($name in 'Wi-Fi-Home', 'Wi-Fi-Office') { Set-Content -LiteralPath (Join-Path $wifi "$name.xml") -Value '<WLANProfile />' }
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Сети Wi-Fi \(2\)'
+        $out | Should -Match 'Добавлено сетей: 2'
+        $calls = Get-Lines (Join-Path $t.Root 'netsh.log')
+        $calls.Count | Should -Be 2
+        $calls[0] | Should -Match '^wlan add profile filename=.*Wi-Fi-Home\.xml user=all$'
+        Test-Path -LiteralPath $wifi | Should -BeFalse
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+    }
+
+    It 'сеть не добавилась: об этом написано, файлы всё равно удалены' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $wifi = Join-Path $t.Lunq 'Wifi'
+        New-Item -ItemType Directory -Path $wifi -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $wifi 'Wi-Fi-Home.xml') -Value '<WLANProfile />'
+        $out = Invoke-FirstLogon -Test $t -WifiFails
+        $out | Should -Match 'Не удалось добавить сеть Wi-Fi-Home \(код 1\)'
+        $out | Should -Match 'Добавлено сетей: 0'
+        Test-Path -LiteralPath $wifi | Should -BeFalse
+        $out | Should -Match 'Установлено программ: 1'
     }
 
     It 'по-английски, если в Language.txt записано en' {

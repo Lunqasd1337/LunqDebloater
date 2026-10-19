@@ -408,11 +408,12 @@ Describe 'Пошаговый режим' {
     }
 
     # В сводке без обновлений и драйверов в Config пункты со стрелкой идут первыми:
-    # [1] папка с обновлениями, [2] папка с драйверами, [3] драйверы этого компьютера,
-    # дальше [4] программы и [5] файл ответов.
+    # [1] папка с обновлениями, [2] скачать обновления, [3] папка с драйверами, [4] драйверы
+    # этого компьютера, дальше [5] программы, [6] программы этого компьютера, [7] сети Wi-Fi
+    # и [8] файл ответов.
     It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
-        # «5 2»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '5 2', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        # «8 3»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '8 3', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Драйверы: 3 шт\.'
         $run.Output | Should -Match 'add driver net\.inf'
@@ -429,7 +430,7 @@ Describe 'Пошаговый режим' {
     It 'драйверы этого компьютера выгружаются и встраиваются' {
         $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
         try {
-            $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '', '5', 'y')
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y')
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
@@ -440,7 +441,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '2', '', '5', 'y') -Prepare {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '', '5', 'y') -Prepare {
             param($t)
             $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
             $env:LUNQ_TEST_FOLDER = $empty.FullName
@@ -448,6 +449,251 @@ Describe 'Пошаговый режим' {
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'нет файлов \.inf'
         $run.Output | Should -Not -Match 'add driver'
+    }
+}
+
+Describe 'Рецепт и отчёт' {
+    It 'рядом с ISO пишутся рецепт и отчёт, по рецепту сборка повторяется' {
+        $root = Join-Path $TestDrive 'recipe'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $first = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true; UpdatesPath = $t.Updates; SkipDrivers = $true; SkipRegistry = $true }
+            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            Remove-Item -LiteralPath $t.OutputIso -Force
+            Remove-Item -LiteralPath $t.WorkDir -Recurse -Force
+            $second = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $first.Error | Should -BeNullOrEmpty
+        $first.Output | Should -Match 'Рецепт для повтора сборки: .*Win11_Lunq\.lunq\.json'
+        $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Iso.Sha256 | Should -Be (Get-FileHash -LiteralPath $t.Iso -Algorithm SHA256).Hash.ToLowerInvariant()
+        $recipe.Steps.SkipRegistry | Should -BeTrue
+        @($recipe.Updates.Files).Count | Should -Be 3
+        Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.html') -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
+
+        $second.Error | Should -BeNullOrEmpty
+        $second.Output | Should -Match 'Рецепт: .*Win11_Lunq\.lunq\.json'
+        # Повтор берёт из рецепта редакцию, обновления и пропуск реестра.
+        $second.Output | Should -Match 'Редакция:\s+\[5\]'
+        $second.Output | Should -Match 'Обновления:\s+3 шт\.'
+        $second.Output | Should -Match 'Реестр:\s+пропущено'
+        $second.Output | Should -Not -Match 'изменилось с прошлой сборки'
+        Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
+    }
+
+    It 'ISO из рецепта изменился: предупреждение, профиль изменился: берётся копия из рецепта' {
+        $root = Join-Path $TestDrive 'recipe2'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
+            Add-Content -LiteralPath $t.Iso -Value 'changed'
+            Add-Content -LiteralPath (Join-Path $t.App 'Config\Profile.json') -Value ' '
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = (Join-Path $root 'Win11_Lunq.lunq.json'); WorkDir = $t.WorkDir; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'отличается от того, из которого собиралось по рецепту'
+        $run.Output | Should -Match 'беру его копию из рецепта'
+    }
+
+    It 'ISO из рецепта пропал: остановка с подсказкой про -IsoPath' {
+        $root = Join-Path $TestDrive 'recipe3'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
+            Remove-Item -LiteralPath $t.Iso -Force
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = (Join-Path $root 'Win11_Lunq.lunq.json'); WorkDir = $t.WorkDir; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $run.Output | Should -Match 'ISO из рецепта не найден: .*Укажите другой через -IsoPath'
+    }
+
+    It '-Schedule Monthly создаёт задание по рецепту, -Schedule Off удаляет его' {
+        $root = Join-Path $TestDrive 'schedule'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
+            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            Remove-Item -LiteralPath $t.NativeLog -Force
+            $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
+            $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
+            $env:LUNQ_TEST_NO_TASK = '1'
+            $none = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
+            $noRecipe = Invoke-LunqTestRun -Test $t -Parameters @{ Schedule = 'Monthly' }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $on.Error | Should -BeNullOrEmpty
+        $on.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq создано: ISO будет пересобираться 15-го числа'
+        # Задание только создаётся: сборки в этом запуске нет.
+        $on.Output | Should -Not -Match 'Шаг 1 из'
+        $calls = @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'schtasks.exe|*' })
+        $calls[0] | Should -Match '^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\Win11_Lunq\|/XML\|'
+        $calls[1] | Should -Match '^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\Win11_Lunq\|/F'
+        $off.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq удалено'
+        $none.Output | Should -Match 'Задания LunqDebloater\\Win11_Lunq нет, удалять нечего'
+        $noRecipe.Output | Should -Match '-Schedule работает только с -Recipe'
+    }
+}
+
+Describe 'Свежие обновления из каталога' {
+    It 'обновления скачиваются в Config\Updates\Catalog и встраиваются, второй раз берутся оттуда' {
+        $root = Join-Path $TestDrive 'download'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $parameters = @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; DownloadUpdates = $true; UpdatesToSetup = $true; SkipDrivers = $true }
+            $first = Invoke-LunqTestRun -Test $t -Parameters $parameters
+            Remove-Item -LiteralPath $t.OutputIso -Force
+            Remove-Item -LiteralPath $t.NativeLog -Force
+            $second = Invoke-LunqTestRun -Test $t -Parameters $parameters
+        }
+        finally { Exit-LunqTestEnvironment }
+        $first.Error | Should -BeNullOrEmpty
+        $catalog = Join-Path $t.App 'Config\Updates\Catalog\26H2-amd64'
+        Test-Path -LiteralPath (Join-Path $catalog 'windows11.0-kb5090000-x64.msu') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $catalog 'SafeOS\windows11.0-kb5090002-x64.cab') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $catalog 'Setup\windows11.0-kb5090003-x64.cab') | Should -BeTrue
+        # Предварительное обновление новее, но не берётся.
+        $first.Output | Should -Not -Match 'KB5090099'
+        $first.Output | Should -Match 'Обновления из каталога готовы: 4 шт\.'
+        $first.Output | Should -Match 'add package windows11\.0-kb5090000-x64\.msu'
+        $first.Output | Should -Match 'add package windows11\.0-kb5090002-x64\.cab'
+        $recipe = Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Updates.Download | Should -BeTrue
+
+        $second.Error | Should -BeNullOrEmpty
+        $second.Output | Should -Match 'уже скачано: windows11\.0-kb5090000-x64\.msu'
+        @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'web|Get|https://catalog.sf.dl*' }).Count | Should -Be 0
+    }
+
+    It 'неверная контрольная сумма: сборка не начинается, файла нет' {
+        $run = Start-TestBuild -Parameters @{ DownloadUpdates = $true; SkipDrivers = $true } -Prepare { $env:LUNQ_TEST_BAD_HASH = '1' }
+        $run.Output | Should -Match 'не совпадает с контрольной суммой из каталога'
+        $run.Output | Should -Not -Match 'Шаг 1 из'
+        Test-Path -LiteralPath (Join-Path $script:Test.App 'Config\Updates\Catalog\26H2-amd64\windows11.0-kb5090000-x64.msu') | Should -BeFalse
+    }
+
+    It 'нет интернета: остановка с советом скачать вручную' {
+        $run = Start-TestBuild -Parameters @{ DownloadUpdates = $true; SkipDrivers = $true } -Prepare { $env:LUNQ_TEST_OFFLINE = '1' }
+        $run.Output | Should -Match 'Каталог Microsoft \(catalog\.update\.microsoft\.com\) не ответил'
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+    }
+}
+
+Describe 'Копия этого компьютера' {
+    It 'программы и сети Wi-Fi этого компьютера попадают в образ, их выгрузка не остаётся в TEMP' {
+        $wifiTemp = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostWifi'
+        $run = Start-TestBuild -Parameters @{ HostApps = $true; HostWifi = $true; SkipUpdates = $true; SkipDrivers = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Программ этого компьютера добавлено к списку: 2'
+        $run.Output | Should -Match 'Сетей Wi-Fi: 1\. Их пароли будут лежать в ISO открытым текстом'
+        $run.Output | Should -Match 'После установки:\s+программ: \d+ \(winget\), сетей Wi-Fi: 1'
+        $lunq = Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq'
+        $apps = @(Get-Content -LiteralPath (Join-Path $lunq 'User\Apps.txt'))
+        $apps | Should -Contain 'Git.Git'
+        $apps | Should -Contain '9NKSQGP7F2NH --source msstore'
+        $apps | Should -Not -Contain 'Microsoft.VCLibs.Desktop.14'
+        Test-Path -LiteralPath (Join-Path $lunq 'Wifi\Wi-Fi-Home.xml') | Should -BeTrue
+        # Config\Apps.txt не меняется: программы этого компьютера добавляются только в образ.
+        Get-Content -LiteralPath (Join-Path $script:Test.App 'Config\Apps.txt') | Should -Not -Contain 'Git.Git'
+        Test-Path -LiteralPath $wifiTemp | Should -BeFalse
+    }
+
+    It 'сетей Wi-Fi нет: сборка идёт без них' {
+        $run = Start-TestBuild -Parameters @{ HostWifi = $true; SkipUpdates = $true; SkipDrivers = $true } -Prepare { $env:LUNQ_TEST_NO_WIFI = '1' }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Сетей Wi-Fi на этом компьютере не нашлось'
+        Test-Path -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq\Wifi') | Should -BeFalse
+    }
+}
+
+Describe 'Этот компьютер без ISO и откат' {
+    It '-Online применяет выбранные категории и запоминает, как было, -Restore возвращает' {
+        $root = Join-Path $TestDrive 'online'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'ads,telemetry'; Force = $true }
+            $restorePath = Join-Path $root 'Windows\LunqDebloater\Restore.json'
+            $saved = Get-Content -LiteralPath $restorePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Category = 'ads'; Force = $true }
+            $left = Get-Content -LiteralPath $restorePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $again = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        # ISO не нужен: ни монтирования, ни сборки ISO.
+        $online.Output | Should -Not -Match '\[mock\] mount'
+        $online.Output | Should -Match 'Шаг 4 из 5\. Внесение настроек реестра'
+        $online.Output | Should -Match '-Restore'
+        @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry', 'ads')
+        $saved.Source | Should -Be 'Online'
+        Test-Path -LiteralPath (Join-Path $root 'Win11_Lunq.iso') | Should -BeFalse
+
+        $restore.Error | Should -BeNullOrEmpty
+        $restore.Output | Should -Match 'Реклама и предложения: возвращено \d+, ошибок 0'
+        $restore.Output | Should -Not -Match 'Откат: Телеметрия'
+        # Вернувшаяся категория убрана из файла, остальное ждёт следующего -Restore.
+        @($left.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry')
+
+        $again.Output | Should -Match 'Телеметрия и диагностика: возвращено'
+        Test-Path -LiteralPath $restorePath | Should -BeFalse
+    }
+
+    It '-Online с приложениями: удалённое с диска приложение возвращается через Microsoft Store' {
+        $root = Join-Path $TestDrive 'online2'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Force = $true }
+            $env:LUNQ_TEST_APPX_GONE = '1'
+            $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        $online.Output | Should -Match 'remove provisioned Microsoft\.BingNews_1\.0_x64 online=True'
+        $restore.Output | Should -Match 'ms-windows-store://pdp/\?PFN=Microsoft\.BingNews_'
+        # Приложение осталось в файле отката: его можно вернуть следующим запуском.
+        (Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8) | Should -Match 'Microsoft\.BingNews'
+    }
+
+    It '-Online и -Restore вместе не запускаются, -Restore без файла говорит, что возвращать нечего' {
+        $both = Start-TestBuild -Parameters @{ Online = $true; Restore = $true; IsoPath = $null; Index = $null }
+        $both.Output | Should -Match '-Online и -Restore нельзя задать вместе'
+        $none = Start-TestBuild -Parameters @{ Restore = $true; IsoPath = $null; Index = $null }
+        $none.Output | Should -Match 'Возвращать нечего'
+    }
+
+    It 'сборка ISO кладёт данные для отката в образ' {
+        $run = Start-TestBuild -Parameters @{ SkipUpdates = $true; SkipDrivers = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $json = Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $json.Source | Should -Be 'Image'
+        @($json.Categories).Count | Should -BeGreaterThan 0
+    }
+
+    It 'в меню [3] применяет профиль к этому компьютеру, [4] возвращает' {
+        $root = Join-Path $TestDrive 'menu'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            # [3], Enter для категорий, Y на вопрос; затем [4], Enter для категорий, Y на откат.
+            $online = Invoke-LunqTestRun -Test $t -Parameters @{ WorkDir = $t.WorkDir } -Answers @('3', '', 'y')
+            $restore = Invoke-LunqTestRun -Test $t -Parameters @{ WorkDir = $t.WorkDir } -Answers @('4', '', 'y')
+        }
+        finally { Exit-LunqTestEnvironment }
+        $online.Error | Should -BeNullOrEmpty
+        $online.Output | Should -Match 'Применить профиль к этому компьютеру\? \[Y/N\]> \[y\]'
+        $online.Output | Should -Match 'Данные для отката'
+        $restore.Error | Should -BeNullOrEmpty
+        $restore.Output | Should -Match 'Вернуть выбранные категории\? \[Y/N\]> \[y\]'
+        $restore.Output | Should -Match '=== Итог отката ==='
+        Test-Path -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') | Should -BeFalse
     }
 }
 

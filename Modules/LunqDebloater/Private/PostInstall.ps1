@@ -25,7 +25,16 @@ function Format-FirstLogonSummary {
     $parts = @()
     if ($FirstLogon.Apps.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Apps' $FirstLogon.Apps.Count }
     if ($FirstLogon.Scripts.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Scripts' $FirstLogon.Scripts.Count }
+    $wifi = Get-LunqFirstLogonWifi $FirstLogon
+    if ($wifi.Count -gt 0) { $parts += Get-LunqText 'PostInstall.Wifi' $wifi.Count }
     return ($parts -join ', ')
+}
+
+function Get-LunqFirstLogonWifi {
+    # Сети Wi-Fi для первого входа. Свойства Wifi может не быть: оно есть только с -HostWifi.
+    param([Parameter(Mandatory)]$FirstLogon)
+    if (-not $FirstLogon.PSObject.Properties['Wifi'] -or -not $FirstLogon.Wifi) { return , @() }
+    return , @($FirstLogon.Wifi)
 }
 
 # Команда первого входа: и в Sysprep\unattend.xml в образе, и в autounattend.xml в корне ISO.
@@ -96,6 +105,14 @@ function Install-LunqFirstLogon {
                 Where-Object { '.ps1', '.psm1' -contains $_.Extension -and (ConvertTo-LunqUtf8Bom -Path $_.FullName) })
         if ($converted.Count -gt 0) {
             Write-Info (Get-LunqText 'PostInstall.ConvertedToBom' (($converted | ForEach-Object { $_.Name }) -join ', '))
+        }
+    }
+    if ((Get-LunqFirstLogonWifi $FirstLogon).Count -gt 0) {
+        # Профили с паролями открытым текстом: скрипт первого входа добавит их и сразу удалит.
+        $wifiTarget = Join-Path $target 'Wifi'
+        New-Item -ItemType Directory -Path $wifiTarget -Force | Out-Null
+        foreach ($file in @(Get-ChildItem -LiteralPath $FirstLogon.WifiPath -Filter '*.xml' -File)) {
+            Copy-Item -LiteralPath $file.FullName -Destination $wifiTarget -Force
         }
     }
     Copy-Item -LiteralPath (Join-Path (Split-Path $script:ModuleRoot -Parent) 'FirstLogon\FirstLogon.ps1') -Destination $target -Force

@@ -11,7 +11,14 @@ function Get-LunqUpdateFiles {
     param([Parameter(Mandatory)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return , @() }
-    $files = @(Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in '.msu', '.cab' })
+    return , (Get-LunqSortedUpdates @(Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in '.msu', '.cab' }))
+}
+
+function Get-LunqSortedUpdates {
+    # Порядок установки из Get-LunqUpdateFiles: и для одной папки, и для обновлений из Config вместе со скачанными.
+    param($Files)
+    # Списки из Get-LunqUpdateFiles приходят одним объектом: ForEach-Object раскрывает их.
+    $files = @($Files | ForEach-Object { $_ } | Where-Object { $_ })
     $sorted = $files | Sort-Object @{ Expression = {
             if ($_.Name -notmatch '(?i)kb\d+') { 0 } elseif ($_.Name -match '(?i)ndp') { 2 } else { 1 }
         }

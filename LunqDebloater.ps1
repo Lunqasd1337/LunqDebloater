@@ -51,11 +51,21 @@ param(
     [switch]$SkipVersionCheck,
     [switch]$KeepWorkDir,
     [switch]$Force,
-    [ValidateSet('ru', 'en')][string]$Language
+    [ValidateSet('ru', 'en')][string]$Language,
+    [string]$Recipe,
+    [switch]$DownloadUpdates,
+    [ValidateSet('Monthly', 'Off')][string]$Schedule,
+    [switch]$Online,
+    [switch]$Restore,
+    [string[]]$Category,
+    [switch]$HostDrivers,
+    [switch]$HostApps,
+    [switch]$HostWifi
 )
 
 $ErrorActionPreference = 'Stop'
-$interactive = -not $IsoPath
+# Любой из этих параметров значит запуск без вопросов: из командной строки или по расписанию.
+$interactive = -not ($IsoPath -or $Recipe -or $Online -or $Restore -or $Schedule)
 
 if ($env:OS -ne 'Windows_NT') {
     # Модуль с таблицами строк ещё не загружен, поэтому язык выбирается здесь же.
@@ -69,7 +79,7 @@ Import-Module (Join-Path $PSScriptRoot 'Modules\LunqDebloater\LunqDebloater.psd1
 if (-not $Language) { $Language = Get-LunqDefaultLanguage }
 Set-LunqLanguage -Language $Language
 # Параметры с путями: при перезапуске они передаются полными, ведь новое окно может открыться в другой папке.
-$pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath'
+$pathParams = 'IsoPath', 'OutputIso', 'ConfigPath', 'ProfilePath', 'WorkDir', 'OscdimgPath', 'UpdatesPath', 'DriversPath', 'Recipe'
 
 # В PowerShell 7 часть командлетов модуля DISM (например, Get-AppxProvisionedPackage)
 # падает с ошибкой «Класс не зарегистрирован». Поэтому скрипт всегда работает
@@ -132,8 +142,14 @@ $mountDir = Join-Path $WorkDir 'mount'
 $wimPath = Join-Path $isoDir 'sources\install.wim'
 # Драйверы этого компьютера выгружаются во временную папку: в Config они остались бы и для следующих сборок.
 # Обе папки удаляются в конце запуска: драйверы видеокарты занимают на системном диске 1-3 ГБ.
-$hostDriversDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
-$cabCheckDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\CabCheck'
+$lunqTempDir = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater'
+$hostDriversDir = Join-Path $lunqTempDir 'HostDrivers'
+$cabCheckDir = Join-Path $lunqTempDir 'CabCheck'
+# Сети Wi-Fi с паролями открытым текстом, программы этого компьютера и профиль из рецепта:
+# всё это нужно только на время сборки.
+$hostWifiDir = Join-Path $lunqTempDir 'HostWifi'
+$hostAppsDir = Join-Path $lunqTempDir 'HostApps'
+$recipeTempDir = Join-Path $lunqTempDir 'Recipe'
 
 # Заголовок окна не меняется в некоторых консолях (например, при перенаправленном выводе), это не ошибка.
 try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
@@ -151,6 +167,45 @@ try {
     $lunqLog = Start-LunqLog -Dir (Join-Path $PSScriptRoot 'Logs')
     Write-LunqRunInfo -BoundParameters $PSBoundParameters -DismLog $lunqLog.DismPath
 
+    if ($Online -and $Restore) { throw (Get-LunqText 'Main.OnlineAndRestore') }
+    if ($Recipe) { $Recipe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Recipe) }
+
+    # ---------- Расписание: только создать или удалить задание, без сборки ----------
+    if ($Schedule) {
+        if (-not $Recipe) { throw (Get-LunqText 'Main.ScheduleNeedsRecipe') }
+        if ($Schedule -eq 'Off') { Unregister-LunqSchedule -RecipePath $Recipe }
+        else {
+            $null = Read-LunqRecipe -Path $Recipe
+            $null = Register-LunqSchedule -ScriptPath $PSCommandPath -RecipePath $Recipe -TempDir $lunqTempDir
+        }
+        return
+    }
+
+    # ---------- Рецепт прошлой сборки ----------
+    # Параметры, не заданные в командной строке, берутся из рецепта: так сборку можно повторить,
+    # например, с новым ISO или без обновлений.
+    $recipeData = $null
+    $recipeProfile = $null
+    if ($Recipe) {
+        $recipeData = Read-LunqRecipe -Path $Recipe
+        Write-Info (Get-LunqText 'Main.RecipeUsing' $Recipe)
+        $recipeValues = Get-LunqRecipeParameters -Recipe $recipeData
+        foreach ($name in @($recipeValues.Keys)) {
+            if ($PSBoundParameters.ContainsKey($name)) { continue }
+            # Редакция по имени и выбранные вручную категории важнее записанных в рецепте.
+            if ($name -eq 'Index' -and $PSBoundParameters.ContainsKey('Edition')) { continue }
+            if ($name -eq 'Category' -and $PSBoundParameters.ContainsKey('SkipCategory')) { continue }
+            Set-Variable -Name $name -Value $recipeValues[$name]
+        }
+        if (-not $PSBoundParameters.ContainsKey('ProfilePath')) {
+            $recipeProfile = Get-LunqRecipeProfile -Recipe $recipeData -TempDir $recipeTempDir
+            $ProfilePath = $recipeProfile.Path
+            if ($recipeProfile.FromRecipe) { Write-Warning (Get-LunqText 'Main.RecipeProfileCopy') }
+        }
+        if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw (Get-LunqText 'Main.RecipeIsoMissing' $IsoPath) }
+        if ((Get-Item -LiteralPath $IsoPath).Length -ne [long]$recipeData.Iso.Size) { Write-Warning (Get-LunqText 'Main.RecipeIsoChanged' $IsoPath) }
+    }
+
     # ---------- Подготовка: всё, что можно проверить до долгой работы ----------
     if ($interactive) {
         Write-Host ''
@@ -162,21 +217,69 @@ try {
         Write-Section (Get-LunqText 'Main.SectionAction')
         Write-Host '    [1] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionBuild')
         Write-Host '    [2] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionList')
-        $listMode = (([string](Read-Host (Get-LunqText 'Main.ActionPrompt'))).Trim() -eq '2')
-
-        Write-Section (Get-LunqText 'Main.SectionIso')
-        Write-Info (Get-LunqText 'Main.ChooseIso')
-        $IsoPath = Select-IsoFile
-        Write-Info "ISO: $IsoPath"
-    }
-    else {
-        $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
+        Write-Host '    [3] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionOnline')
+        Write-Host '    [4] ' -ForegroundColor Cyan -NoNewline; Write-Host (Get-LunqText 'Main.ActionRestore')
+        $actionAnswer = ([string](Read-Host (Get-LunqText 'Main.ActionPrompt'))).Trim()
+        $listMode = $actionAnswer -eq '2'
+        if ($actionAnswer -eq '3') { $Online = [switch]$true }
+        elseif ($actionAnswer -eq '4') { $Restore = [switch]$true }
     }
 
-    if (-not $OutputIso) {
-        $OutputIso = Join-Path (Split-Path $IsoPath -Parent) ('{0}_Lunq.iso' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath))
+    # ---------- Откат того, что убрал LunqDebloater ----------
+    if ($Restore) {
+        $restorePath = Get-LunqRestorePath
+        $restoreData = Read-LunqRestoreData -Path $restorePath
+        $restoreProfile = $null
+        if ($restoreData) {
+            # Категории, где всё уже возвращено, в списке не нужны.
+            $withItems = @($restoreData.Categories | Where-Object { Test-LunqRestoreCategoryHasItems $_ } | ForEach-Object { $_.Id })
+            if ($withItems.Count -gt 0) {
+                $restoreProfile = ConvertTo-LunqRestoreProfile -Restore $restoreData
+                $restoreProfile.Categories = @($restoreProfile.Categories | Where-Object { $withItems -contains $_.Id })
+            }
+        }
+        if (-not $restoreProfile) {
+            Write-Info (Get-LunqText 'Main.RestoreNothing' $restorePath)
+            return
+        }
+        $Category = @($Category | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($Category.Count -gt 0) { Set-LunqOnlyCategories -LunqProfile $restoreProfile -Ids $Category }
+        $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $restoreProfile -Ids $SkipCategory }
+        Write-Section (Get-LunqText 'Main.SectionRestore')
+        Write-Info (Get-LunqText 'Main.RestoreFrom' $restorePath)
+        if ($interactive) { Select-LunqCategories -LunqProfile $restoreProfile }
+        else { Write-CategoryList -LunqProfile $restoreProfile }
+        $restoreIds = @($restoreProfile.Categories | Where-Object { $_.Enabled } | ForEach-Object { $_.Id })
+        if ($restoreIds.Count -eq 0) {
+            Write-Warning (Get-LunqText 'Main.AllCategoriesOff')
+            return
+        }
+        if ($interactive -and -not (Read-YesNo (Get-LunqText 'Main.AskRestore'))) {
+            Write-Info (Get-LunqText 'Main.Cancelled')
+            return
+        }
+        $restoreResults = Invoke-LunqRestore -Restore $restoreData -Ids $restoreIds -Path $restorePath
+        Write-LunqRestoreReport -Results $restoreResults
+        return
     }
-    $OutputIso = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputIso)
+
+    if (-not $Online) {
+        if ($interactive) {
+            Write-Section (Get-LunqText 'Main.SectionIso')
+            Write-Info (Get-LunqText 'Main.ChooseIso')
+            $IsoPath = Select-IsoFile
+            Write-Info "ISO: $IsoPath"
+        }
+        else {
+            $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
+        }
+
+        if (-not $OutputIso) {
+            $OutputIso = Join-Path (Split-Path $IsoPath -Parent) ('{0}_Lunq.iso' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath))
+        }
+        $OutputIso = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputIso)
+    }
 
     if (-not (Test-Path -LiteralPath $ConfigPath -PathType Container)) { throw (Get-LunqText 'Main.ConfigNotFound' $ConfigPath) }
     if (-not $ProfilePath) {
@@ -190,6 +293,8 @@ try {
     }
     $lunqProfile = Read-LunqProfile -Path $ProfilePath
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
+    $Category = @($Category | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($Category.Count -gt 0) { Set-LunqOnlyCategories -LunqProfile $lunqProfile -Ids $Category }
     $SkipCategory = @($SkipCategory | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $lunqProfile -Ids $SkipCategory }
     if ($interactive -and -not $listMode) {
@@ -200,6 +305,51 @@ try {
         Write-Warning (Get-LunqText 'Main.AllCategoriesOff')
     }
     $config = Get-LunqEffectiveConfig -LunqProfile $lunqProfile
+    $skipped = Get-LunqText 'Main.PlanSkipped'
+
+    # ---------- Профиль для этой Windows ----------
+    # Те же шаги удаления и реестра, что и в образе, но сразу на этом компьютере. Перед каждым
+    # изменением запоминается, как было, и -Restore потом возвращает это по категориям.
+    if ($Online) {
+        $restorePath = Get-LunqRestorePath
+        Write-Section (Get-LunqText 'Main.SectionPlan')
+        Write-Info (Get-LunqText 'Main.PlanProfile' $lunqProfile.Name $ProfilePath)
+        Write-Info (Get-LunqText 'Main.PlanCategories' @($lunqProfile.Categories | Where-Object { $_.Enabled }).Count $lunqProfile.Categories.Count)
+        Write-CategoryList -LunqProfile $lunqProfile
+        if ($SkipAppx) { Write-Info (Get-LunqText 'Main.PlanAppx' $skipped) }
+        if ($SkipComponents) { Write-Info (Get-LunqText 'Main.PlanComponents' $skipped) }
+        elseif ($config.Packages.Remove.Count -gt 0) { Write-Warning (Get-LunqText 'Main.PackagesWarning') }
+        if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
+        Write-Info (Get-LunqText 'Main.PlanRestore' $restorePath)
+        Write-Info (Get-LunqText 'Main.PlanLog' $lunqLog.Path)
+        if ($interactive) {
+            Write-Info ''
+            Write-Host (Get-LunqText 'Main.OnlineDisclaimer') -ForegroundColor Yellow
+            if (-not (Read-YesNo (Get-LunqText 'Main.AskApplyOnline'))) {
+                Write-Info (Get-LunqText 'Main.Cancelled')
+                return
+            }
+        }
+        $onlineContext = @{
+            State          = $state
+            Config         = $config
+            SkipAppx       = [bool]$SkipAppx
+            SkipComponents = [bool]$SkipComponents
+            SkipRegistry   = [bool]$SkipRegistry
+            Restore        = New-LunqRestoreData -LunqProfile $lunqProfile -Source Online
+            RestorePath    = $restorePath
+        }
+        $started = Get-Date
+        try { $results = Invoke-LunqBuild -Context $onlineContext -Online }
+        catch {
+            # Удалённое до ошибки тоже должно возвращаться через -Restore.
+            try { Save-LunqRestoreData -Restore $onlineContext.Restore -Path $restorePath -Merge }
+            catch { Write-Warning (Get-LunqText 'Restore.SaveFailed' $_.Exception.Message) }
+            throw
+        }
+        Write-LunqReport -Results $results -LunqProfile $lunqProfile -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -RestorePath $restorePath
+        return
+    }
 
     # ---------- Что лежит в Config ----------
     # Обновления, драйверы, программы и скрипты берутся из Config. -UpdatesPath и -DriversPath
@@ -216,8 +366,20 @@ try {
             if (-not (Test-Path -LiteralPath $DriversPath -PathType Container)) { throw (Get-LunqText 'Main.DriversDirNotFound' $DriversPath) }
             $driversDir = (Resolve-Path -LiteralPath $DriversPath).Path
         }
+        # Драйверы этого компьютера вместо папки: в пошаговом режиме это пункт сводки.
+        if ($HostDrivers -and -not $SkipDrivers) {
+            $picked = Invoke-LunqContentAction -Action 'hostDrivers' -HostDriversDir $hostDriversDir
+            if ($picked) { $driversDir = $picked.Path }
+        }
     }
-    $foundLogon = Get-LunqFirstLogon -AppsPath (Join-Path $ConfigPath 'Apps.txt') -ScriptsPath (Join-Path $ConfigPath 'Scripts')
+    $appsPath = Join-Path $ConfigPath 'Apps.txt'
+    if ($recipeData -and -not $SkipApps -and (Get-ConfigList $recipeData.FirstLogon 'Apps').Count -gt 0) {
+        # Список программ из рецепта: в нём уже есть и программы компьютера, где собирался образ.
+        $appsPath = Join-Path $recipeTempDir 'Apps.txt'
+        New-Item -ItemType Directory -Path $recipeTempDir -Force | Out-Null
+        [IO.File]::WriteAllLines($appsPath, [string[]](Get-ConfigList $recipeData.FirstLogon 'Apps'), (New-Object Text.UTF8Encoding($false)))
+    }
+    $foundLogon = Get-LunqFirstLogon -AppsPath $appsPath -ScriptsPath (Join-Path $ConfigPath 'Scripts')
     $hostRegion = $null
     if (-not $listMode) { $hostRegion = Get-LunqHostRegion }
     # Что пользователь включил и выключил в сводке (Key пункта и Enabled). Когда сводка
@@ -247,10 +409,13 @@ try {
             updates        = ($foundUpdates.Count + $foundDU.Count) -gt 0 -and -not $SkipUpdates
             cleanup        = [bool]$CleanupComponents
             updatesToSetup = [bool]$UpdatesToSetup
+            download       = [bool]$DownloadUpdates
             drivers        = $foundDrivers.Count -gt 0 -and -not $SkipDrivers
             driversToSetup = [bool]$DriversToSetup
             apps           = $foundLogon.Apps.Count -gt 0 -and -not $SkipApps
+            hostApps       = [bool]$HostApps
             scripts        = $foundLogon.Scripts.Count -gt 0 -and -not $SkipScripts
+            wifi           = [bool]$HostWifi
             unattend       = [bool]$withUnattend
             oobe           = [bool]$withUnattend
             region         = [bool]$withUnattend
@@ -274,6 +439,11 @@ try {
             foreach ($key in @($use.Keys)) { $use[$key] = Test-LunqOption -Options $options -Key $key }
             $UpdatesToSetup = [switch]$use.updatesToSetup
             $DriversToSetup = [switch]$use.driversToSetup
+            $DownloadUpdates = [switch]$use.download
+            $HostApps = [switch]$use.hostApps
+            $HostWifi = [switch]$use.wifi
+            # Скачанные Safe OS и Setup Dynamic Update нужны только вместе с обновлением установщика.
+            if ($DownloadUpdates) { $UpdatesToSetup = [switch]$true }
             if (@($options | Where-Object { $_.Key -eq 'cleanup' -and $_.Available }).Count -gt 0) { $CleanupComponents = [switch]$use.cleanup }
         }
         $useUpdates = $use.updates
@@ -297,6 +467,7 @@ try {
         }
         elseif ($picked) {
             # Драйверы этого компьютера каждый раз выгружаются в ту же папку: прежний размер не годится.
+            $HostDrivers = [switch]($picked.Path -eq $hostDriversDir)
             $folderSizes.Remove($picked.Path)
             $driversDir = $picked.Path
             $DriversPath = $picked.Path
@@ -304,6 +475,30 @@ try {
         }
     }
     if ($foundDrivers.Count -gt 0) { $DriversPath = (Resolve-Path -LiteralPath $driversDir).Path }
+    $HostDrivers = [switch]($useDrivers -and $foundDrivers.Count -gt 0 -and $driversDir -eq $hostDriversDir)
+
+    # ---------- Копия этого компьютера: программы и сети Wi-Fi ----------
+    if (-not $listMode -and $HostApps) {
+        Write-Info (Get-LunqText 'Main.HostAppsExporting')
+        try {
+            $hostAppLines = Export-LunqHostApps -TempDir $hostAppsDir
+            $baseApps = $null
+            if ($useApps) { $baseApps = $foundLogon.AppsPath }
+            $merged = Merge-LunqAppsList -AppsPath $baseApps -Extra $hostAppLines -Destination (Join-Path $hostAppsDir 'Apps.txt')
+            Write-Info (Get-LunqText 'Main.HostAppsAdded' $merged.Added)
+            $foundLogon = Get-LunqFirstLogon -AppsPath $merged.Path -ScriptsPath $foundLogon.ScriptsPath
+            $useApps = $foundLogon.Apps.Count -gt 0
+        }
+        catch { Write-Warning (Get-LunqText 'Main.HostAppsFailed' $_.Exception.Message) }
+    }
+    $wifiNames = @()
+    if (-not $listMode -and $HostWifi) {
+        Write-Info (Get-LunqText 'Main.HostWifiExporting')
+        try { $wifiNames = Export-LunqHostWifi -Destination $hostWifiDir }
+        catch { Write-Warning (Get-LunqText 'Main.HostWifiFailed' $_.Exception.Message) }
+        if ($wifiNames.Count -eq 0) { Write-Warning (Get-LunqText 'Main.HostWifiNone') }
+        else { Write-Warning (Get-LunqText 'Main.HostWifiWarning' $wifiNames.Count) }
+    }
 
     $updates = @()
     $safeOSUpdates = @()
@@ -335,7 +530,7 @@ try {
     $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
 
     $firstLogon = $null
-    if (-not $listMode -and ($useApps -or $useScripts)) {
+    if (-not $listMode -and ($useApps -or $useScripts -or $wifiNames.Count -gt 0)) {
         $logonApps = @()
         if ($useApps) { $logonApps = $foundLogon.Apps }
         $logonScripts = @()
@@ -345,6 +540,8 @@ try {
             Apps        = $logonApps
             ScriptsPath = $foundLogon.ScriptsPath
             Scripts     = $logonScripts
+            Wifi        = $wifiNames
+            WifiPath    = $hostWifiDir
         }
     }
 
@@ -360,7 +557,9 @@ try {
 
     Write-Section (Get-LunqText 'Main.SectionSystem')
     $extraSize = [long]0
-    if ($servicePE) { $extraSize = [long](3GB) }
+    if ($servicePE -or ($DownloadUpdates -and $UpdatesToSetup)) { $extraSize = [long](3GB) }
+    # Накопительное обновление из каталога весит 3-4 ГБ и ещё столько же занимает в образе при установке.
+    if ($DownloadUpdates) { $updatesSize += [long](4GB) }
     $protected = @($IsoPath, $OutputIso, $PSScriptRoot, $ConfigPath, $UpdatesPath, $DriversPath, $ProfilePath) | Where-Object { $_ } |
         ForEach-Object { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($_) }
     $check = Test-LunqPrerequisites -IsoPath $IsoPath -WorkDir $WorkDir -OutputIso $OutputIso -OscdimgPath $OscdimgPath `
@@ -396,6 +595,32 @@ try {
         if ($setupAnswers -and (Test-Path -LiteralPath (Join-Path $iso.Root 'autounattend.xml'))) { throw (Get-LunqText 'Unattend.Exists') }
     }
     finally { Dismount-IsoImage -Iso $iso }
+
+    # ---------- Свежие обновления из каталога Microsoft ----------
+    # Выпуск и архитектура известны только теперь, после чтения редакции. Скачанное хранится
+    # в Config\Updates\Catalog и не скачивается снова, пока в каталоге не выйдет новое.
+    $downloaded = @()
+    if (-not $listMode -and $DownloadUpdates) {
+        Write-Section (Get-LunqText 'Main.SectionDownload')
+        $catalogRelease = Get-LunqCatalogRelease -Build $imageInfo.Build
+        if (-not $catalogRelease) { throw (Get-LunqText 'Main.DownloadUnknownBuild' $imageInfo.Build) }
+        $catalogDir = Join-Path $ConfigPath ('Updates\Catalog\{0}-{1}' -f $catalogRelease, $imageInfo.Architecture)
+        $downloaded = (Save-LunqCatalogUpdates -Release $catalogRelease -Architecture $imageInfo.Architecture -Destination $catalogDir -WithDynamic:$UpdatesToSetup)
+        # Get-LunqUpdateFiles отдаёт список одним объектом, поэтому он сначала кладётся в переменную.
+        $catalogUpdates = Get-LunqUpdateFiles -Path $catalogDir
+        $updates = Get-LunqSortedUpdates (@($updates) + $catalogUpdates)
+        if ($UpdatesToSetup) {
+            $catalogSafeOS = Get-LunqUpdateFiles -Path (Join-Path $catalogDir 'SafeOS')
+            $safeOSUpdates = @($safeOSUpdates) + $catalogSafeOS
+            $catalogSetup = Get-LunqUpdateFiles -Path (Join-Path $catalogDir 'Setup')
+            $setupDU = @($setupDU) + @($catalogSetup | Where-Object { $_.Extension -eq '.cab' })
+            $peUpdates = Select-LunqPEUpdates $updates
+        }
+        $updatesSize = Get-LunqFilesSize (@($updates) + $safeOSUpdates + $setupDU)
+        $serviceRecovery = ($peUpdates.Count + $safeOSUpdates.Count + $peDrivers.Count) -gt 0
+        $servicePE = $serviceRecovery -or $setupDU.Count -gt 0
+        Write-Check Ok (Get-LunqText 'Main.Downloaded' $downloaded.Count (Format-Size $updatesSize))
+    }
 
     Write-Section (Get-LunqText 'Main.SectionVersion')
     $buildText = '{0}.{1}' -f $imageInfo.Build, $imageInfo.Revision
@@ -466,8 +691,15 @@ try {
         return
     }
 
+    # Контрольные суммы считаются один раз: и для сверки с рецептом, и для нового рецепта.
+    $hashCache = @{}
+    if ($recipeData -and -not $DownloadUpdates) {
+        # Без скачивания сборка по рецепту должна получить те же обновления, что и в прошлый раз.
+        $actualFiles = @(Get-LunqRecipeFiles (@($updates) + $safeOSUpdates + $setupDU) 'Update' $hashCache)
+        foreach ($line in (Compare-LunqRecipeFiles -Expected (Get-ConfigList $recipeData.Updates 'Files') -Actual $actualFiles)) { Write-Warning $line }
+    }
+
     # ---------- План и подтверждение ----------
-    $skipped = Get-LunqText 'Main.PlanSkipped'
 
     Write-Section (Get-LunqText 'Main.SectionPlan')
     Write-Info (Get-LunqText 'Main.PlanSourceIso' $IsoPath)
@@ -561,11 +793,57 @@ try {
         ProfilePath       = $ProfilePath
         EditionName       = $editionName
         BuildText         = $buildText
+        # Что удалено и как было в реестре: в образ, чтобы на установленной Windows работал -Restore.
+        Restore           = New-LunqRestoreData -LunqProfile $lunqProfile -Source Image
     }
     $started = Get-Date
     $results = Invoke-LunqBuild -Context $build
+    $elapsed = (Get-Date) - $started
 
-    Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed ((Get-Date) - $started) -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
+    Write-LunqReport -Results $results -LunqProfile $lunqProfile -OutputIso $OutputIso -Elapsed $elapsed -LogPath $lunqLog.Path -StepTimes $state['StepTimes'] -HasFirstLogon:([bool]$firstLogon) -HasUnattend:([bool]$setupAnswers)
+
+    # ---------- Рецепт и отчёт рядом с ISO ----------
+    # Не шаг сборки: ISO уже готов, и сбой здесь его не портит.
+    $recipePath = Get-LunqRecipePath -OutputIso $OutputIso
+    $htmlPath = Get-LunqRecipePath -OutputIso $OutputIso -Extension '.lunq.html'
+    try {
+        Write-Info (Get-LunqText 'Main.RecipeWriting')
+        $recipeApps = @()
+        if ($firstLogon -and $firstLogon.Apps.Count -gt 0) {
+            $recipeApps = @(Get-Content -LiteralPath $firstLogon.AppsPath -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
+        }
+        $profileOriginal = $null
+        if ($recipeProfile -and $recipeProfile.FromRecipe) { $profileOriginal = [string]$recipeData.Profile.Path }
+        $newRecipe = New-LunqRecipe -HashCache $hashCache -Values @{
+            ProfilePath = $ProfilePath; ProfileOriginalPath = $profileOriginal; Profile = $lunqProfile
+            IsoPath = $IsoPath; Index = $selected; EditionName = $editionName; BuildText = $buildText
+            OutputIso = $OutputIso; Label = $Label; ConfigPath = $ConfigPath
+            SkipAppx = $SkipAppx; SkipComponents = $SkipComponents; SkipRegistry = $SkipRegistry; CleanupComponents = $CleanupComponents
+            DownloadUpdates = $DownloadUpdates; UpdatesPath = $UpdatesPath; UpdatesToSetup = $UpdatesToSetup
+            Updates = $updates; SafeOS = $safeOSUpdates; SetupDU = $setupDU
+            DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
+            Apps = $recipeApps; HostApps = $HostApps; Scripts = $(if ($firstLogon) { $firstLogon.Scripts } else { @() }); HostWifi = ($wifiNames.Count -gt 0)
+            SetupAnswers = [bool]$setupAnswers; BypassRequirements = $useBypass -and [bool]$setupAnswers; LocalAccount = $useLocalAccount -and [bool]$setupAnswers
+        }
+        Save-LunqRecipe -Recipe $newRecipe -Path $recipePath
+        Write-LunqHtmlReport -Path $htmlPath -Results $results -LunqProfile $lunqProfile -StepTimes $state['StepTimes'] -Info @{
+            IsoPath = $IsoPath; IsoSize = [long]$newRecipe.Iso.Size; OutputIso = $OutputIso; OutputSize = [long](Get-Item -LiteralPath $OutputIso).Length
+            ProfilePath = $ProfilePath; Elapsed = $elapsed; RecipePath = $recipePath; EditionName = $editionName; BuildText = $buildText
+        }
+        Write-Info (Get-LunqText 'Main.RecipeSaved' $recipePath)
+        Write-Info (Get-LunqText 'Main.HtmlSaved' $htmlPath)
+    }
+    catch { Write-Warning (Get-LunqText 'Main.RecipeFailed' $_.Exception.Message) }
+
+    # Со свежими обновлениями из каталога ту же сборку есть смысл повторять каждый месяц.
+    if ($interactive -and $DownloadUpdates -and (Test-Path -LiteralPath $recipePath)) {
+        Write-Info ''
+        Write-Info (Get-LunqText 'Main.ScheduleOffer')
+        if (Read-YesNo (Get-LunqText 'Main.AskSchedule')) {
+            try { $null = Register-LunqSchedule -ScriptPath $PSCommandPath -RecipePath $recipePath -TempDir $lunqTempDir }
+            catch { Write-Warning $_.Exception.Message }
+        }
+    }
 }
 catch {
     $failed = $true
@@ -599,7 +877,7 @@ finally {
         Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     # Сборка уже встроила драйверы в образ, а следующий запуск выгрузит их заново.
-    foreach ($tempDir in @($hostDriversDir, $cabCheckDir)) {
+    foreach ($tempDir in @($hostDriversDir, $cabCheckDir, $hostWifiDir, $hostAppsDir, $recipeTempDir)) {
         if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
     if ($lunqLog) {

@@ -15,4 +15,5 @@
     'Removal.PackagesTitle'      = 'System packages'
     'Removal.PackagesWarning'    = 'Removing system packages can prevent updates from installing.'
     'Removal.RemovingPackage'    = 'Removing package {0}'
+    'Removal.AppxSummaryOnline'  = 'Apps removed: {0} of {1} on this computer.'
 }

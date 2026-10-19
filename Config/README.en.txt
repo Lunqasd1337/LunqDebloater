@@ -37,6 +37,9 @@ can be taken from this computer.
                      Updates\Setup    Setup Dynamic Update (.cab) for Windows Setup.
                  They are added together with the Windows Setup and WinRE update
                  (-UpdatesToSetup, or the item under the updates in the step-by-step mode).
+                 With -DownloadUpdates the latest updates are downloaded automatically to
+                 Updates\Catalog\<release>-<architecture>. The script manages this folder
+                 itself: last month's updates are deleted from it.
 
 Drivers and updates are not stored in git, everything else is.
 
