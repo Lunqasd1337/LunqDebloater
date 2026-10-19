@@ -415,6 +415,18 @@ function Copy-LunqBootManager {
     return $result
 }
 
+function Get-LunqSignatureError {
+    # Что не так с подписью Microsoft на файле, или $null, если она в порядке. expand.exe ничего не
+    # проверяет, а файлы Setup Dynamic Update выполняются при установке Windows. Пакеты .msu и .cab,
+    # которые ставит DISM, он проверяет сам.
+    param([Parameter(Mandatory)][string]$Path)
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne 'Valid') { return [string]$signature.Status }
+    $subject = [string]$signature.SignerCertificate.Subject
+    if ($subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') { return $subject }
+    return $null
+}
+
 function Add-LunqSetupDynamicUpdate {
     # Setup Dynamic Update: .cab, который распаковывается в sources ISO поверх файлов установщика.
     param([Parameter(Mandatory)][string]$IsoRoot, [Parameter(Mandatory)]$Files)
@@ -425,6 +437,12 @@ function Add-LunqSetupDynamicUpdate {
     foreach ($file in $Files) {
         $i++
         Write-Info (Get-LunqText 'Servicing.Expanding' $i $Files.Count $file.Name (Format-Size $file.Length))
+        $signatureError = Get-LunqSignatureError -Path $file.FullName
+        if ($signatureError) {
+            Write-Warning (Get-LunqText 'Servicing.NotSigned' $file.Name $signatureError)
+            $result.Failed.Add($file.Name)
+            continue
+        }
         $code = Invoke-Native expand.exe @($file.FullName, '-F:*', $sources)
         if ($code -eq 0) { $result.Done.Add($file.Name) }
         else {

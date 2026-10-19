@@ -22,6 +22,7 @@
     'Servicing.SetupDUTitle'        = 'Setup Dynamic Update'
     'Servicing.Expanding'           = '[{0}/{1}] Распаковываю {2} ({3}) в sources...'
     'Servicing.ExpandFailed'        = 'Не удалось распаковать {0}: expand.exe вернул код {1}'
+    'Servicing.NotSigned'           = '{0} не подписан Microsoft ({1}), поэтому не распаковывается в установщик.'
     'Servicing.SetupFilesTitle'     = 'Файлы установщика'
     'Servicing.SetupFilesDone'      = '{0} скопированы из boot.wim в sources'
     'Servicing.SetupFileFailed'     = 'Не удалось скопировать {0} из boot.wim в sources: {1}'

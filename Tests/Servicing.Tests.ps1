@@ -200,6 +200,24 @@ Describe 'Обновления и драйверы' {
     }
 }
 
+Describe 'Add-LunqSetupDynamicUpdate' {
+    It 'распаковывает в sources только файлы с подписью Microsoft' {
+        $iso = Join-Path $TestDrive 'sdu'
+        New-Item -ItemType Directory -Path (Join-Path $iso 'sources') -Force | Out-Null
+        $signed = Join-Path $TestDrive 'windows11.0-kb1-x64.cab'
+        $unsigned = Join-Path $TestDrive 'windows11.0-kb2-x64.cab'
+        Set-Content -LiteralPath $signed, $unsigned -Value 'cab'
+        Mock Get-LunqSignatureError -ModuleName LunqDebloater { if ($Path -like '*kb2*') { 'NotSigned' } }
+        Mock Invoke-Native -ModuleName LunqDebloater { 0 }
+        $output = & { $script:r = & (Get-Module LunqDebloater) { param($i, $f) Add-LunqSetupDynamicUpdate -IsoRoot $i -Files $f } $iso @((Get-Item -LiteralPath $signed), (Get-Item -LiteralPath $unsigned)) } *>&1 | Out-String -Width 400
+        $script:r.Done | Should -Be @('windows11.0-kb1-x64.cab')
+        $script:r.Failed | Should -Be @('windows11.0-kb2-x64.cab')
+        $output | Should -Match 'windows11\.0-kb2-x64\.cab не подписан Microsoft \(NotSigned\)'
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 1 -Exactly
+        Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 0 -Exactly -ParameterFilter { $Arguments[0] -like '*kb2*' }
+    }
+}
+
 Describe 'Get-FolderSize' {
     It 'с -Cache папка обходится один раз, пока её не уберут из кэша' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

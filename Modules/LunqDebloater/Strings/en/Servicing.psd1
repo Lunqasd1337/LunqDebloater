@@ -22,6 +22,7 @@
     'Servicing.SetupDUTitle'        = 'Setup Dynamic Update'
     'Servicing.Expanding'           = '[{0}/{1}] Expanding {2} ({3}) into sources...'
     'Servicing.ExpandFailed'        = 'Could not expand {0}: expand.exe returned code {1}'
+    'Servicing.NotSigned'           = '{0} is not signed by Microsoft ({1}), so it is not expanded into the installer.'
     'Servicing.SetupFilesTitle'     = 'Setup files'
     'Servicing.SetupFilesDone'      = '{0} copied from boot.wim to sources'
     'Servicing.SetupFileFailed'     = 'Could not copy {0} from boot.wim to sources: {1}'

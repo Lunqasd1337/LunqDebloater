@@ -3,6 +3,9 @@
 # и окно скачивания. Если разметка изменится, скрипт скажет об этом и предложит скачать вручную.
 
 $script:CatalogBase = 'https://www.catalog.update.microsoft.com'
+# Серверы, с которых каталог отдаёт файлы. Ссылка на любой другой адрес значит, что окно скачивания
+# подменено или изменилось, и такой файл не скачивается.
+$script:CatalogHosts = @('windowsupdate.com', 'delivery.mp.microsoft.com')
 
 function Invoke-LunqWebRequest {
     # Запрос к сайту: текст ответа или файл (-OutFile). Обёртка, чтобы тесты могли её подменить.
@@ -111,6 +114,21 @@ function ConvertFrom-LunqCatalogDownload {
     return , $files.ToArray()
 }
 
+function ConvertTo-LunqCatalogUrl {
+    # Ссылка на файл, если она ведёт на серверы загрузки Microsoft, иначе $null. Старые ссылки на
+    # download.windowsupdate.com бывают по http: они переводятся на https, его эти серверы тоже отдают.
+    param([Parameter(Mandatory)][string]$Url)
+    $uri = $null
+    if (-not [uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri)) { return $null }
+    if (@('http', 'https') -notcontains $uri.Scheme) { return $null }
+    $hostName = $uri.Host.ToLowerInvariant()
+    if (@($script:CatalogHosts | Where-Object { $hostName -eq $_ -or $hostName.EndsWith('.' + $_) }).Count -eq 0) { return $null }
+    $builder = New-Object UriBuilder $uri
+    $builder.Scheme = 'https'
+    $builder.Port = -1
+    return $builder.Uri.AbsoluteUri
+}
+
 function Test-LunqCatalogTitle {
     # Подходит ли название обновления к цели: все слова Include, выпуск, архитектура и ни одного Exclude.
     param([Parameter(Mandatory)][string]$Title, [Parameter(Mandatory)]$Target)
@@ -145,10 +163,11 @@ function Get-LunqCatalogFolder {
 
 function Test-LunqFileSha1 {
     # Каталог Microsoft даёт для файлов только SHA-1: другой суммы сверить не с чем. Это проверка
-    # целостности скачанного файла, а подпись Microsoft на .msu и .cab проверяет сам DISM.
+    # целостности скачанного файла, а подпись Microsoft на .msu проверяет DISM, на Setup Dynamic
+    # Update сам скрипт перед распаковкой. Без суммы файл проверенным не считается.
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingBrokenHashAlgorithms', '', Justification = 'The catalog publishes SHA-1 only')]
     param([Parameter(Mandatory)][string]$Path, [string]$Sha1)
-    if (-not $Sha1) { return $true }
+    if (-not $Sha1) { return $false }
     return ((Get-FileHash -LiteralPath $Path -Algorithm SHA1).Hash -eq $Sha1.ToUpperInvariant())
 }
 
@@ -164,15 +183,26 @@ function Save-LunqCatalogUpdates {
         [switch]$WithDynamic
     )
     $kindKeys = @{ Update = 'Catalog.KindUpdate'; DotNet = 'Catalog.KindDotNet'; SafeOS = 'Catalog.KindSafeOS'; Setup = 'Catalog.KindSetup' }
+    # Поиск отдаёт одну страницу (25 строк), и свежее обновление могло на неё не попасть. Поэтому
+    # сначала ищутся обновления этого месяца (их названия начинаются с 2026-10), потом прошлого
+    # (в начале месяца выходят только предварительные), и только потом без месяца.
+    $now = Get-Date
+    $culture = [Globalization.CultureInfo]::InvariantCulture
+    $months = @($now.ToString('yyyy-MM', $culture), $now.AddMonths(-1).ToString('yyyy-MM', $culture), '')
     $found = New-Object System.Collections.Generic.List[object]
     foreach ($target in (Get-LunqCatalogTargets -Release $Release -Architecture $Architecture -WithDynamic:$WithDynamic)) {
         $what = Get-LunqText $kindKeys[$target.Kind]
         Write-Info (Get-LunqText 'Catalog.Searching' $what)
-        try {
-            $html = Invoke-LunqWebRequest -Uri ('{0}/Search.aspx?q={1}' -f $script:CatalogBase, [uri]::EscapeDataString($target.Query))
+        $pick = $null
+        foreach ($month in $months) {
+            $query = ('{0} {1}' -f $month, $target.Query).Trim()
+            try {
+                $html = Invoke-LunqWebRequest -Uri ('{0}/Search.aspx?q={1}' -f $script:CatalogBase, [uri]::EscapeDataString($query))
+            }
+            catch { throw (Get-LunqText 'Catalog.Unreachable' $_.Exception.Message) }
+            $pick = Select-LunqCatalogUpdate -Rows (ConvertFrom-LunqCatalogSearch $html) -Target $target
+            if ($pick) { break }
         }
-        catch { throw (Get-LunqText 'Catalog.Unreachable' $_.Exception.Message) }
-        $pick = Select-LunqCatalogUpdate -Rows (ConvertFrom-LunqCatalogSearch $html) -Target $target
         if (-not $pick) {
             if ($target.Required) { throw (Get-LunqText 'Catalog.NothingFound' $what $Release $target.Arch) }
             Write-Warning (Get-LunqText 'Catalog.NotFoundOptional' $what)
@@ -188,6 +218,13 @@ function Save-LunqCatalogUpdates {
             if ($target.Required) { throw (Get-LunqText 'Catalog.NoLinks' $pick.Title) }
             Write-Warning (Get-LunqText 'Catalog.NoLinks' $pick.Title)
             continue
+        }
+        # Проверяется до скачивания: без суммы файл нечем проверить, а чужая ссылка значит подмену.
+        foreach ($file in $files) {
+            if (-not $file.Sha1) { throw (Get-LunqText 'Catalog.NoHash' $file.Name) }
+            $url = ConvertTo-LunqCatalogUrl -Url $file.Url
+            if (-not $url) { throw (Get-LunqText 'Catalog.BadUrl' $file.Name $file.Url) }
+            $file.Url = $url
         }
         $found.Add([pscustomobject]@{ Kind = $target.Kind; Title = $pick.Title; Date = $pick.Date; Files = $files })
     }

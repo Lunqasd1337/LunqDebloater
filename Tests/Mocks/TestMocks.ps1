@@ -161,6 +161,13 @@ function Add-LunqAppxBack {
     Write-Host "    [mock] register $PackageFamilyName"
 }
 
+# Подпись Microsoft: у файлов-пустышек её нет, поэтому неподписанным считается только файл со словом unsigned.
+function Get-LunqSignatureError {
+    param([Parameter(Mandatory)][string]$Path)
+    if ((Get-Content -LiteralPath $Path -Raw) -match 'unsigned') { return 'NotSigned' }
+    return $null
+}
+
 # Каталог Центра обновления: страницы поиска и окна скачивания строятся здесь же по запросу,
 # а скачанный файл содержит текст, контрольная сумма которого стоит в окне скачивания.
 function Invoke-LunqWebRequest {

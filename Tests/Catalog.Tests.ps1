@@ -70,6 +70,18 @@ Describe 'Разбор страниц каталога' {
             $files[1].Sha1 | Should -Be 'aabbccddeeff00112233445566778899aabbccdd'
         }
     }
+
+    It 'скачиваются только файлы с серверов загрузки Microsoft, http переводится на https' {
+        InModuleScope LunqDebloater {
+            ConvertTo-LunqCatalogUrl 'https://catalog.sf.dl.delivery.mp.microsoft.com/files/a.msu' | Should -Be 'https://catalog.sf.dl.delivery.mp.microsoft.com/files/a.msu'
+            ConvertTo-LunqCatalogUrl 'http://download.windowsupdate.com/d/msdownload/a.cab' | Should -Be 'https://download.windowsupdate.com/d/msdownload/a.cab'
+            ConvertTo-LunqCatalogUrl 'https://evil.example/a.msu' | Should -BeNullOrEmpty
+            ConvertTo-LunqCatalogUrl 'https://windowsupdate.com.evil.example/a.msu' | Should -BeNullOrEmpty
+            ConvertTo-LunqCatalogUrl 'https://notwindowsupdate.com/a.msu' | Should -BeNullOrEmpty
+            ConvertTo-LunqCatalogUrl 'ftp://download.windowsupdate.com/a.msu' | Should -BeNullOrEmpty
+            ConvertTo-LunqCatalogUrl 'не ссылка' | Should -BeNullOrEmpty
+        }
+    }
 }
 
 Describe 'Выбор обновления' {
@@ -199,6 +211,48 @@ Describe 'Save-LunqCatalogUpdates' {
             { Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest } | Should -Throw '*не совпадает с контрольной суммой*'
         }
         @(Get-ChildItem -LiteralPath $dest -Recurse -File).Count | Should -Be 0
+    }
+
+    It 'сначала ищутся обновления этого месяца, потом прошлого: свежее не теряется за первой страницей' {
+        # В начале ноября в каталоге только предварительное обновление за ноябрь, а октябрьское
+        # без месяца в запросе не попало бы на первую страницу.
+        InModuleScope LunqDebloater -Parameters @{ Dest = (Join-Path $TestDrive 'cat6') } {
+            param($Dest)
+            Mock Get-Date { [datetime]'2026-11-03' }
+            $script:Queries = New-Object System.Collections.Generic.List[string]
+            Mock Invoke-LunqWebRequest {
+                if ($OutFile) { [IO.File]::WriteAllText($OutFile, 'update windows11.0-kb5090000-x64.msu'); return }
+                if ($Uri -like '*Search.aspx*') {
+                    $q = [uri]::UnescapeDataString(($Uri -split 'q=')[1])
+                    $script:Queries.Add($q)
+                    if ($q -like '2026-11 *') { return (New-LunqFakeCatalogPage @(@{ Id = '00000000-0000-0000-0000-000000000009'; Title = '2026-11 Cumulative Update Preview for Windows 11, version 26H2 for x64-based Systems (KB5099999) (26300.7100)'; Date = '11/2/2026'; Size = 1 })) }
+                    if ($q -like '2026-10 *') { return (New-LunqFakeCatalogPage @(@{ Id = '00000000-0000-0000-0000-000000000001'; Title = '2026-10 Cumulative Update for Windows 11, version 26H2 for x64-based Systems (KB5090000) (26300.7000)'; Date = '10/14/2026'; Size = 1 })) }
+                    return (New-LunqFakeCatalogPage @(@{ Id = '00000000-0000-0000-0000-000000000007'; Title = '2025-01 Cumulative Update for Windows 11, version 26H2 for x64-based Systems (KB5050000) (26300.100)'; Date = '1/14/2025'; Size = 1 }))
+                }
+                return (New-LunqFakeDownloadDialog -Name 'windows11.0-kb5090000-x64.msu' -Content 'update windows11.0-kb5090000-x64.msu')
+            }
+            $found = @(Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest)
+            $found[0].Title | Should -Match 'KB5090000'
+            $script:Queries[0] | Should -Be '2026-11 Cumulative Update Windows 11 26H2 x64'
+            $script:Queries[1] | Should -Be '2026-10 Cumulative Update Windows 11 26H2 x64'
+        }
+    }
+
+    It 'без контрольной суммы или со ссылкой не на Microsoft файл не скачивается' {
+        InModuleScope LunqDebloater -Parameters @{ Dest = (Join-Path $TestDrive 'cat7') } {
+            param($Dest)
+            $script:Dialog = "downloadInformation[0].files[0].url = 'https://catalog.sf.dl.delivery.mp.microsoft.com/files/windows11.0-kb5090000-x64.msu';"
+            Mock Invoke-LunqWebRequest {
+                $script:WebCalls.Add("$Method $Uri")
+                if ($Uri -like '*Search.aspx*') { return (New-LunqFakeCatalogPage @(@{ Id = '00000000-0000-0000-0000-000000000001'; Title = '2026-10 Cumulative Update for Windows 11, version 26H2 for x64-based Systems (KB5090000) (26300.7000)'; Date = '10/14/2026'; Size = 1 })) }
+                if ($OutFile) { throw 'download' }
+                return $script:Dialog
+            }
+            { Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest } | Should -Throw '*нет контрольной суммы для windows11.0-kb5090000-x64.msu*'
+            $script:Dialog = "downloadInformation[0].files[0].url = 'https://evil.example/windows11.0-kb5090000-x64_aabbccddeeff00112233445566778899aabbccdd.msu';"
+            { Save-LunqCatalogUpdates -Release '26H2' -Architecture 'amd64' -Destination $Dest } | Should -Throw '*не на серверы загрузки Microsoft (https://evil.example/*'
+            @($script:WebCalls | Where-Object { $_ -like '*files/*' -or $_ -like '*evil*' }).Count | Should -Be 0
+        }
     }
 
     It 'каталог не отвечает: понятная ошибка с советом скачать вручную' {
