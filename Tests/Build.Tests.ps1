@@ -467,11 +467,11 @@ Describe 'Рецепт и отчёт' {
         finally { Exit-LunqTestEnvironment }
         $first.Error | Should -BeNullOrEmpty
         $first.Output | Should -Match 'Рецепт для повтора сборки: .*Win11_Lunq\.lunq\.json'
-        $recipe = Get-Content -LiteralPath $recipePath -Raw | ConvertFrom-Json
+        $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Iso.Sha256 | Should -Be (Get-FileHash -LiteralPath $t.Iso -Algorithm SHA256).Hash.ToLowerInvariant()
         $recipe.Steps.SkipRegistry | Should -BeTrue
         @($recipe.Updates.Files).Count | Should -Be 3
-        Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.html') -Raw | Should -Match 'Отчёт о сборке'
+        Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.html') -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
 
         $second.Error | Should -BeNullOrEmpty
         $second.Output | Should -Match 'Рецепт: .*Win11_Lunq\.lunq\.json'
@@ -563,7 +563,7 @@ Describe 'Свежие обновления из каталога' {
         $first.Output | Should -Match 'Обновления из каталога готовы: 4 шт\.'
         $first.Output | Should -Match 'add package windows11\.0-kb5090000-x64\.msu'
         $first.Output | Should -Match 'add package windows11\.0-kb5090002-x64\.cab'
-        $recipe = Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.json') -Raw | ConvertFrom-Json
+        $recipe = Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Updates.Download | Should -BeTrue
 
         $second.Error | Should -BeNullOrEmpty
@@ -620,9 +620,9 @@ Describe 'Этот компьютер без ISO и откат' {
         try {
             $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'ads,telemetry'; Force = $true }
             $restorePath = Join-Path $root 'Windows\LunqDebloater\Restore.json'
-            $saved = Get-Content -LiteralPath $restorePath -Raw | ConvertFrom-Json
+            $saved = Get-Content -LiteralPath $restorePath -Raw -Encoding UTF8 | ConvertFrom-Json
             $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Category = 'ads'; Force = $true }
-            $left = Get-Content -LiteralPath $restorePath -Raw | ConvertFrom-Json
+            $left = Get-Content -LiteralPath $restorePath -Raw -Encoding UTF8 | ConvertFrom-Json
             $again = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
@@ -659,7 +659,7 @@ Describe 'Этот компьютер без ISO и откат' {
         $online.Output | Should -Match 'remove provisioned Microsoft\.BingNews_1\.0_x64 online=True'
         $restore.Output | Should -Match 'ms-windows-store://pdp/\?PFN=Microsoft\.BingNews_'
         # Приложение осталось в файле отката: его можно вернуть следующим запуском.
-        (Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw) | Should -Match 'Microsoft\.BingNews'
+        (Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8) | Should -Match 'Microsoft\.BingNews'
     }
 
     It '-Online и -Restore вместе не запускаются, -Restore без файла говорит, что возвращать нечего' {
@@ -672,7 +672,7 @@ Describe 'Этот компьютер без ISO и откат' {
     It 'сборка ISO кладёт данные для отката в образ' {
         $run = Start-TestBuild -Parameters @{ SkipUpdates = $true; SkipDrivers = $true }
         $run.Error | Should -BeNullOrEmpty
-        $json = Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\LunqDebloater\Restore.json') -Raw | ConvertFrom-Json
+        $json = Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $json.Source | Should -Be 'Image'
         @($json.Categories).Count | Should -BeGreaterThan 0
     }

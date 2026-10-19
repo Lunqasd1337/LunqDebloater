@@ -33,7 +33,7 @@ Describe 'Запись данных для отката' {
             Add-LunqRestoreItem -Restore $data -Kind Appx -Name 'Unknown.App'
             Add-LunqRestoreRegistry -Restore $data -Category 'news' -Entry ([pscustomobject]@{ Hive = 'SOFTWARE'; Path = 'Policies\Microsoft\Dsh'; Name = 'AllowNewsAndInterests'; Action = 'DeleteValue' })
             Save-LunqRestoreData -Restore $data -Path $Path
-            $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+            $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
             $json.Kind | Should -Be 'LunqDebloaterRestore'
             $json.Source | Should -Be 'Online'
             @($json.Categories | ForEach-Object { $_.Id }) | Should -Be @('news', 'tools', 'profile')

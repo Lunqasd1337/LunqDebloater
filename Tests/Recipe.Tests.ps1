@@ -51,7 +51,7 @@ Describe 'Запись и чтение рецепта' {
             Save-LunqRecipe -Recipe $recipe -Path $Path
             $script:SavedProfile = $lunqProfile
         }
-        $script:Json = Get-Content -LiteralPath $script:RecipePath -Raw | ConvertFrom-Json
+        $script:Json = Get-Content -LiteralPath $script:RecipePath -Raw -Encoding UTF8 | ConvertFrom-Json
     }
 
     It 'в рецепте исходный ISO с SHA-256, редакция и выбранные шаги' {
@@ -68,7 +68,7 @@ Describe 'Запись и чтение рецепта' {
     }
 
     It 'в рецепте профиль целиком и только включённые категории' {
-        $source = Get-Content -LiteralPath $script:T.Profile -Raw | ConvertFrom-Json
+        $source = Get-Content -LiteralPath $script:T.Profile -Raw -Encoding UTF8 | ConvertFrom-Json
         @($script:Json.Profile.Content.Categories).Count | Should -Be @($source.Categories).Count
         $first = @($source.Categories)[0].Id
         @($script:Json.Categories) | Should -Not -Contain $first
