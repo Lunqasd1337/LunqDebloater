@@ -1,0 +1,12 @@
+# Actions в workflows закреплены на SHA коммита, а тег записан в комментарии. Без этой проверки
+# закреплённые версии устаревали бы молча: Dependabot раз в месяц предлагает PR с новым SHA и тегом.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - '*'

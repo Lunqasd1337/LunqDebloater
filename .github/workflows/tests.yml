@@ -20,7 +20,7 @@ jobs:
     # Зависший шаг иначе держал бы раннер до шестичасового лимита GitHub.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Образ раннера обычно уже содержит модули: установка только при их отсутствии экономит
       # минуту-две. Верхняя граница версии не даёт новому выпуску сделать CI красным без изменений в коде.
       - name: Install PSScriptAnalyzer
@@ -60,7 +60,7 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Pester
         run: |
           $have = Get-Module -ListAvailable Pester | Where-Object { $_.Version -ge [version]'5.5.0' -and $_.Version -lt [version]'6.0' }
@@ -77,7 +77,7 @@ jobs:
           Invoke-Pester -Configuration $config
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-results-${{ matrix.os }}-${{ matrix.shell }}
           path: TestResults.xml
