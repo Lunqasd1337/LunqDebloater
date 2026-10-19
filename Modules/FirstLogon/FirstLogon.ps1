@@ -15,8 +15,13 @@ $scriptsDoneFile = Join-Path $root 'scripts.done'
 $uninstallDir = Join-Path $root 'Uninstall'
 $uninstallDoneFile = Join-Path $root 'uninstall.done'
 $attemptsFile = Join-Path $root 'attempts.txt'
+$scriptsStartedFile = Join-Path $root 'scripts.started'
+$uninstallStartedFile = Join-Path $root 'uninstall.started'
 $taskName = 'LunqFirstLogon'
 $maxAttempts = 5
+# Скрипт, который столько раз начинался и не дошёл до конца (перезагрузил компьютер или завершил
+# процесс), больше не запускается: иначе он повторялся бы при каждом входе.
+$maxStarts = 2
 
 # Тексты на двух языках: скрипт работает в образе без модуля LunqDebloater и его таблиц строк.
 # Язык записан при сборке в Language.txt рядом со скриптом; без него берётся язык системы.
@@ -38,6 +43,8 @@ $texts = @{
         ScriptExitCode  = '{0} завершился с кодом {1}'
         ScriptError     = 'Ошибка в {0}: {1}'
         ScriptsLater    = 'Ваши скрипты ({0}) выполнятся после установки программ, при следующем входе.'
+        Interrupted     = '{0} уже {1} раза начинался и не дошёл до конца (например, перезагрузил компьютер), пропускаю.'
+        AttemptsOver    = 'Первичная настройка не закончилась за {0} попыток и больше не повторяется. Что не получилось, видно в логе прошлых попыток.'
         UninstallHeader = '==> Удаление программ ({0})'
         UninstallFailed = 'Не удалось удалить {0} (код {1})'
         UninstallError  = 'Ошибка при удалении {0}: {1}'
@@ -71,6 +78,8 @@ $texts = @{
         ScriptExitCode  = '{0} exited with code {1}'
         ScriptError     = 'Error in {0}: {1}'
         ScriptsLater    = 'Your scripts ({0}) will run after the apps are installed, at the next sign-in.'
+        Interrupted     = '{0} was started {1} times and never finished (for example, it restarted the computer), skipping.'
+        AttemptsOver    = 'Initial setup did not finish in {0} attempts and will not run again. The log of the previous attempts shows what failed.'
         UninstallHeader = '==> Uninstalling programs ({0})'
         UninstallFailed = 'Could not uninstall {0} (code {1})'
         UninstallError  = 'Error while uninstalling {0}: {1}'
@@ -211,6 +220,43 @@ function Read-Lines([string]$Path) {
     return @(Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
+# Отметка «начат» ставится до запуска, «выполнен» после: по ним видно, что запуск не дошёл до конца.
+function Test-Interrupted([string]$StartedFile, [string]$Name) {
+    return @(Read-Lines $StartedFile | Where-Object { $_ -eq $Name }).Count -ge $maxStarts
+}
+
+function Remove-Leftovers {
+    # Всё сделано или попытки кончились: задание больше не нужно.
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    # В скриптах и файлах рядом с ними могут быть пароли и ключи, поэтому их копии удаляются.
+    # Apps.txt и лог остаются. unattend.xml тоже удаляется, чтобы его не подхватил Sysprep.
+    Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $uninstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
+    # можно открыть без прав администратора.
+    try {
+        $acl = Get-Acl -LiteralPath $userDir -ErrorAction Stop
+        $acl.SetAccessRuleProtection($false, $false)
+        Set-Acl -LiteralPath $userDir -AclObject $acl -ErrorAction Stop
+    }
+    catch { }   # права не вернуть: список доступен администраторам
+    $unattend = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
+    if ((Test-Path -LiteralPath $unattend) -and (Select-String -LiteralPath $unattend -SimpleMatch 'Created by LunqDebloater' -Quiet)) {
+        Remove-Item -LiteralPath $unattend -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Попытки кончились, а задание осталось: последняя попытка не дошла до конца (например, её прервала
+# перезагрузка). Работа больше не повторяется, остаётся только убрать за собой.
+if ($attempt -gt $maxAttempts) {
+    Write-Line (Get-Text 'AttemptsOver' $maxAttempts) 'Yellow'
+    Remove-Leftovers
+    Write-Line (Get-Text 'LogPath' $log)
+    Stop-Transcript | Out-Null
+    return
+}
+
 # Задание на следующий вход ставится сразу, до работы: если окно закроют или компьютер
 # выключится на середине, недоделанное продолжится при следующем входе.
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -297,6 +343,13 @@ elseif ($uninstallTodo.Count -gt 0) {
     $powershell = (Get-Process -Id $PID).Path
     foreach ($program in $uninstallTodo) {
         Write-Line $program.Title
+        if (Test-Interrupted $uninstallStartedFile $program.Name) {
+            Write-Line (Get-Text 'Interrupted' $program.Title $maxStarts) 'Yellow'
+            $failed += $program.Title
+            Add-Content -LiteralPath $uninstallDoneFile -Value $program.Name -Encoding UTF8
+            continue
+        }
+        Add-Content -LiteralPath $uninstallStartedFile -Value $program.Name -Encoding UTF8
         $global:LASTEXITCODE = 0
         try {
             $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $uninstallDir $program.Script)) + @($program.Arguments)
@@ -313,7 +366,8 @@ elseif ($uninstallTodo.Count -gt 0) {
 }
 
 # Каждый скрипт отмечается выполненным сразу после завершения: скрипт с ошибкой повторно
-# не запускается, а не дошедшие до конца (окно закрыли) выполнятся при следующем входе.
+# не запускается, а не дошедшие до конца (окно закрыли) выполнятся при следующем входе, но
+# не больше двух раз.
 $doneScripts = @(Read-Lines $scriptsDoneFile)
 $scripts = @(Get-ChildItem -LiteralPath $userDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -eq '.ps1' -and $doneScripts -notcontains $_.Name } | Sort-Object Name)
@@ -329,6 +383,13 @@ elseif ($scripts.Count -gt 0) {
     Push-Location $userDir
     foreach ($userScript in $scripts) {
         Write-Line $userScript.Name
+        if (Test-Interrupted $scriptsStartedFile $userScript.Name) {
+            Write-Line (Get-Text 'Interrupted' $userScript.Name $maxStarts) 'Yellow'
+            $failed += $userScript.Name
+            Add-Content -LiteralPath $scriptsDoneFile -Value $userScript.Name -Encoding UTF8
+            continue
+        }
+        Add-Content -LiteralPath $scriptsStartedFile -Value $userScript.Name -Encoding UTF8
         # Неудачей считается и исключение, и ненулевой код выхода (exit 1 в скрипте).
         $global:LASTEXITCODE = 0
         try {
@@ -348,27 +409,9 @@ if ($appsPending -and -not $finalRun) {
     Write-Line (Get-Text 'AppsNextLogon') 'Yellow'
 }
 else {
-    # Всё сделано или попытки кончились: задание больше не нужно.
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
     if ($appsPending -and $lastAttempt) { Write-Line (Get-Text 'AppsGaveUp' $maxAttempts $appsFile) 'Yellow' }
     elseif ($appsPending) { Write-Line (Get-Text 'AppsNoRetry' $appsFile) 'Yellow' }
-    # В скриптах и файлах рядом с ними могут быть пароли и ключи, поэтому их копии удаляются.
-    # Apps.txt и лог остаются. unattend.xml тоже удаляется, чтобы его не подхватил Sysprep.
-    Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Apps.txt' } |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $uninstallDir -Recurse -Force -ErrorAction SilentlyContinue
-    # Остался только Apps.txt, секретов в нём нет: права снова наследуются от Windows, и список
-    # можно открыть без прав администратора.
-    try {
-        $acl = Get-Acl -LiteralPath $userDir -ErrorAction Stop
-        $acl.SetAccessRuleProtection($false, $false)
-        Set-Acl -LiteralPath $userDir -AclObject $acl -ErrorAction Stop
-    }
-    catch { }   # права не вернуть: список доступен администраторам
-    $unattend = Join-Path $env:WINDIR 'System32\Sysprep\unattend.xml'
-    if ((Test-Path -LiteralPath $unattend) -and (Select-String -LiteralPath $unattend -SimpleMatch 'Created by LunqDebloater' -Quiet)) {
-        Remove-Item -LiteralPath $unattend -Force -ErrorAction SilentlyContinue
-    }
+    Remove-Leftovers
 }
 
 Write-Host ''

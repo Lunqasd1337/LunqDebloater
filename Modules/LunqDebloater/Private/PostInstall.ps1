@@ -95,6 +95,9 @@ function Install-LunqFirstLogon {
     $target = Join-Path $MountPath 'Windows\Setup\Scripts\Lunq'
     $userTarget = Join-Path $target 'User'
     New-Item -ItemType Directory -Path $userTarget -Force | Out-Null
+    # Рядом со скриптами могут лежать пароли и ключи. Папка закрывается уже в образе, до копирования:
+    # первый вход закрывает её только после согласия в UAC, а без него она осталась бы открытой всем.
+    Set-LunqAdminOnlyAccess -Path $userTarget
     if ($FirstLogon.Apps.Count -gt 0) {
         Copy-Item -LiteralPath $FirstLogon.AppsPath -Destination (Join-Path $userTarget 'Apps.txt') -Force
     }
@@ -116,6 +119,7 @@ function Install-LunqFirstLogon {
         # Профили с паролями открытым текстом: скрипт первого входа добавит их и сразу удалит.
         $wifiTarget = Join-Path $target 'Wifi'
         New-Item -ItemType Directory -Path $wifiTarget -Force | Out-Null
+        Set-LunqAdminOnlyAccess -Path $wifiTarget
         foreach ($file in @(Get-ChildItem -LiteralPath $FirstLogon.WifiPath -Filter '*.xml' -File)) {
             Copy-Item -LiteralPath $file.FullName -Destination $wifiTarget -Force
         }
