@@ -106,7 +106,8 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
 | Save | With `-BootCA2023` copies the `_EX` boot files to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
 | Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim` (image 2), services it and copies `setup.exe`, `setuphost.exe`, the UEFI boot manager and `efisys.bin` out of it | there is something for Windows Setup |
-| Recompress | Recompresses `install.wim` | always |
+| Recompress | Recompresses `install.wim`; without `-SplitWim` warns if it is over 4 GB | always |
+| Split | Splits `install.wim` into 3800 MB `install.swm` parts and deletes it | `-SplitWim` |
 | Iso | With `-BootCA2023` puts the Windows UEFI CA 2023 boot manager from `WorkDir\bootex` on the ISO, then builds the bootable ISO with `oscdimg` | always |
 
 The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`. The Windows UEFI CA 2023 boot manager is taken from `install.wim` before it is dismounted, but goes onto the ISO only in the Iso step: otherwise the Setup step would replace it with the boot manager from `boot.wim`.

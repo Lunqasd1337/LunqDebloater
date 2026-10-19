@@ -451,6 +451,20 @@ Describe 'Ошибки и предупреждения' {
         Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Not -Match '_EX'
     }
 
+    It '-SplitWim: на ISO части install.swm вместо install.wim, лишний шаг только с параметром' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; SplitWim = $true }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 12
+        $run.Output | Should -Match 'install\.wim:\s+делится на части по 3800 МБ'
+        $run.Output | Should -Match 'Разделение install\.wim: .+ разделён на части по 3800 МБ: 2 шт\.'
+        $sources = Join-Path $script:Test.WorkDir 'iso\sources'
+        Test-Path -LiteralPath (Join-Path $sources 'install.wim') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $sources 'install.swm') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $sources 'install2.swm') | Should -BeTrue
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Media.SplitWim | Should -BeTrue
+    }
+
     It 'рабочая папка с пробелом: oscdimg получает пути без пробелов' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
             param($t)

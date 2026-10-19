@@ -153,6 +153,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-HostApps` | Add the apps of this computer (`winget export`) to `Apps.txt` |
 | `-HostWifi` | Carry over the Wi-Fi networks of this computer with their passwords (see "A copy of this computer") |
 | `-BootCA2023` | Put the boot manager signed with Windows UEFI CA 2023 on the ISO. Needs a cumulative update, turns on `-UpdatesToSetup` (see "Boot manager and Secure Boot") |
+| `-SplitWim` | Split `install.wim` into 3800 MB `install.swm` parts so the ISO can be written to a FAT32 USB drive by copying files (see "FAT32 USB drive") |
 
 ## How the process works
 
@@ -221,6 +222,13 @@ Microsoft is changing the certificate that signs the Windows boot manager (the B
 With `-BootCA2023` (the last item in the summary) the ISO gets the boot manager signed with the new certificate: the `_EX` files from the updated image (`Windows\Boot\EFI_EX`, `DVD_EX` and `Fonts_EX`) replace `efi\boot\bootx64.efi`, `bootmgr.efi`, `efisys.bin` and the boot fonts. This needs a cumulative update in the updates folder or `-DownloadUpdates`, and Windows Setup is updated along with the system, as Microsoft requires. If the image has no `_EX` files, the ISO keeps the regular boot manager and the summary warns about it.
 
 Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks the Windows UEFI CA 2023 certificate: usually computers from before 2024 without recent firmware and Windows updates. If unsure, keep the regular boot manager.
+
+## FAT32 USB drive
+
+A USB drive for UEFI boot is usually formatted as FAT32, and FAT32 cannot hold files over 4 GB. With recent updates and drivers `install.wim` can be bigger, and then the build summary warns about it. There are two ways out:
+
+- write the ISO with [Rufus](https://rufus.ie): it handles a big `install.wim` itself;
+- build the ISO with `-SplitWim` (the last item in the summary): `install.wim` is split into 3800 MB parts `install.swm`, `install2.swm` and so on, and the ISO can simply be copied to a FAT32 drive. Windows Setup joins the parts itself.
 
 ## After installation
 

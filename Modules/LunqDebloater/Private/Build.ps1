@@ -164,7 +164,17 @@ function Get-LunqBuildSteps {
         @{
             Name = 'Recompress'; When = $true
             Title = Get-LunqText 'Main.StepRecompress'; Hint = Get-LunqText 'Main.StepRecompressHint'
-            Run = { param($c) Export-SingleEdition -SourceImage $c.WimPath -SourceIndex 1 -DestinationImage $c.WimPath }
+            Run = {
+                param($c)
+                Export-SingleEdition -SourceImage $c.WimPath -SourceIndex 1 -DestinationImage $c.WimPath
+                # Без -SplitWim итог предупреждает, если образ не поместится на флешку FAT32.
+                if (-not $c.SplitWim) { Test-LunqWimSize -WimPath $c.WimPath }
+            }
+        },
+        @{
+            Name = 'Split'; When = [bool]$c.SplitWim
+            Title = Get-LunqText 'Main.StepSplit'; Hint = Get-LunqText 'Main.StepSplitHint'
+            Run = { param($c) Split-LunqWim -WimPath $c.WimPath }
         },
         @{
             Name = 'Iso'; When = $true

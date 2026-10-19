@@ -40,7 +40,7 @@ function New-LunqRecipe {
     foreach ($key in 'ProfilePath', 'ProfileOriginalPath', 'Profile', 'IsoPath', 'Index', 'EditionName', 'BuildText', 'OutputIso', 'Label', 'ConfigPath',
         'SkipAppx', 'SkipComponents', 'SkipRegistry', 'CleanupComponents', 'DownloadUpdates', 'UpdatesPath', 'UpdatesToSetup', 'Updates', 'SafeOS', 'SetupDU',
         'DriversPath', 'HostDrivers', 'DriversToSetup', 'Drivers', 'Apps', 'HostApps', 'Scripts', 'HostWifi', 'SetupAnswers', 'BypassRequirements', 'LocalAccount',
-        'BootCA2023') {
+        'BootCA2023', 'SplitWim') {
         if (-not $v.ContainsKey($key)) { $v[$key] = $null }
     }
     $profileContent = $null
@@ -71,7 +71,7 @@ function New-LunqRecipe {
         FirstLogon    = [ordered]@{ Apps = @($v.Apps); AppsFromHost = [bool]$v.HostApps; Scripts = @($v.Scripts | ForEach-Object { $_.Name }); Wifi = [bool]$v.HostWifi }
         Unattend      = [ordered]@{ Enabled = [bool]$v.SetupAnswers; BypassRequirements = [bool]$v.BypassRequirements; LocalAccount = [bool]$v.LocalAccount }
         # Каким загрузчиком и как записан носитель. В рецептах до 1.13.0 этого поля нет.
-        Media         = [ordered]@{ BootCA2023 = [bool]$v.BootCA2023 }
+        Media         = [ordered]@{ BootCA2023 = [bool]$v.BootCA2023; SplitWim = [bool]$v.SplitWim }
     }
 }
 
@@ -153,6 +153,7 @@ function Get-LunqRecipeParameters {
     $values.BypassRequirements = [bool](Get-ConfigValue $r 'Unattend', 'BypassRequirements')
     $values.LocalAccount = [bool](Get-ConfigValue $r 'Unattend', 'LocalAccount')
     $values.BootCA2023 = [bool](Get-ConfigValue $r 'Media', 'BootCA2023')
+    $values.SplitWim = [bool](Get-ConfigValue $r 'Media', 'SplitWim')
     return $values
 }
 

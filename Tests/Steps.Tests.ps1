@@ -19,7 +19,7 @@ BeforeAll {
             IsoPath = 'C:\iso\Win11.iso'; IsoDir = 'iso'; WimPath = 'install.wim'; Index = 1; OutputIso = 'out.iso'; Oscdimg = 'oscdimg.exe'; Label = 'LUNQ_WIN11'
             Updates = @(); SafeOSUpdates = @(); SetupUpdates = @(); PEUpdates = @(); Drivers = @(); PEDrivers = @(); DriversPath = $null
             ServiceRecovery = $false; ServicePE = $false; FirstLogon = $null; SetupAnswers = $null; Architecture = 'amd64'; Config = $null
-            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; BootCA2023 = $false; Restore = $null
+            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; BootCA2023 = $false; SplitWim = $false; Restore = $null
             Profile = $null; ProfilePath = 'C:\Config\Profile.json'; EditionName = 'Windows 11 Pro'; BuildText = '26300.9457'
         }
         foreach ($key in $Values.Keys) { $context[$key] = $Values[$key] }

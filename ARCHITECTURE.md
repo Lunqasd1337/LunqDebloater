@@ -106,7 +106,8 @@ Tests\                       Тесты Pester и заглушки
 | Cleanup | Очищает хранилище компонентов (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
 | Save | С `-BootCA2023` копирует файлы загрузчика `_EX` в `WorkDir\bootex`, пишет отметку о сборке в реестр образа и данные для отката в `Windows\LunqDebloater\Restore.json`, сохраняет `install.wim` | всегда |
 | Setup | Распаковывает Setup DU в `sources`; если для `boot.wim` (образ 2) есть обновления или драйверы, обслуживает его и копирует из него `setup.exe`, `setuphost.exe`, загрузчик UEFI и `efisys.bin` | есть что ставить в установщик |
-| Recompress | Пересжимает `install.wim` | всегда |
+| Recompress | Пересжимает `install.wim`; без `-SplitWim` предупреждает, если он больше 4 ГБ | всегда |
+| Split | Делит `install.wim` на части `install.swm` по 3800 МБ и удаляет его | `-SplitWim` |
 | Iso | С `-BootCA2023` кладёт на ISO загрузчик Windows UEFI CA 2023 из `WorkDir\bootex`, затем собирает загрузочный ISO через `oscdimg` | всегда |
 
 Порядок важен: обновления ставятся до удаления компонентов, файл ответов и отметка о сборке пишутся до сохранения образа, а установщик обслуживается после, потому что он лежит в `WorkDir\iso`, а не внутри `install.wim`. Загрузчик Windows UEFI CA 2023 берётся из `install.wim` до его отключения, а на ISO попадает только на шаге Iso: иначе шаг Setup заменил бы его загрузчиком из `boot.wim`.

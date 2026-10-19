@@ -62,7 +62,8 @@ param(
     [switch]$HostDrivers,
     [switch]$HostApps,
     [switch]$HostWifi,
-    [switch]$BootCA2023
+    [switch]$BootCA2023,
+    [switch]$SplitWim
 )
 
 $ErrorActionPreference = 'Stop'
@@ -436,6 +437,7 @@ try {
             bypass         = [bool]$BypassRequirements
             localAccount   = [bool]$LocalAccount
             bootCA2023     = [bool]$BootCA2023
+            splitWim       = [bool]$SplitWim
         }
         $action = $null
         if ($interactive -and -not $listMode) {
@@ -461,6 +463,7 @@ try {
             if ($DownloadUpdates) { $UpdatesToSetup = [switch]$true }
             $CleanupComponents = [switch]$use.cleanup
             $BootCA2023 = [switch]$use.bootCA2023
+            $SplitWim = [switch]$use.splitWim
         }
         $useUpdates = $use.updates
         $useDrivers = $use.drivers
@@ -770,6 +773,7 @@ try {
     elseif ($config.Packages.Remove.Count -gt 0) { Write-Warning (Get-LunqText 'Main.PackagesWarning') }
     if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
     if ($CleanupComponents) { Write-Info (Get-LunqText 'Main.PlanCleanup') }
+    if ($SplitWim) { Write-Info (Get-LunqText 'Main.PlanSplitWim') }
     if ($BootCA2023) {
         Write-Info (Get-LunqText 'Main.PlanBootCA2023')
         Write-Warning (Get-LunqText 'Main.BootCA2023Warning')
@@ -823,6 +827,7 @@ try {
         SkipRegistry      = [bool]$SkipRegistry
         CleanupComponents = [bool]$CleanupComponents
         BootCA2023        = [bool]$BootCA2023
+        SplitWim          = [bool]$SplitWim
         Profile           = $lunqProfile
         ProfilePath       = $ProfilePath
         EditionName       = $editionName
@@ -858,7 +863,7 @@ try {
             DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
             Apps = $recipeApps; HostApps = $HostApps; Scripts = $(if ($firstLogon) { $firstLogon.Scripts } else { @() }); HostWifi = ($wifiNames.Count -gt 0)
             SetupAnswers = [bool]$setupAnswers; BypassRequirements = $useBypass -and [bool]$setupAnswers; LocalAccount = $useLocalAccount -and [bool]$setupAnswers
-            BootCA2023 = $BootCA2023
+            BootCA2023 = $BootCA2023; SplitWim = $SplitWim
         }
         Save-LunqRecipe -Recipe $newRecipe -Path $recipePath
         Write-LunqHtmlReport -Path $htmlPath -Results $results -LunqProfile $lunqProfile -StepTimes $state['StepTimes'] -Info @{
