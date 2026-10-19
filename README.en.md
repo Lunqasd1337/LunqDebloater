@@ -314,7 +314,7 @@ If the ISO is built to reinstall Windows on this same computer, the image can ta
 | Apps of this computer | `-HostApps` | Takes the app list with `winget export` and installs those apps at the first sign-in together with `Apps.txt`. Apps winget does not know are not in the list. `Config\Apps.txt` itself is not changed |
 | Wi-Fi networks of this computer | `-HostWifi` | Saves the Wi-Fi profiles (`netsh wlan export key=clear`) and adds them at the first sign-in, before the apps are installed |
 
-Wi-Fi passwords are stored in the ISO as plain text until Windows is installed and someone signs in: at the first sign-in the profiles are added and deleted from the disk right away. That is why this option is off by default, and such an ISO must not be given to anyone.
+Wi-Fi passwords are stored in the ISO as plain text until Windows is installed and someone signs in: at the first sign-in an added profile is deleted from the disk right away. A profile that could not be added (for example, the Wi-Fi driver is not installed yet) waits for the next sign-in in a folder only administrators can open and is deleted when the initial setup is finished. That is why this option is off by default, and such an ISO must not be given to anyone.
 
 ## Profile
 

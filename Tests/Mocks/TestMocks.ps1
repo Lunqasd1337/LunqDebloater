@@ -4,6 +4,10 @@
 
 function Test-Administrator { return -not $env:LUNQ_TEST_NOT_ADMIN }
 
+# Кто вошёл за экраном (LUNQ_TEST_CONSOLE_USER) и от чьего имени идёт скрипт.
+function Get-LunqConsoleUser { return [string]$env:LUNQ_TEST_CONSOLE_USER }
+function Get-LunqProcessUser { return 'PC\admin' }
+
 function Find-Oscdimg { [CmdletBinding()] param([string]$Path) return 'oscdimg.exe' }
 
 function Get-LunqHostBuild {

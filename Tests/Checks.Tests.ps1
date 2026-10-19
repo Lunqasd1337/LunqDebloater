@@ -210,6 +210,20 @@ Describe 'ISO, подключённый прошлым запуском' {
     }
 }
 
+Describe 'Get-LunqOtherConsoleUser' {
+    It 'другой пользователь за экраном находится, тот же (в любом регистре) и неизвестный нет' {
+        InModuleScope LunqDebloater {
+            Mock Get-LunqProcessUser { 'PC\Admin' }
+            Mock Get-LunqConsoleUser { 'PC\User' }
+            Get-LunqOtherConsoleUser | Should -Be 'PC\User'
+            Mock Get-LunqConsoleUser { 'pc\admin' }
+            Get-LunqOtherConsoleUser | Should -BeNullOrEmpty
+            Mock Get-LunqConsoleUser { '' }
+            Get-LunqOtherConsoleUser | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Remove-LunqWorkDir' {
     It 'удаляет папку целиком, а при занятом файле оставляет метку, и папка остаётся своей' {
         InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {

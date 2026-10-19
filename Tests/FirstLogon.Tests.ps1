@@ -31,7 +31,13 @@ public static class FakeWinget {
         }
         int i = Array.IndexOf(args, "--id"); string id = i >= 0 ? args[i + 1] : "";
         File.AppendAllText(Path.Combine(root, "winget.log"), id + Environment.NewLine);
+        // hang.txt: установщик завис; reboot.txt: установлено, нужна перезагрузка (0x8A150109).
+        string hang = Path.Combine(root, "hang.txt");
+        if (File.Exists(hang) && File.ReadAllLines(hang).Contains(id)) System.Threading.Thread.Sleep(30000);
+        string reboot = Path.Combine(root, "reboot.txt");
+        if (File.Exists(reboot) && File.ReadAllLines(reboot).Contains(id)) return unchecked((int)0x8A150109);
         if (File.Exists(failing) && File.ReadAllLines(failing).Contains(id)) return 1;
+        Console.WriteLine("Successfully installed " + id);
         return 0;
     }
 }
@@ -45,7 +51,7 @@ public static class FakeWinget {
         if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать winget.exe: $compilerOutput" }
     }
     else {
-        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nif [ `"`$1`" = '--version' ]; then left=0; if [ -f `"`$root/notready.txt`" ]; then left=`$(cat `"`$root/notready.txt`"); fi; if [ `"`$left`" -gt 0 ]; then echo `$((left - 1)) > `"`$root/notready.txt`"; exit 1; fi; echo v1.0.0; exit 0; fi`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`nexit 0`n"
+        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nif [ `"`$1`" = '--version' ]; then left=0; if [ -f `"`$root/notready.txt`" ]; then left=`$(cat `"`$root/notready.txt`"); fi; if [ `"`$left`" -gt 0 ]; then echo `$((left - 1)) > `"`$root/notready.txt`"; exit 1; fi; echo v1.0.0; exit 0; fi`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`nif [ -f `"`$root/hang.txt`" ] && grep -qx `"`$id`" `"`$root/hang.txt`"; then sleep 30; fi`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`necho `"Successfully installed `$id`"`nexit 0`n"
         [IO.File]::WriteAllText($script:FakeWinget, $sh)
         & chmod +x $script:FakeWinget
     }
@@ -65,6 +71,9 @@ public static class FakeWinget {
         if (-not $text.Contains($check)) { throw 'FirstLogon.ps1: admin check not found, update the test' }
         $text = $text.Replace($check, 'if ($false) {')
         $text = $text.Replace('$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())', '')
+        # Зависшая установка прерывается через 3 секунды, а не через полчаса.
+        if (-not $text.Contains('$appTimeoutSeconds = 1800')) { throw 'FirstLogon.ps1: app timeout not found, update the test' }
+        $text = $text.Replace('$appTimeoutSeconds = 1800', '$appTimeoutSeconds = 3')
         [IO.File]::WriteAllText((Join-Path $lunq 'FirstLogon.ps1'), $text, (New-Object Text.UTF8Encoding($true)))
         [IO.File]::WriteAllText((Join-Path $lunq 'Language.txt'), $Language, (New-Object Text.UTF8Encoding($false)))
         if ($Apps.Count -gt 0) { Set-Content -LiteralPath (Join-Path $user 'Apps.txt') -Value $Apps -Encoding UTF8 }
@@ -226,6 +235,42 @@ Describe 'Скрипт первого входа' {
         $out | Should -Match 'Добавлено сетей: 0'
         Test-Path -LiteralPath $wifi | Should -BeFalse
         $out | Should -Match 'Установлено программ: 1'
+    }
+
+    It 'сеть не добавилась, а программы ещё ждут: файл сети остаётся закрытым до следующего входа' {
+        $t = New-FirstLogonTest -Apps @('7zip.7zip')
+        $wifi = Join-Path $t.Lunq 'Wifi'
+        New-Item -ItemType Directory -Path $wifi -Force | Out-Null
+        foreach ($name in 'Wi-Fi-Home', 'Wi-Fi-Office') { Set-Content -LiteralPath (Join-Path $wifi "$name.xml") -Value '<WLANProfile />' }
+        $out = Invoke-FirstLogon -Test $t -WifiFails -Offline
+        $out | Should -Match 'будут добавлены при следующем входе'
+        @(Get-ChildItem -LiteralPath $wifi -Filter '*.xml').Count | Should -Be 2
+        Test-Path -LiteralPath $t.Task | Should -BeTrue
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Добавлено сетей: 2'
+        Test-Path -LiteralPath $wifi | Should -BeFalse
+        Get-Lines $t.WingetLog | Should -Be @('7zip.7zip')
+    }
+
+    It 'зависшая установка прерывается, остальные программы ставятся, вывод winget виден' {
+        $t = New-FirstLogonTest -Apps @('Slow.App', '7zip.7zip')
+        Set-Content -LiteralPath (Join-Path $t.Root 'hang.txt') -Value 'Slow.App'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Установка Slow\.App не закончилась за \d+ минут и прервана'
+        $out | Should -Match 'Successfully installed 7zip\.7zip'
+        $out | Should -Match 'Установлено программ: 1'
+        Get-Lines (Join-Path $t.Lunq 'apps.installed') | Should -Be @('7zip.7zip')
+        # Программа осталась неустановленной: следующий вход попробует снова.
+        Test-Path -LiteralPath $t.Task | Should -BeTrue
+    }
+
+    It 'код «установлено, нужна перезагрузка» считается успехом' -Skip:(-not $script:OnWindows) {
+        # Код 0x8A150109 отрицательный, такой код выхода есть только у программ Windows.
+        $t = New-FirstLogonTest -Apps @('Reboot.App')
+        Set-Content -LiteralPath (Join-Path $t.Root 'reboot.txt') -Value 'Reboot.App'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'Установлено программ: 1'
+        Test-Path -LiteralPath $t.Task | Should -BeFalse
     }
 
     It 'по-английски, если в Language.txt записано en' {

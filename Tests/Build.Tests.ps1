@@ -721,6 +721,7 @@ Describe 'Этот компьютер без ISO и откат' {
         # ISO не нужен: ни монтирования, ни сборки ISO.
         $online.Output | Should -Not -Match '\[mock\] mount'
         $online.Output | Should -Match 'Шаг 4 из 5\. Внесение настроек реестра'
+        $online.Output | Should -Not -Match 'Скрипт запущен от имени'
         $online.Output | Should -Match '-Restore'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry', 'ads')
         $saved.Source | Should -Be 'Online'
@@ -741,6 +742,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $t = New-LunqTestApp -Root $root
         Enter-LunqTestEnvironment -Test $t
         try {
+            # Скрипт запущен от имени администратора, а в Windows вошёл другой пользователь.
+            $env:LUNQ_TEST_CONSOLE_USER = 'PC\user'
             $online = Invoke-LunqTestRun -Test $t -Parameters @{ Online = $true; Category = 'edge'; SkipAppx = $true; SkipComponents = $true; SkipRegistry = $true; Force = $true }
             $saved = Get-Content -LiteralPath (Join-Path $root 'Windows\LunqDebloater\Restore.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             $restore = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
@@ -749,6 +752,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $online.Error | Should -BeNullOrEmpty
         $online.Output | Should -Match 'Шаг 1 из 2\. Удаление программ'
         $online.Output | Should -Match 'Удаление программ: удалено 1, ошибок 0'
+        $online.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
+        $restore.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
         $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
         $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })

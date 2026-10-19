@@ -42,6 +42,8 @@
         'Get-LunqHostRegion',
         'Get-LunqHostWarning',
         'Get-LunqMountedPaths',
+        'Get-LunqOtherConsoleUser',
+        'Get-LunqProcessUser',
         'Get-LunqRecipeFiles',
         'Get-LunqRecipeParameters',
         'Get-LunqRecipePath',

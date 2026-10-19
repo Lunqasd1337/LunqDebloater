@@ -87,6 +87,9 @@ function Add-LunqRestoreRegistryKey {
     param([Parameter(Mandatory)]$Restore, [string]$Category, [Parameter(Mandatory)][string]$Hive, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Export)
     if (-not $Category) { $Category = 'profile' }
     $item = [pscustomobject]@{ Hive = $Hive; Path = $Path; Export = $Export }
+    # -Online запоминает ключ текущего пользователя отдельно (CurrentUser), а если его не было, не
+    # запоминает ничего. Тогда ключ профиля Default при откате не должен попадать и к нему.
+    if ($Restore.Source -eq 'Online' -and $Hive -eq 'DefaultUser') { $item | Add-Member -NotePropertyName NoCurrentUser -NotePropertyValue $true }
     if (Test-LunqRestoreHasItem -Restore $Restore -Kind 'RegistryKeys' -Item $item) { return }
     (Get-LunqRestoreCategory -Restore $Restore -Id $Category).RegistryKeys.Add($item)
 }
@@ -135,15 +138,39 @@ function Read-LunqRestoreData {
         return (Read-LunqRestoreData -Path $Path)
     }
     if ([string](Get-ConfigValue $json 'Kind') -ne 'LunqDebloaterRestore') { throw (Get-LunqText 'Restore.NotRestoreFile' $Path) }
-    $data = New-LunqRestoreData -Source ([string](Get-ConfigValue $json 'Source'))
+    if ([int](Get-ConfigValue $json 'FormatVersion') -gt 1) { throw (Get-LunqText 'Restore.NewerFormat' $Path (Get-ConfigValue $json 'LunqVersion')) }
+    $source = [string](Get-ConfigValue $json 'Source')
+    if ($source -ne 'Online') { $source = 'Image' }
+    $data = New-LunqRestoreData -Source $source
+    # Записи без нужных полей (файл правили вручную) пропускаются: из-за одной такой записи не
+    # должен обрываться весь откат.
+    $bad = 0
     foreach ($raw in (Get-ConfigList $json 'Categories')) {
+        if (-not [string](Get-ConfigValue $raw 'Id')) { $bad++; continue }
         $category = New-LunqRestoreCategory -Id ([string]$raw.Id) -Name (Get-ConfigValue $raw 'Name')
         foreach ($kind in @($script:RestoreKinds + 'Registry', 'RegistryKeys')) {
-            foreach ($item in (Get-ConfigList $raw $kind)) { $category.$kind.Add($item) }
+            foreach ($item in (Get-ConfigList $raw $kind)) {
+                if (Test-LunqRestoreItem -Kind $kind -Item $item) { $category.$kind.Add($item) } else { $bad++ }
+            }
         }
         $data.Categories.Add($category)
     }
+    if ($bad -gt 0) { Write-Warning (Get-LunqText 'Restore.BadItems' $Path $bad) }
     return $data
+}
+
+function Test-LunqRestoreItem {
+    # Есть ли у записи отката поля, без которых её не вернуть.
+    param([Parameter(Mandatory)][string]$Kind, $Item)
+    if ($Item -isnot [Management.Automation.PSCustomObject]) { return $false }
+    $fields = switch ($Kind) {
+        'Registry' { @('Hive', 'Path') }
+        'RegistryKeys' { @('Hive', 'Path', 'Export') }
+        default { @('Name') }
+    }
+    foreach ($field in $fields) { if (-not [string](Get-ConfigValue $Item $field)) { return $false } }
+    if ($Kind -eq 'Registry' -or $Kind -eq 'RegistryKeys') { return (@('SOFTWARE', 'SYSTEM', 'DefaultUser', 'CurrentUser') -contains [string]$Item.Hive) }
+    return $true
 }
 
 function Save-LunqRestoreData {
@@ -338,6 +365,14 @@ function Restore-LunqCategory {
 
     $keepUninstall = New-Object System.Collections.Generic.List[psobject]
     foreach ($program in $Category.Uninstall) {
+        # Программа, которую эта версия LunqDebloater не знает (файл от более новой версии): её не
+        # вернуть, но и остальной откат из-за неё не обрывается.
+        if ((Get-LunqUninstallNames) -notcontains $program.Name) {
+            Write-Warning (Get-LunqText 'Restore.UnknownProgram' $program.Name)
+            $result.Failed.Add([string]$program.Name)
+            $keepUninstall.Add($program)
+            continue
+        }
         $programTitle = Get-LunqUninstallTitle $program.Name
         Write-Info (Get-LunqText 'Restore.Uninstall' $programTitle)
         # Программу ставит обратно тот же скрипт, что удалял. Ему нужен интернет.
@@ -371,7 +406,9 @@ function Restore-LunqCategory {
     foreach ($key in $Category.RegistryKeys) {
         $label = '{0}\{1}' -f $key.Hive, $key.Path
         $ok = Import-LunqRegistryText -Text (ConvertTo-LunqImportText -Text $key.Export)
-        if ($ok -and $key.Hive -eq 'DefaultUser') { $ok = Import-LunqRegistryText -Text (ConvertTo-LunqImportText -Text $key.Export -ToCurrentUser) }
+        # Ключ профиля Default из образа достаётся и текущему пользователю: он создан из этого профиля.
+        # Ключ, удалённый -Online, у текущего пользователя возвращается своей записью CurrentUser.
+        if ($ok -and $key.Hive -eq 'DefaultUser' -and -not (Get-ConfigValue $key 'NoCurrentUser')) { $ok = Import-LunqRegistryText -Text (ConvertTo-LunqImportText -Text $key.Export -ToCurrentUser) }
         if ($ok) { $result.Done.Add($label) }
         else { $result.Failed.Add($label); $keepKeys.Add($key) }
     }

@@ -215,6 +215,7 @@
     'Main.RestoreFrom'           = 'What was removed and how it was: {0}'
     'Main.AskRestore'            = 'Bring back the selected categories?'
     'Main.PlanRestore'           = 'Restore data:     {0}'
+    'Main.OtherUser'             = 'The script runs as {0}, but {1} is signed in to Windows. Current user settings will change for {0}. To change them for {1}, run the script from that account.'
     'Main.OnlineDisclaimer'      = 'The changes apply to this computer right away. Each one is saved first and can be undone with -Restore, except apps removed from disk (those have to be installed from the Microsoft Store).'
     'Main.AskApplyOnline'        = 'Apply the profile to this computer?'
     'Main.HostAppsExporting'     = 'Collecting the apps of this computer (winget export)...'

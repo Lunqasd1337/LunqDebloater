@@ -260,6 +260,8 @@ try {
         if ($SkipCategory.Count -gt 0) { Disable-LunqCategories -LunqProfile $restoreProfile -Ids $SkipCategory }
         Write-Section (Get-LunqText 'Main.SectionRestore')
         Write-Info (Get-LunqText 'Main.RestoreFrom' $restorePath)
+        $otherUser = Get-LunqOtherConsoleUser
+        if ($otherUser) { Write-Warning (Get-LunqText 'Main.OtherUser' (Get-LunqProcessUser) $otherUser) }
         if ($interactive) { Select-LunqCategories -LunqProfile $restoreProfile }
         else { Write-CategoryList -LunqProfile $restoreProfile }
         $restoreIds = @($restoreProfile.Categories | Where-Object { $_.Enabled } | ForEach-Object { $_.Id })
@@ -336,6 +338,8 @@ try {
         if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
         Write-Info (Get-LunqText 'Main.PlanRestore' $restorePath)
         Write-Info (Get-LunqText 'Main.PlanLog' $lunqLog.Path)
+        $otherUser = Get-LunqOtherConsoleUser
+        if ($otherUser) { Write-Warning (Get-LunqText 'Main.OtherUser' (Get-LunqProcessUser) $otherUser) }
         if ($interactive) {
             Write-Info ''
             Write-Host (Get-LunqText 'Main.OnlineDisclaimer') -ForegroundColor Yellow
