@@ -547,6 +547,9 @@ Describe 'Рецепт и отчёт' {
             $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
             Remove-Item -LiteralPath $t.NativeLog -Force
             $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
+            $copy = Join-Path $root 'ProgramFiles\LunqDebloater-Schedule\Win11_Lunq'
+            $copied = @('LunqDebloater.ps1', 'Win11_Lunq.lunq.json', 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
+                Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
             $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
             $env:LUNQ_TEST_NO_TASK = '1'
             $none = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
@@ -561,6 +564,10 @@ Describe 'Рецепт и отчёт' {
         $calls[0] | Should -Match '^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\Win11_Lunq\|/XML\|'
         $calls[1] | Should -Match '^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\Win11_Lunq\|/F'
         $off.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq удалено'
+        # Задание запускает копию из закрытой папки, а -Schedule Off удаляет её вместе с заданием.
+        @($copied).Count | Should -Be 4
+        $on.Output | Should -Match 'Задание запускает копию LunqDebloater'
+        Test-Path -LiteralPath $copy | Should -BeFalse
         $none.Output | Should -Match 'Задания LunqDebloater\\Win11_Lunq нет, удалять нечего'
         $noRecipe.Output | Should -Match '-Schedule работает только с -Recipe'
     }

@@ -21,6 +21,9 @@ function Get-LunqDriveInfo {
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
 
+# Копии для заданий по расписанию: вместо Program Files папка теста.
+function Get-LunqScheduleRoot { return (Join-Path $env:LUNQ_TEST_ROOT 'ProgramFiles\LunqDebloater-Schedule') }
+
 # Окно выбора папки: папку задаёт тест, пустое значение означает «Отмена».
 function Select-LunqFolder {
     [CmdletBinding()]

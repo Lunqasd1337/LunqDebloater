@@ -47,24 +47,30 @@ function Initialize-LunqWorkDir {
     # Папка в корне диска наследует права, с которыми обычный пользователь может менять файлы.
     # Тогда он подменил бы install.wim или скрипты первого входа, пока идёт сборка, поэтому
     # доступ к папке и всему в ней остаётся только у администраторов и SYSTEM.
+    Set-LunqAdminOnlyAccess -Path $WorkDir
+    Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value (Get-LunqText 'Checks.WorkDirMarker') -Encoding UTF8
+}
+
+function Set-LunqAdminOnlyAccess {
+    # Менять папку и всё в ней могут только администраторы и SYSTEM. Владельцем становятся
+    # администраторы: владелец всегда может поменять права, и одних прав для папки, которую
+    # заранее создал обычный пользователь, было бы мало.
     # Права NTFS есть только в Windows; тесты в Linux подменяют $env:OS, поэтому проверяется сама платформа.
     # Без прав администратора (так идут тесты на обычной учётной записи) папка закрылась бы от самого
     # процесса, а сборка без них всё равно не запускается.
-    $elevated = $false
-    if ([Environment]::OSVersion.Platform -eq 'Win32NT') {
-        $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    param([Parameter(Mandatory)][string]$Path)
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { return }
+    $acl = Get-Acl -LiteralPath $Path
+    $acl.SetOwner((New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'))
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($rule in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
+    foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier $sid
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
     }
-    if ($elevated) {
-        $acl = Get-Acl -LiteralPath $WorkDir
-        $acl.SetAccessRuleProtection($true, $false)
-        foreach ($rule in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
-        foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
-            $identity = New-Object System.Security.Principal.SecurityIdentifier $sid
-            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule $identity, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
-        }
-        Set-Acl -LiteralPath $WorkDir -AclObject $acl
-    }
-    Set-Content -LiteralPath (Join-Path $WorkDir $script:WorkDirMarker) -Value (Get-LunqText 'Checks.WorkDirMarker') -Encoding UTF8
+    Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
 function Reset-LunqWorkDir {

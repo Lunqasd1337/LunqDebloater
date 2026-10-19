@@ -23,7 +23,7 @@ Describe 'Описание задания' {
 
     It 'первый запуск 15-го в 03:00 этого месяца, если он ещё впереди, иначе следующего' {
         InModuleScope LunqDebloater {
-            $args1 = @{ ScriptPath = 'C:\Lunq\LunqDebloater.ps1'; RecipePath = 'D:\Win11.lunq.json'; Language = 'ru'; Description = 'd' }
+            $args1 = @{ ScriptPath = 'C:\Lunq\LunqDebloater.ps1'; RecipePath = 'D:\Win11.lunq.json'; ConfigPath = 'C:\Lunq\Config'; Language = 'ru'; Description = 'd' }
             (New-LunqScheduleXml @args1 -Now ([datetime]'2026-10-03 12:00')).Start | Should -Be ([datetime]'2026-10-15 03:00')
             (New-LunqScheduleXml @args1 -Now ([datetime]'2026-10-19 12:00')).Start | Should -Be ([datetime]'2026-11-15 03:00')
             (New-LunqScheduleXml @args1 -Now ([datetime]'2026-12-20 12:00')).Start | Should -Be ([datetime]'2027-01-15 03:00')
@@ -32,7 +32,7 @@ Describe 'Описание задания' {
 
     It 'задание запускает скрипт от SYSTEM с рецептом и свежими обновлениями, пути экранированы' {
         InModuleScope LunqDebloater {
-            $task = New-LunqScheduleXml -ScriptPath 'C:\Lunq & Co\LunqDebloater.ps1' -RecipePath 'D:\ISO\Win11.lunq.json' -Language en -Description 'rebuild <D:\ISO>' -Now ([datetime]'2026-10-19')
+            $task = New-LunqScheduleXml -ScriptPath 'C:\Lunq & Co\LunqDebloater.ps1' -RecipePath 'D:\ISO\Win11.lunq.json' -ConfigPath 'C:\Lunq & Co\Config' -Language en -Description 'rebuild <D:\ISO>' -Now ([datetime]'2026-10-19')
             $xml = [xml]$task.Xml
             $ns = New-Object Xml.XmlNamespaceManager($xml.NameTable)
             $ns.AddNamespace('t', 'http://schemas.microsoft.com/windows/2004/02/mit/task')
@@ -43,7 +43,7 @@ Describe 'Описание задания' {
             @($xml.SelectSingleNode('//t:Months', $ns).ChildNodes).Count | Should -Be 12
             $xml.SelectSingleNode('//t:Exec/t:Command', $ns).InnerText | Should -Match 'System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$'
             $xml.SelectSingleNode('//t:Exec/t:Arguments', $ns).InnerText |
-                Should -Be '-NoProfile -ExecutionPolicy Bypass -File "C:\Lunq & Co\LunqDebloater.ps1" -Recipe "D:\ISO\Win11.lunq.json" -DownloadUpdates -Force -Language en'
+                Should -Be '-NoProfile -ExecutionPolicy Bypass -File "C:\Lunq & Co\LunqDebloater.ps1" -Recipe "D:\ISO\Win11.lunq.json" -ConfigPath "C:\Lunq & Co\Config" -DownloadUpdates -Force -Language en'
             $xml.SelectSingleNode('//t:RunOnlyIfNetworkAvailable', $ns).InnerText | Should -Be 'true'
         }
     }
@@ -54,6 +54,7 @@ Describe 'Создание и удаление задания' {
         InModuleScope LunqDebloater {
             Mock Write-Check { }
             Mock Write-Info { }
+            Mock Get-LunqScheduleRoot { Join-Path $TestDrive 'ProgramFiles\LunqDebloater-Schedule' }
             $script:SchtasksCalls = New-Object System.Collections.Generic.List[object]
             $script:SchtasksCode = 0
             Mock Invoke-Native {
@@ -67,27 +68,67 @@ Describe 'Создание и удаление задания' {
         }
     }
 
-    It 'schtasks /Create получает описание в UTF-16, временный файл удаляется' {
-        $temp = Join-Path $TestDrive 'temp'
-        InModuleScope LunqDebloater -Parameters @{ Temp = $temp } {
-            param($Temp)
-            $start = Register-LunqSchedule -ScriptPath 'C:\Lunq\LunqDebloater.ps1' -RecipePath 'D:\ISO\Win11_Lunq.lunq.json' -TempDir $Temp
+    It 'задание запускает копию программы, настроек и рецепта, а не их исходную папку' {
+        $app = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'app') -Force
+        Set-Content -LiteralPath (Join-Path $app 'LunqDebloater.ps1') -Value '# main'
+        New-Item -ItemType Directory -Path (Join-Path $app 'Modules\LunqDebloater') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $app 'Modules\LunqDebloater\M.psm1') -Value '# module'
+        New-Item -ItemType Directory -Path (Join-Path $app 'ThirdParty\EdgeRemover') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $app 'ThirdParty\EdgeRemover\RemoveEdge.ps1') -Value '# edge'
+        foreach ($dir in 'Config\Scripts', 'Config\Updates\Catalog', 'Config\Drivers') { New-Item -ItemType Directory -Path (Join-Path $app $dir) -Force | Out-Null }
+        Set-Content -LiteralPath (Join-Path $app 'Config\Profile.json') -Value '{}'
+        Set-Content -LiteralPath (Join-Path $app 'Config\Scripts\a.ps1') -Value '# a'
+        Set-Content -LiteralPath (Join-Path $app 'Config\Updates\big.msu') -Value 'msu'
+        Set-Content -LiteralPath (Join-Path $app 'Config\Drivers\net.inf') -Value 'inf'
+        $recipe = Join-Path $TestDrive 'iso\Win11_Lunq.lunq.json'
+        New-Item -ItemType Directory -Path (Split-Path $recipe -Parent) -Force | Out-Null
+        Set-Content -LiteralPath $recipe -Value '{}'
+        InModuleScope LunqDebloater -Parameters @{ App = $app.FullName; Recipe = $recipe } {
+            param($App, $Recipe)
+            $start = Register-LunqSchedule -SourceRoot $App -ConfigPath (Join-Path $App 'Config') -RecipePath $Recipe
             $start.Day | Should -Be 15
             $call = $script:SchtasksCalls[0]
             $call.Arguments[0..2] | Should -Be @('/Create', '/TN', 'LunqDebloater\Win11_Lunq')
             $call.Arguments[-1] | Should -Be '/F'
+            # schtasks читает описание задания только в UTF-16.
             $call.Bytes[0..1] | Should -Be @(0xFF, 0xFE)
-            [Text.Encoding]::Unicode.GetString($call.Bytes) | Should -Match 'по рецепту D:\\ISO\\Win11_Lunq\.lunq\.json'
+            $xml = [Text.Encoding]::Unicode.GetString($call.Bytes)
+            $copy = Join-Path $TestDrive 'ProgramFiles\LunqDebloater-Schedule\Win11_Lunq'
+            $xml | Should -Match ('-File &quot;' + [regex]::Escape((Join-Path $copy 'LunqDebloater.ps1')) + '&quot;')
+            $xml | Should -Match ('-Recipe &quot;' + [regex]::Escape((Join-Path $copy 'Win11_Lunq.lunq.json')) + '&quot;')
+            $xml | Should -Match ('-ConfigPath &quot;' + [regex]::Escape((Join-Path $copy 'Config')) + '&quot;')
+            $xml | Should -Match ('по рецепту ' + [regex]::Escape($Recipe))
+            # Файл задания лежал в копии и удалён после schtasks.
+            [string]$call.Arguments[4] | Should -BeLike (Join-Path $copy '*')
+            Test-Path -LiteralPath $call.Arguments[4] | Should -BeFalse
+            foreach ($file in 'LunqDebloater.ps1', 'Modules\LunqDebloater\M.psm1', 'ThirdParty\EdgeRemover\RemoveEdge.ps1', 'Config\Profile.json', 'Config\Scripts\a.ps1', 'Win11_Lunq.lunq.json') {
+                Test-Path -LiteralPath (Join-Path $copy $file) | Should -BeTrue
+            }
+            # Обновления копия скачивает сама, а папка драйверов записана в рецепте.
+            Test-Path -LiteralPath (Join-Path $copy 'Config\Updates') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $copy 'Config\Drivers') | Should -BeFalse
             Should -Invoke Write-Check -ParameterFilter { $Message -match 'Задание LunqDebloater\\Win11_Lunq создано' }
+            Should -Invoke Write-Info -ParameterFilter { $Message -match 'Задание запускает копию LunqDebloater' }
+
+            # Повторное создание заменяет копию целиком: файлы прошлой версии не остаются.
+            Set-Content -LiteralPath (Join-Path $copy 'Modules\LunqDebloater\Old.ps1') -Value '# old'
+            $null = Register-LunqSchedule -SourceRoot $App -ConfigPath (Join-Path $App 'Config') -RecipePath $Recipe
+            Test-Path -LiteralPath (Join-Path $copy 'Modules\LunqDebloater\Old.ps1') | Should -BeFalse
+
+            # -Schedule Off удаляет и копию.
+            Unregister-LunqSchedule -RecipePath $Recipe
+            Test-Path -LiteralPath $copy | Should -BeFalse
         }
-        @(Get-ChildItem -LiteralPath $temp -File).Count | Should -Be 0
     }
 
     It 'schtasks вернул ошибку: сообщение с кодом' {
-        InModuleScope LunqDebloater -Parameters @{ Temp = (Join-Path $TestDrive 'temp2') } {
-            param($Temp)
+        $app = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'app2\Config') -Force
+        $recipe = Join-Path $TestDrive 'Win11.lunq.json'
+        Set-Content -LiteralPath $recipe -Value '{}'
+        InModuleScope LunqDebloater -Parameters @{ Config = $app.FullName; Recipe = $recipe } {
+            param($Config, $Recipe)
             $script:SchtasksCode = 5
-            { Register-LunqSchedule -ScriptPath 'C:\Lunq\LunqDebloater.ps1' -RecipePath 'D:\Win11.lunq.json' -TempDir $Temp } | Should -Throw '*schtasks, код 5*'
+            { Register-LunqSchedule -SourceRoot (Split-Path $Config -Parent) -ConfigPath $Config -RecipePath $Recipe } | Should -Throw '*schtasks, код 5*'
         }
     }
 
