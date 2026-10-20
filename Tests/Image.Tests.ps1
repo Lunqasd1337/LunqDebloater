@@ -68,3 +68,49 @@ Describe 'Optimize-LunqWim' {
         }
     }
 }
+
+Describe 'install.wim и флешка FAT32' {
+    It 'install.wim больше 4 ГБ: предупреждение и строка для итога, до 4 ГБ ничего' {
+        InModuleScope LunqDebloater {
+            Mock Write-Warning { }
+            Mock Get-Item { [pscustomobject]@{ Length = [long]5GB } } -ParameterFilter { $LiteralPath -eq 'big.wim' }
+            Mock Get-Item { [pscustomobject]@{ Length = [long]4GB - 1 } } -ParameterFilter { $LiteralPath -eq 'fits.wim' }
+            Test-LunqWimSize -WimPath 'fits.wim' | Should -BeNullOrEmpty
+            Should -Invoke Write-Warning -Times 0 -Exactly
+            $result = Test-LunqWimSize -WimPath 'big.wim'
+            $result.Kind | Should -Be 'WimSize'
+            $result.Summary | Should -Match 'больше 4 ГБ.+-SplitWim'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*Rufus*' }
+        }
+    }
+
+    It 'разделение: части по 3800 МБ, прежние части удаляются, install.wim удаляется' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $sources = Join-Path $Root 'split\sources'
+            New-Item -ItemType Directory -Path $sources -Force | Out-Null
+            $wim = Join-Path $sources 'install.wim'
+            Set-Content -LiteralPath $wim -Value 'wim'
+            Set-Content -LiteralPath (Join-Path $sources 'install3.swm') -Value 'old part'
+            Mock Write-Host { }
+            $result = Split-LunqWim -WimPath $wim
+            Test-Path -LiteralPath $wim | Should -BeFalse
+            @(Get-ChildItem -LiteralPath $sources -Filter '*.swm' | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('install.swm', 'install2.swm')
+            @($result.Done | Sort-Object) | Should -Be @('install.swm', 'install2.swm')
+            $result.Summary | Should -Match '2 шт\.'
+        }
+    }
+
+    It 'Split-WindowsImage не создал части: ошибка, install.wim остаётся' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $sources = Join-Path $Root 'nosplit\sources'
+            New-Item -ItemType Directory -Path $sources -Force | Out-Null
+            $wim = Join-Path $sources 'install.wim'
+            Set-Content -LiteralPath $wim -Value 'wim'
+            Mock Split-WindowsImage { }
+            { Split-LunqWim -WimPath $wim } | Should -Throw '*install.swm*'
+            Test-Path -LiteralPath $wim | Should -BeTrue
+        }
+    }
+}

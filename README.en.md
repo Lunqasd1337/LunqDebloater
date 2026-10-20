@@ -70,7 +70,7 @@ Or by hand:
 
 1. Download the repository (Code > Download ZIP) and extract it.
 2. Double-click `Start.cmd`. The script asks for administrator rights.
-3. Then it asks for everything itself: choose whether to build an ISO or look at what is in the image, then pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary and choose the edition (each edition has a short explanation).
+3. Then it asks for everything itself: choose whether to build an ISO or look at what is in the image, then pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary, name the finished ISO (Enter keeps the suggested name) and choose the edition (each edition has a short explanation).
 4. Check the build plan and confirm. A build usually takes 15-40 minutes. The window shows "Step N of M" with an explanation of what is happening.
 5. At the end the script shows the result: what was removed, what was not found in the image, and where the finished ISO is.
 
@@ -113,12 +113,13 @@ Get-ChildItem -Recurse | Unblock-File   # if the archive was downloaded from the
 .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro"
 ```
 
-Without `-Edition` or `-Index` the script shows the list of editions and asks for a number. Without `-IsoPath` it runs in step-by-step mode, as with `Start.cmd`. By default the finished ISO appears next to the original one (`Win11_26H2_Lunq.iso`), and the log of the run is in the `Logs` folder next to the script (see "Logs and version").
+Without `-Edition` or `-Index` the script shows the list of editions and asks for a number. Without `-IsoPath` it runs in step-by-step mode, as with `Start.cmd`. By default the finished ISO appears next to the original one, with the LunqDebloater version in its name (`Win11_26H2_Lunq_1.13.0.iso`). In step-by-step mode the script asks for your own name after the summary, and Enter keeps this one. The log of the run is in the `Logs` folder next to the script (see "Logs and version").
 
 | Parameter | Purpose |
 |---|---|
 | `-IsoPath` | The original ISO. Without it the script runs in step-by-step mode |
-| `-OutputIso` | Path to the finished ISO |
+| `-OutputIso` | Full path to the finished ISO, used as is, without the version |
+| `-OutputName` | Name of the finished ISO next to the original one, without `.iso`: the LunqDebloater version is added to it, so `-OutputName Office` gives `Office_1.13.0.iso`. Not used together with `-OutputIso` |
 | `-ConfigPath` | Settings folder instead of `Config` next to the script |
 | `-ProfilePath` | Your own JSON profile instead of `Config\Profile.json` |
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
@@ -134,6 +135,7 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-Unattend` | Put an answer file in the ISO: no questions about the license and privacy, language, region and time zone as on this computer |
 | `-BypassRequirements` | Add a bypass of the TPM 2.0, Secure Boot and memory requirements to the answer file (turns on `-Unattend`) |
 | `-LocalAccount` | Add sign-in without a Microsoft account to the answer file (turns on `-Unattend`) |
+| `-LocalAccountName` | Name of the local account the answer file creates: up to 20 characters, without `"/\[]:;\|=,+*?<>@'%`. The ISO holds no password, the first sign-in offers to set one (turns on `-LocalAccount`) |
 | `-ListContents` | Do not build an ISO, save the list of apps and components of the edition to a file instead |
 | `-SkipAppx`, `-SkipComponents`, `-SkipRegistry` | Skip the step |
 | `-Label` | Volume label of the finished ISO: Latin letters, digits, `_` and `-`, up to 32 characters. `LUNQ_WIN11` by default |
@@ -152,6 +154,9 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-HostDrivers` | Add the drivers of this computer instead of `Config\Drivers` |
 | `-HostApps` | Add the apps of this computer (`winget export`) to `Apps.txt` |
 | `-HostWifi` | Carry over the Wi-Fi networks of this computer with their passwords (see "A copy of this computer") |
+| `-BootCA2023` | Put the boot manager signed with Windows UEFI CA 2023 on the ISO. Needs a cumulative update, turns on `-UpdatesToSetup` (see "Boot manager and Secure Boot") |
+| `-SplitWim` | Split `install.wim` into 3800 MB `install.swm` parts so the ISO can be written to a FAT32 USB drive by copying files (see "FAT32 USB drive") |
+| `-DefenderExclusion` | Do not scan the work folder with Microsoft Defender during the build: the build runs faster. The exclusion is removed at the end, after an error too, and if the run was interrupted, the next run removes it |
 
 ## How the process works
 
@@ -172,7 +177,7 @@ Every step header shows the time the step started, and the result lists the thre
 
 When a build stops with an error, an archive `LunqDebloater_<date>_report.zip` appears next to the log with the run log, the DISM log and the profile. The user folder path, the user name and the computer name in it are replaced, so this archive alone is enough for a bug report. A DISM log bigger than 20 MB is shortened in it: all errors, warnings and step markers and the last 20,000 lines. If there is no archive, send both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.zip`.
 
-The LunqDebloater version is shown in the window title, at the start of the log and in the build result. It is also written to the built image together with the build settings. On the installed system you can see them like this:
+The LunqDebloater version is shown in the window title, at the start of the log, in the build result and in the name of the finished ISO (unless its path is set with `-OutputIso`). It is also written to the built image together with the build settings. On the installed system you can see them like this:
 
 ```powershell
 reg query HKLM\SOFTWARE\LunqDebloater
@@ -211,7 +216,22 @@ Besides the system itself, the ISO contains two more images based on Windows PE:
 - **Windows Setup** (`sources\boot.wim`, image 2), which the USB drive boots from;
 - the **recovery environment** (WinRE, `Windows\System32\Recovery\Winre.wim` inside the system), which opens when Windows fails to start and from Settings > System > Recovery.
 
-By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. The UEFI boot manager on the ISO (`efi\boot\bootx64.efi` and `bootmgr.efi`) is taken from there too. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the same Windows updates as the system, and with `-DriversToSetup` the disk controller drivers. In the summary before the build these are the items under the updates and the drivers; if Safe OS or Setup Dynamic Updates were found, the Windows Setup update item is on from the start. With `-UpdatesToSetup` WinRE also gets the Safe OS Dynamic Update, and the Setup Dynamic Update is expanded into the ISO's `sources` folder. After Windows Setup is updated, `setup.exe` and `setuphost.exe` are copied from `boot.wim` to the ISO's `sources` folder: Microsoft's guidance says they must match the files in `boot.wim`, otherwise setup may fail to start. The UEFI boot manager on the ISO (`efi\boot\bootx64.efi` and `bootmgr.efi`) is taken from there too, together with `efi\microsoft\boot\efisys.bin`, which `oscdimg` turns into the UEFI boot image: an ISO attached directly boots with the same boot manager as a USB drive made from it. .NET updates and other packages that do not install into Windows PE are skipped. After the updates both images are cleaned of old files and recompressed. A build with updates takes 10-20 minutes longer.
+
+### Boot manager and Secure Boot
+
+Microsoft is changing the certificate that signs the Windows boot manager (the BlackLotus vulnerability, CVE-2023-24932): the old Windows Production PCA 2011 is being revoked step by step, and the new one is called Windows UEFI CA 2023. A regular ISO boots with the old boot manager and will not boot with Secure Boot on a computer where the old certificate is already on the revocation list (DBX).
+
+With `-BootCA2023` (an item at the end of the summary) the ISO gets the boot manager signed with the new certificate: the `_EX` files from the updated image (`Windows\Boot\EFI_EX`, `DVD_EX` and `Fonts_EX`) replace `efi\boot\bootx64.efi`, `bootmgr.efi`, `efisys.bin` and the boot fonts. This needs a cumulative update in the updates folder or `-DownloadUpdates`, and Windows Setup is updated along with the system, as Microsoft requires. If the image has no `_EX` files, the ISO keeps the regular boot manager and the summary warns about it.
+
+Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks the Windows UEFI CA 2023 certificate: usually computers from before 2024 without recent firmware and Windows updates. If unsure, keep the regular boot manager.
+
+## FAT32 USB drive
+
+A USB drive for UEFI boot is usually formatted as FAT32, and FAT32 cannot hold files over 4 GB. With recent updates and drivers `install.wim` can be bigger, and then the build summary warns about it. There are two ways out:
+
+- write the ISO with [Rufus](https://rufus.ie): it handles a big `install.wim` itself;
+- build the ISO with `-SplitWim` (an item at the end of the summary): `install.wim` is split into 3800 MB parts `install.swm`, `install2.swm` and so on, and the ISO can simply be copied to a FAT32 drive. Windows Setup joins the parts itself.
 
 ## After installation
 
@@ -221,7 +241,7 @@ You can have the programs you need installed and your scripts run at the first s
 2. If needed, put your own `*.ps1` scripts in `Config\Scripts`. They run after the programs, in name order, with administrator rights. The other files in this folder are copied too, and the scripts can use them.
 3. The programs and scripts appear in the summary before the build, and with parameters they are added automatically (add `-SkipApps` or `-SkipScripts` if you do not want that).
 
-At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently, runs the scripts and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again, and a script that started twice and never finished (for example, it restarted the computer) is skipped. If the last attempt did not finish, the next sign-in only cleans up. Your scripts, Wi-Fi networks and the log are accessible to administrators only: the folders are closed when the image is built, so they stay closed even if the UAC prompt at the first sign-in was declined. In the ISO itself and on the flash drive they are not protected inside `install.wim`: anyone who gets the ISO can read them, so do not give others an ISO with passwords in its scripts. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
+At the first sign-in a window with the progress opens. The script waits for the internet and winget, installs the programs silently for all users (`--scope machine`, or for the current user if a program has no such installer), runs the scripts, each in its own PowerShell process, and closes the window. If there is no internet, a program did not install, or the window was closed halfway, the unfinished work is repeated at the next sign-in (up to 5 attempts). While the programs are not installed, the scripts wait: they run after the programs or on the last attempt. A script that failed is not run again, and a script that started twice and never finished (for example, it restarted the computer) is skipped. If the last attempt did not finish, the next sign-in only cleans up. Your scripts, Wi-Fi networks and the log are accessible to administrators only: the folders are closed when the image is built, so they stay closed even if the UAC prompt at the first sign-in was declined. In the ISO itself and on the flash drive they are not protected inside `install.wim`: anyone who gets the ISO can read them, so do not give others an ISO with passwords in its scripts. When everything is done, the copies of your scripts and everything next to them are deleted from the disk: they may contain passwords and keys. Only `Apps.txt` and the log `C:\Windows\Setup\Scripts\Lunq\FirstLogon.log` remain. Details are in [Config/README.en.txt](Config/README.en.txt).
 
 You can save scripts in any editor. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as ANSI, and non-English text in quotes (for example, Russian) breaks the whole script. That is why such files are saved again as UTF-8 with BOM during the build; you can see this in the output of the step.
 
@@ -242,7 +262,7 @@ The answer file (`autounattend.xml` in the root of the ISO) answers some of the 
 | Do not ask about the license and privacy | `-Unattend` | The license is accepted automatically, all privacy settings (diagnostics, ads, location) are off, and their page is not shown |
 | Language, region and time zone as on this computer | `-Unattend` | The language of Setup and Windows is taken from the image, and the format, keyboard layouts and time zone from the computer that builds the ISO |
 | Bypass the Windows 11 requirements | `-BypassRequirements` | Setup does not check TPM 2.0, Secure Boot and the amount of memory. For computers that Windows 11 does not install on otherwise |
-| Local account | `-LocalAccount` | Windows does not ask you to sign in with a Microsoft account and asks for the name and password of a local account right away. The answer file also sets `BypassNRO` as a fallback: if the sign-in screen does appear, choose "I don't have internet" on the network step and create a local account |
+| Local account | `-LocalAccount`, `-LocalAccountName` | With `-LocalAccountName` an administrator account with this name is created during setup, and the account screen is not shown. In the step-by-step mode the name is asked after the summary, the default is the user name on this computer. The ISO holds no password: at the first sign-in the initial setup window offers to set one (Enter leaves it without a password). Until a password is set, anyone at the computer can sign in. Without a name Windows does not ask you to sign in with a Microsoft account and asks for the name and password of a local account right away. The answer file also sets `BypassNRO` as a fallback: if the sign-in screen does appear, choose "I don't have internet" on the network step and create a local account |
 
 The installation disk, the product key (you can click "I don't have a product key") and the network are still chosen by hand: the answer file never erases anything by itself. It stores no passwords; the account name and password are entered during setup. If the image has programs or scripts for after installation, their command is written to this file too.
 
@@ -267,11 +287,11 @@ The catalog has no official API: the script reads the same page a browser shows.
 An ISO built with downloading can be rebuilt every month without you. In step-by-step mode the script offers this at the end of the build; with parameters the task is created from the recipe (see below):
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Monthly   # every month on the 15th
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Monthly   # every month on the 15th
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Off       # stop rebuilding
 ```
 
-The task `LunqDebloater\<ISO name>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
+The task `LunqDebloater\<ISO name without the version>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy. The recipe of a build made by the new version works too: an ISO has one task, and it is replaced rather than joined by a second one. The new version builds the ISO under a new name, and the ISO of the previous version stays, so delete it yourself if you do not need it; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 
@@ -283,7 +303,7 @@ After every build two files appear next to the output ISO:
 `-Recipe` repeats the build from the recipe without questions:
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Force
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Force
 ```
 
 Command line parameters win over the recipe: for example, `-IsoPath` builds the same thing from a new ISO, and `-SkipUpdates` builds it without updates. If the profile has changed or is gone since then, its copy from the recipe is used. If the updates in the folder differ from the ones in the recipe, the script warns about it before the build.
@@ -413,10 +433,11 @@ The code is laid out like this:
 
 | Path | What is there |
 |---|---|
-| `LunqDebloater.ps1` | The script itself: parameters, step-by-step mode, checks and the build plan |
+| `LunqDebloater.ps1` | The script itself: parameters, restart, administrator rights, the log and the cleanup after the build. The modes, the summary and the plan live in the module (`Modes`) |
 | `Install.ps1` | Loader for the one-command start (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | The module with the functions. The version is set in the `LunqDebloater.psd1` manifest |
-| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Build` (build steps), `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Modes` (the script's modes), `Build` (build steps), `Report`, `System`, `Catalog`, `Schedule`, `Recipe`, `Restore`, `Uninstall`, `Host` |
+| `Modules\LunqDebloater\Data\Releases.psd1` | Windows releases from 24H2 on: builds, names and enablement packages |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |

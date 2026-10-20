@@ -5,6 +5,7 @@
     'Servicing.UpdatesIn'           = 'Updates in {0}'
     'Servicing.DriversIn'           = 'Drivers in {0}'
     'Servicing.WhereSetup'          = 'Windows Setup'
+    'Servicing.WherePE'             = 'Windows PE (boot.wim, image 1)'
     'Servicing.Installing'          = '[{0}/{1}] Installing {2} ({3})...'
     'Servicing.UpdateFailed'        = 'Could not install {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} does not apply to this image, skipping.'
@@ -30,4 +31,9 @@
     'Servicing.BootFilesTitle'      = 'Boot manager on the ISO'
     'Servicing.BootFilesDone'       = '{0} updated from boot.wim'
     'Servicing.BootFileFailed'      = 'Could not update {0} from boot.wim: {1}'
+    'Servicing.BootCA2023Title'     = 'Windows UEFI CA 2023 boot manager'
+    'Servicing.BootCA2023Done'      = '{0} and fonts ({1}) replaced with the _EX files from the image'
+    'Servicing.BootCA2023Fallback'  = 'the image has no _EX files, the ISO keeps the regular boot manager'
+    'Servicing.BootCA2023Missing'   = 'The image has no Windows UEFI CA 2023 boot files ({0}), so the ISO keeps the regular boot manager. A recent cumulative update usually brings them.'
+    'Servicing.BootCA2023Failed'    = 'Could not replace {0} with the Windows UEFI CA 2023 boot manager: {1}'
 }

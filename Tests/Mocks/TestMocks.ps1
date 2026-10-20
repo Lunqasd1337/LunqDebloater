@@ -26,6 +26,18 @@ function Get-LunqDriveInfo {
 
 function Select-IsoFile { return $env:LUNQ_TEST_ISO }
 
+# Microsoft Defender: LUNQ_TEST_DEFENDER=off значит, что он не проверяет файлы. Исключения
+# записываются в LUNQ_TEST_NATIVE_LOG.
+function Get-LunqDefenderExclusions {
+    if ($env:LUNQ_TEST_DEFENDER -eq 'off') { return $null }
+    return , @()
+}
+function Set-LunqDefenderExclusion {
+    param([Parameter(Mandatory)][string]$Path, [switch]$Remove)
+    $action = if ($Remove) { 'remove' } else { 'add' }
+    if ($env:LUNQ_TEST_NATIVE_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_NATIVE_LOG -Value "defender|$action|$Path" -Encoding UTF8 }
+}
+
 # Копии для заданий по расписанию: вместо Program Files папка теста.
 function Get-LunqScheduleRoot { return (Join-Path $env:LUNQ_TEST_ROOT 'ProgramFiles\LunqDebloater-Schedule') }
 

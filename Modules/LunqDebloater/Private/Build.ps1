@@ -137,6 +137,10 @@ function Get-LunqBuildSteps {
             Title = Get-LunqText 'Main.StepSave'; Hint = Get-LunqText 'Main.StepSaveHint'
             Run = {
                 param($c)
+                # Файлы загрузчика 2023 берутся до отметки в реестре: в ней записано, нашлись ли они.
+                if ($c.BootCA2023) {
+                    $c.State.BootCA2023 = Export-LunqBootCA2023 -MountPath $c.MountDir -Destination (Join-Path $c.WorkDir 'bootex')
+                }
                 Set-LunqBuildStamp -MountPath $c.MountDir -Values (Get-LunqBuildStampValues -Context $c)
                 # Что удалено и какие значения реестра были до профиля: по ним -Restore на
                 # установленной системе вернёт выбранное.
@@ -160,12 +164,26 @@ function Get-LunqBuildSteps {
         @{
             Name = 'Recompress'; When = $true
             Title = Get-LunqText 'Main.StepRecompress'; Hint = Get-LunqText 'Main.StepRecompressHint'
-            Run = { param($c) Export-SingleEdition -SourceImage $c.WimPath -SourceIndex 1 -DestinationImage $c.WimPath }
+            Run = {
+                param($c)
+                Export-SingleEdition -SourceImage $c.WimPath -SourceIndex 1 -DestinationImage $c.WimPath
+                # Без -SplitWim итог предупреждает, если образ не поместится на флешку FAT32.
+                if (-not $c.SplitWim) { Test-LunqWimSize -WimPath $c.WimPath }
+            }
+        },
+        @{
+            Name = 'Split'; When = [bool]$c.SplitWim
+            Title = Get-LunqText 'Main.StepSplit'; Hint = Get-LunqText 'Main.StepSplitHint'
+            Run = { param($c) Split-LunqWim -WimPath $c.WimPath }
         },
         @{
             Name = 'Iso'; When = $true
             Title = Get-LunqText 'Main.StepIso'; Hint = Get-LunqText 'Main.StepIsoHint'
-            Run = { param($c) New-BootableIso -IsoRoot $c.IsoDir -OutputPath $c.OutputIso -Oscdimg $c.Oscdimg -Label $c.Label }
+            Run = {
+                param($c)
+                if ($c.BootCA2023) { Install-LunqBootCA2023 -IsoRoot $c.IsoDir -From (Join-Path $c.WorkDir 'bootex') }
+                New-BootableIso -IsoRoot $c.IsoDir -OutputPath $c.OutputIso -Oscdimg $c.Oscdimg -Label $c.Label
+            }
         }
     )
 }
@@ -320,15 +338,40 @@ function Get-LunqBuildStampValues {
         SetupAndWinRE     = $(if ($c.ServicePE) { $yes } else { $no })
         SetupAnswerFile   = $(if ($c.SetupAnswers) { Format-LunqUnattendSummary -Unattend $c.SetupAnswers } else { $no })
         CleanupComponents = $(if ($c.CleanupComponents) { $yes } else { $no })
+        BootCA2023        = $(if ($c.BootCA2023 -and $c.State['BootCA2023']) { $yes } else { $no })
         Apps              = $(if ($c.FirstLogon) { $c.FirstLogon.Apps -join ', ' } else { '' })
         Scripts           = $(if ($c.FirstLogon) { @($c.FirstLogon.Scripts | ForEach-Object { $_.Name }) -join ', ' } else { '' })
     }
+}
+
+# Ключи контекста каждого режима. Контекст собирают LunqDebloater.ps1 и функции режимов, и
+# опечатка в имени ключа без этой проверки превратилась бы в $null посреди сборки.
+$script:LunqContextKeys = @{
+    Build     = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'BootMountDir', 'ReMountDir', 'IsoPath', 'IsoDir', 'WimPath', 'Index',
+        'OutputIso', 'Oscdimg', 'Label', 'Updates', 'SafeOSUpdates', 'SetupUpdates', 'PEUpdates', 'Drivers', 'PEDrivers', 'DriversPath',
+        'ServiceRecovery', 'ServicePE', 'FirstLogon', 'SetupAnswers', 'Architecture', 'Config', 'SkipAppx', 'SkipComponents',
+        'SkipRegistry', 'CleanupComponents', 'BootCA2023', 'SplitWim', 'Profile', 'ProfilePath', 'EditionName', 'BuildText', 'Restore')
+    Inventory = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'WimPath', 'IsoPath', 'Index', 'DirectMount', 'Profile', 'ContentsPath', 'Header')
+    Online    = @('State', 'Config', 'SkipAppx', 'SkipComponents', 'SkipRegistry', 'Restore', 'RestorePath')
+}
+
+function Assert-LunqContext {
+    # Сбой с понятным текстом до первого шага, если в контексте нет нужного ключа или есть лишний.
+    param([Parameter(Mandatory)][hashtable]$Context, [Parameter(Mandatory)][ValidateSet('Build', 'Inventory', 'Online')][string]$Mode)
+    $expected = $script:LunqContextKeys[$Mode]
+    $missing = @($expected | Where-Object { -not $Context.ContainsKey($_) })
+    if ($missing.Count -gt 0) { throw (Get-LunqText 'Main.ContextMissing' $Mode ($missing -join ', ')) }
+    $unknown = @($Context.Keys | Where-Object { $expected -notcontains $_ } | Sort-Object)
+    if ($unknown.Count -gt 0) { throw (Get-LunqText 'Main.ContextUnknown' $Mode ($unknown -join ', ')) }
 }
 
 function Invoke-LunqBuild {
     # Выполняет нужные шаги по порядку и возвращает их результаты для итога.
     # -Inventory: шаги режима «Что в образе» вместо сборки, -Online: шаги для этой Windows.
     param([Parameter(Mandatory)][hashtable]$Context, [switch]$Inventory, [switch]$Online)
+    $mode = 'Build'
+    if ($Inventory) { $mode = 'Inventory' } elseif ($Online) { $mode = 'Online' }
+    Assert-LunqContext -Context $Context -Mode $mode
     if ($Inventory) { $steps = @(Get-LunqInventorySteps -Context $Context | Where-Object { $_.When }) }
     elseif ($Online) { $steps = @(Get-LunqOnlineSteps -Context $Context | Where-Object { $_.When }) }
     else { $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When }) }

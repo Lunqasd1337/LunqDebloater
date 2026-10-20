@@ -11,6 +11,10 @@ BeforeAll {
     # Внутренние функции модуля под теми же именами: снаружи модуля они не видны.
     function Get-LunqUpdateFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqUpdateFiles -Path $p } $Path }
     function Get-LunqDriverFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqDriverFiles -Path $p } $Path }
+    function Select-LunqPEDrivers {
+        param($InfFiles, [hashtable]$Cache = @{})
+        & (Get-Module LunqDebloater) { param($i, $c) Select-LunqPEDrivers -InfFiles $i -Cache $c } $InfFiles $Cache
+    }
     function Split-LunqDynamicUpdates {
         param($Files, $TempDir, $Cache)
         & (Get-Module LunqDebloater) { param($f, $t, $c) Split-LunqDynamicUpdates -Files $f -TempDir $t -Cache $c } $Files $TempDir $Cache
@@ -225,6 +229,50 @@ Describe 'Add-LunqSetupDynamicUpdate' {
         $output | Should -Match 'windows11\.0-kb2-x64\.cab не подписан Microsoft \(NotSigned\)'
         Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 1 -Exactly
         Should -Invoke Invoke-Native -ModuleName LunqDebloater -Times 0 -Exactly -ParameterFilter { $Arguments[0] -like '*kb2*' }
+    }
+}
+
+Describe 'Загрузчик Windows UEFI CA 2023' {
+    It 'ISO для ARM64: заменяется bootaa64.efi, а bootx64.efi не появляется' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $mount = Join-Path $Root 'arm\mount'
+            foreach ($name in 'EFI_EX\bootmgfw_EX.efi', 'EFI_EX\bootmgr_EX.efi', 'DVD_EX\EFI\en-US\efisys_EX.bin', 'DVD_EX\EFI\en-US\efisys_noprompt_EX.bin', 'Fonts_EX\segoe_slboot_EX.ttf') {
+                $file = Join-Path $mount "Windows\Boot\$name"
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value "$name new"
+            }
+            $iso = Join-Path $Root 'arm\iso'
+            foreach ($name in 'efi\boot\bootaa64.efi', 'bootmgr.efi', 'efi\microsoft\boot\efisys.bin', 'efi\microsoft\boot\efisys_noprompt.bin') {
+                $file = Join-Path $iso $name
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value 'old'
+            }
+            $stage = Join-Path $Root 'arm\bootex'
+            Export-LunqBootCA2023 -MountPath $mount -Destination $stage | Should -BeTrue
+            $result = Install-LunqBootCA2023 -IsoRoot $iso -From $stage
+            $result.Failed.Count | Should -Be 0
+            @($result.Done) | Should -Be @('efi\boot\bootaa64.efi', 'bootmgr.efi', 'efi\microsoft\boot\efisys.bin', 'efi\microsoft\boot\efisys_noprompt.bin')
+            Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootaa64.efi') | Should -Be 'EFI_EX\bootmgfw_EX.efi new'
+            Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys_noprompt.bin') | Should -Be 'DVD_EX\EFI\en-US\efisys_noprompt_EX.bin new'
+            Test-Path -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $iso 'efi\microsoft\boot\fonts\segoe_slboot.ttf') | Should -BeTrue
+        }
+    }
+
+    It 'в образе нет одного из файлов: предупреждение, в рабочую папку ничего не копируется' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $mount = Join-Path $Root 'part\mount'
+            $file = Join-Path $mount 'Windows\Boot\EFI_EX\bootmgfw_EX.efi'
+            New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+            Set-Content -LiteralPath $file -Value 'new'
+            Mock Write-Warning { }
+            $stage = Join-Path $Root 'part\bootex'
+            Export-LunqBootCA2023 -MountPath $mount -Destination $stage | Should -BeFalse
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*bootmgr_EX.efi*efisys_EX.bin*' }
+            Test-Path -LiteralPath $stage | Should -BeFalse
+        }
     }
 }
 

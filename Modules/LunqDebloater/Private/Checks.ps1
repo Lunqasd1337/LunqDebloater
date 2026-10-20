@@ -173,13 +173,54 @@ function Test-LunqOutputPath {
     return $null
 }
 
+function Get-LunqDefaultOutputName {
+    # Имя итогового ISO по умолчанию, без версии: <имя исходного ISO>_Lunq.
+    param([Parameter(Mandatory)][string]$IsoPath)
+    return ('{0}_Lunq' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath))
+}
+
+function Get-LunqOutputIsoPath {
+    # Итоговый ISO рядом с исходным: имя и версия LunqDebloater, по ней видно, какой версией собран
+    # образ. Версия подставляется при каждой сборке, поэтому в рецепт пишется имя без неё.
+    param([Parameter(Mandatory)][string]$IsoPath, [string]$Name)
+    if (-not $Name) { $Name = Get-LunqDefaultOutputName -IsoPath $IsoPath }
+    return (Join-Path (Split-Path $IsoPath -Parent) ('{0}_{1}.iso' -f $Name, (Get-LunqVersion)))
+}
+
+function Test-LunqOutputName {
+    # Что не так с именем итогового ISO, или $null. Правила имён файлов Windows: без \ / : * ? " < > |,
+    # не зарезервированное имя устройства и без точки или пробела в конце.
+    param([AllowEmptyString()][string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return Get-LunqText 'Checks.OutputNameEmpty' }
+    if ($Name.Length -gt 100) { return Get-LunqText 'Checks.OutputNameTooLong' $Name }
+    if ($Name -match '[\\/:*?"<>|]' -or $Name -match '[\x00-\x1F]') { return Get-LunqText 'Checks.OutputNameBadChars' $Name }
+    if ($Name -ne $Name.Trim() -or $Name.EndsWith('.') -or $Name -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') { return Get-LunqText 'Checks.OutputNameBadForm' $Name }
+    return $null
+}
+
+function Read-LunqOutputName {
+    # Имя итогового ISO в пошаговом режиме. Enter оставляет имя по умолчанию, .iso в конце можно
+    # не писать: версия и расширение добавляются сами.
+    param([Parameter(Mandatory)][string]$Default)
+    while ($true) {
+        $answer = ([string](Read-Host ('    ' + (Get-LunqText 'Checks.AskOutputName' $Default (Get-LunqVersion))))).Trim()
+        if (-not $answer) { return $Default }
+        $answer = $answer -replace '\.iso$', ''
+        $problem = Test-LunqOutputName -Name $answer
+        if (-not $problem) { return $answer }
+        Write-Warning $problem
+    }
+}
+
 function Get-LunqHostWarning {
     # Предупреждение, если Windows на этом компьютере старше образа: модуль DISM берётся из
     # системы и со свежими накопительными обновлениями новой версии может не справиться.
     param([int]$ImageBuild, [int]$HostBuild = (Get-LunqHostBuild))
     if ($HostBuild -le 0 -or $ImageBuild -le 0 -or $HostBuild -ge $ImageBuild) { return $null }
     $hostName = Get-WindowsReleaseName -Build $HostBuild
+    # Выпуски старше 24H2 в таблице не названы: для предупреждения хватает «Windows 10» или «Windows 11».
     if (-not $hostName -and $HostBuild -lt 22000) { $hostName = 'Windows 10' }
+    elseif (-not $hostName) { $hostName = 'Windows 11' }
     if ($hostName) { $hostName = " ($hostName)" }
     return (Get-LunqText 'Checks.HostOlder' $HostBuild $hostName $ImageBuild)
 }

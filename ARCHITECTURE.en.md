@@ -7,7 +7,7 @@ This file is for people who change the code: where things are, in which order a 
 ## Repository layout
 
 ```text
-LunqDebloater.ps1            Entry point: parameters, step-by-step mode, checks, plan and the build context
+LunqDebloater.ps1            Entry point: parameters, restart, rights, log, build context and cleanup in finally
 Start.cmd                    Double-click launcher (step-by-step mode)
 Install.ps1                  Loader for the one-command start (irm | iex)
 Config\                      Everything the user adjusts
@@ -25,11 +25,12 @@ Modules\
     LunqDebloater.psd1       Manifest: version and exported functions
     LunqDebloater.psm1       Loads Private\*.ps1 and picks the language
     Private\*.ps1            Functions by topic (table below)
+    Data\Releases.psd1       Windows releases from 24H2: build names and enablement packages
     Strings\ru\*.psd1        Interface texts in Russian
     Strings\en\*.psd1        The same keys in English
   FirstLogon\FirstLogon.ps1  First sign-in script that goes into the image
 ThirdParty\
-  EdgeRemover\              he3als' script that uninstalls Edge, unchanged (the analyzer does not check it)
+  EdgeRemover\              he3als' script that uninstalls Edge, code unchanged (the analyzer does not check it); its origin is in SOURCE.txt
 Schemas\Profile.schema.json  JSON schema of the profile for VS Code
 Tests\                       Pester tests and stubs
 .github\                     GitHub Actions, issue and PR templates, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
@@ -47,16 +48,17 @@ Tests\                       Pester tests and stubs
 | `Profile.ps1` | Reading and validating the profile, choosing the profile and categories, merging the enabled categories into common lists (`Get-LunqEffectiveConfig`) |
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
-| `Checks.ps1` | Checks before the build: working folder, output ISO, disk space, leftovers of a previous run, Windows version on this computer |
-| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
+| `Checks.ps1` | Checks before the build: working folder, output ISO and its name with the LunqDebloater version (`Get-LunqOutputIsoPath`, `Test-LunqOutputName`, `Read-LunqOutputName`), disk space, leftovers of a previous run, Windows version on this computer |
+| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), splitting `install.wim` for FAT32 (`Split-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
 | `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
 | `Uninstall.ps1` | Programs from the profile's `Uninstall` field that DISM cannot remove from the image: the table of scripts from `ThirdParty` (`$script:LunqUninstallers`), running them on this Windows (`Remove-LunqPrograms`, restore through `Invoke-LunqUninstaller -Action Restore`) and putting them into the image with `Uninstall.json` for the first sign-in (`Copy-LunqUninstallers`) |
 | `Registry.ps1` | Offline registry hives, setting and deleting values and keys, the build stamp in `HKLM\SOFTWARE\LunqDebloater` |
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
-| `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account |
+| `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account (with `-LocalAccountName` it is created in specialize, the group by SID) and its name check |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
-| `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
+| `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) with a check of the context keys (`Assert-LunqContext`), and the build stamp values |
+| `Modes.ps1` | The modes and sections of `LunqDebloater.ps1`: the schedule (`Invoke-LunqScheduleMode`), parameters from a recipe (`Resolve-LunqRecipeParameters`), restore (`Invoke-LunqRestoreMode`), `-Online` (`Invoke-LunqOnlineMode`), the "What goes into the image" summary (`Select-LunqBuildContents`), updates and drivers for the build (`Get-LunqBuildInputs`), "What is in the image" (`Invoke-LunqInventoryMode`), the build plan (`Write-LunqBuildPlan`), and the recipe and report next to the ISO (`Save-LunqBuildOutputs`). The script keeps the parameters, restart, rights, lock, log and the cleanup in `finally` |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
 | `Catalog.ps1` | Fresh updates from the Microsoft Update Catalog: parsing the search page and the download dialog, picking the newest, downloading with a SHA-1 check and a cache (`Save-LunqCatalogUpdates`). Network access only through `Invoke-LunqWebRequest`, which the tests replace |
 | `Schedule.ps1` | The scheduled task that rebuilds from a recipe every month (`Register-LunqSchedule`, `Unregister-LunqSchedule`, through `schtasks.exe /XML`). The task runs as SYSTEM and starts a copy of the program, `Config` and the recipe in `Program Files\LunqDebloater-Schedule` (`Copy-LunqScheduleFiles`), not the user's folder |
@@ -69,15 +71,15 @@ Tests\                       Pester tests and stubs
 1. **Environment** (`LunqDebloater.ps1`). Outside Windows the script stops at once. In PowerShell 7 it relaunches itself in Windows PowerShell 5.1, because some DISM cmdlets do not work in 7. Without administrator rights it offers an elevated relaunch in step-by-step mode and simply stops when run with parameters. Paths are made absolute, since the new window may open in another folder.
 2. **Log.** `Start-LunqLog` starts the log in `Logs` next to the script and a separate DISM log. Everything after that, including errors while choosing the ISO, goes into the log.
 3. **Choices.** In step-by-step mode the user picks the action (build or "What is in the image"), the ISO, the profile and the categories. With parameters all of this comes from the parameters.
-4. **Config contents.** Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found: `Find-LunqBuildInputs` finds the updates and drivers. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary with the items from `New-LunqContentOptions` lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, `Invoke-LunqContentAction` performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), and the script searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`.
+4. **Config contents** (`Select-LunqBuildContents` in `Private\Modes.ps1`). Updates (`Get-LunqUpdateFiles`), drivers, programs and scripts are found: `Find-LunqBuildInputs` finds the updates and drivers. Safe OS and Setup Dynamic Updates come from the `SafeOS` and `Setup` subfolders, and `Split-LunqDynamicUpdates` checks every `.cab` in the root of the updates folder: only the `.mum` files are extracted from it, no `.mum` means a Setup Dynamic Update, `Package_for_SafeOSDU` means Safe OS. In step-by-step mode the `Select-LunqBuildOptions` summary with the items from `New-LunqContentOptions` lets the user turn them on and off. Items made with `-Action` are not toggles: they return their Key, `Invoke-LunqContentAction` performs the action (choosing a folder with `Select-LunqFolder`, exporting drivers with `Export-LunqHostDrivers`), and the script searches for files again and shows the summary once more. The user's choices between showings are kept in `$choices`. After the summary, step-by-step mode asks for the account name (if the account is on, `Read-LunqAccountName`) and the name of the finished ISO (`Read-LunqOutputName`); `Get-LunqOutputIsoPath` adds the LunqDebloater version to it. `Get-LunqBuildInputs` puts together the file lists for the build.
 5. **Checks** (`Test-LunqPrerequisites`): working folder, output ISO, space, `oscdimg`. An error stops the run before the long work starts.
 6. **Edition and version.** The ISO is mounted once for the list of editions, the choice and the version of the chosen one, and once more while the build works with it: the CopyIso and Export steps (or "What is in the image") keep it mounted in `Context.State.Iso`, and `Dismount-LunqStateIso` dismounts it after Export or on an error. `Test-LunqImageRequirements` compares the build with the profile's `Requirements`.
-7. **"What is in the image" mode** (`-ListContents`) ends here: `Invoke-LunqBuild -Inventory` runs the `Get-LunqInventorySteps` steps, the edition is mounted read-only (straight from the ISO when it has `install.wim`, with no export; `install.esd` is exported to the working folder first), the list is saved next to the ISO or, if that folder is not writable, to the `Logs` folder (`Get-LunqContentsDir`), `Write-LunqInventory` saves the list and the image is unmounted without saving.
-8. **Plan.** The script shows what will be done and asks for confirmation in step-by-step mode.
-9. **Build** by the list of steps (below), then the result from `Write-LunqReport`. After the result, not as a step, the recipe and the HTML report are written next to the ISO: a failure there does not spoil the finished ISO.
+7. **"What is in the image" mode** (`-ListContents`, `Invoke-LunqInventoryMode`) ends here: `Invoke-LunqBuild -Inventory` runs the `Get-LunqInventorySteps` steps, the edition is mounted read-only (straight from the ISO when it has `install.wim`, with no export; `install.esd` is exported to the working folder first), the list is saved next to the ISO or, if that folder is not writable, to the `Logs` folder (`Get-LunqContentsDir`), `Write-LunqInventory` saves the list and the image is unmounted without saving.
+8. **Plan** (`Write-LunqBuildPlan`). The script shows what will be done and asks for confirmation in step-by-step mode.
+9. **Build** by the list of steps (below), then the result from `Write-LunqReport`. After the result, not as a step, the recipe and the HTML report are written next to the ISO (`Save-LunqBuildOutputs`): a failure there does not spoil the finished ISO. The recipe gets the ISO name without the version (`OutputName`), so a repeat puts the version in again.
 10. **On error** the registry hives are unloaded and the image is unmounted without saving. The working folder is deleted only if this run created it (the Prepare step) and nothing is mounted in it, otherwise DISM would lose the image.
 
-Other modes branch off earlier. `-Schedule` (with `-Recipe`) only creates or removes the task. `-Recipe` first puts the recipe values into every parameter not given on the command line, and then a normal build runs without questions. `-Restore` reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`, and the Uninstall step uninstalls the programs from `Uninstall` right away. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
+Other modes branch off earlier, and functions from `Private\Modes.ps1` run them too. `-Schedule` (with `-Recipe`, `Invoke-LunqScheduleMode`) only creates or removes the task; the task name does not depend on the version in the recipe name, so the recipe of a new version replaces the old task. `-Recipe` first puts the recipe values into every parameter not given on the command line (`Resolve-LunqRecipeParameters`), and then a normal build runs without questions. `-Restore` (`Invoke-LunqRestoreMode`) reads `Restore.json`, lets the user pick categories and calls `Invoke-LunqRestore`. `-Online` (`Invoke-LunqOnlineMode`) goes through profile and category selection like a build and runs `Invoke-LunqBuild -Online`: the `Get-LunqOnlineSteps` steps call the same removal and registry functions with `-Online` instead of `-MountPath`, and the Uninstall step uninstalls the programs from `Uninstall` right away. `-DownloadUpdates` downloads updates after reading the edition, when the release and architecture are known, and before the version check.
 
 Before every change the removal functions and `Set-LunqRegistry` record in `Context.Restore` what was removed and what was there (for `DeleteKey` the key is exported with `reg export`). In a build this is saved into the image at the Save step; with `-Online` it is appended to `%SystemRoot%\LunqDebloater\Restore.json` as the last step (and on error too).
 
@@ -85,7 +87,7 @@ Before every change the removal functions and `Set-LunqRegistry` record in `Cont
 
 The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`. Each one has `Name`, `Title`, `Hint`, `When` (whether to run it) and `Run` (what to do). "Step N of M" is counted from `When`, so the numbers always go in a row.
 
-`LunqDebloater.ps1` puts everything the steps need into one hashtable, the build context, and passes it to `Invoke-LunqBuild`. Each `Run` gets the context as a parameter and returns its results; `Invoke-LunqBuild` collects them for the summary. In `Context.State` the steps record what matters on error: whether the image is mounted (`Mounted`) and whether this run created the working folder (`WorkDirOwned`). The script reads the same table in `catch` and `finally`. The module runs under `StrictMode`, so the context must contain every key, even empty ones.
+`LunqDebloater.ps1` puts everything the steps need into one hashtable, the build context, and passes it to `Invoke-LunqBuild`. Each `Run` gets the context as a parameter and returns its results; `Invoke-LunqBuild` collects them for the summary. In `Context.State` the steps record what matters on error: whether the image is mounted (`Mounted`) and whether this run created the working folder (`WorkDirOwned`). The script reads the same table in `catch` and `finally`. The module runs under `StrictMode`, so the context must contain every key, even empty ones. The keys for a build, "What is in the image" and `-Online` are listed in `$script:LunqContextKeys` (`Private\Build.ps1`): `Invoke-LunqBuild` checks the context against it before the first step, so a missing or misspelled key shows up at once, not half an hour into the build.
 
 | Step | What it does | When |
 |---|---|---|
@@ -96,19 +98,20 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Updates | Installs updates in ascending KB order | there are updates |
 | Drivers | Adds drivers one `.inf` at a time | there are drivers |
 | Recovery | Services `Winre.wim` inside the system: updates, Safe OS DU, disk drivers | `-UpdatesToSetup` or `-DriversToSetup`, and there is something for WinRE |
-| FirstLogon | Puts programs, scripts, the uninstall scripts from `Uninstall` and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts or `Uninstall` in the enabled categories |
+| FirstLogon | Puts programs, scripts, the uninstall scripts from `Uninstall` and `FirstLogon.ps1` into `Windows\Setup\Scripts\Lunq` | there are programs, scripts, `Uninstall` in the enabled categories or an account from `-LocalAccountName` (the first sign-in offers it a password) |
 | Unattend | Puts `autounattend.xml` into the ISO root | answer file is on |
 | Appx | Removes the profile's Appx | without `-SkipAppx` |
 | Capabilities | Removes capabilities | without `-SkipComponents` |
 | Features | Turns off features and removes CBS packages | without `-SkipComponents` |
 | Registry | Applies the profile's registry entries | without `-SkipRegistry` |
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | Writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
-| Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim` (image 2), services it and copies `setup.exe`, `setuphost.exe` and the UEFI boot manager out of it | there is something for Windows Setup |
-| Recompress | Recompresses `install.wim` | always |
-| Iso | Builds the bootable ISO with `oscdimg` | always |
+| Save | With `-BootCA2023` copies the `_EX` boot files to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
+| Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim`, installs the updates into image 1 (Windows PE), the updates and drivers into image 2, and copies `setup.exe`, `setuphost.exe`, the UEFI boot manager and `efisys.bin` out of image 2 | there is something for Windows Setup |
+| Recompress | Recompresses `install.wim`; without `-SplitWim` warns if it is over 4 GB | always |
+| Split | Splits `install.wim` into 3800 MB `install.swm` parts and deletes it | `-SplitWim` |
+| Iso | With `-BootCA2023` puts the Windows UEFI CA 2023 boot manager from `WorkDir\bootex` on the ISO, then builds the bootable ISO with `oscdimg` | always |
 
-The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`.
+The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`. The Windows UEFI CA 2023 boot manager is taken from `install.wim` before it is dismounted, but goes onto the ISO only in the Iso step: otherwise the Setup step would replace it with the boot manager from `boot.wim`.
 
 ## Step results and the summary
 
@@ -149,7 +152,9 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE, recognizing Dynamic Updates by their `.cab`, skipping packages that do not apply |
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
 | `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders and this computer's drivers), in Russian and English |
-| `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
+| `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp, the context key check |
+| `Tests\Modes.Tests.ps1` | The modes in `Private\Modes.ps1`: the category list from `-File`, parameters from a recipe and which wins, the config folder for the scheduled task |
+| `Tests\System.Tests.ps1` | Excluding the working folder from Microsoft Defender scanning: adding, a folder excluded beforehand, an exclusion that could not be added or removed |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Uninstall.Tests.ps1` | Uninstalling programs from `Uninstall`: running the script from `ThirdParty` with the right parameters, `Uninstall.json` for the image, EdgeRemover's parameters |
@@ -165,11 +170,15 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch.
 
-**A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
+**A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1`, to `$script:LunqContextKeys` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
 
 **An interface string.** Add the key to `Strings\ru\<Area>.psd1` and `Strings\en\<Area>.psd1` with the same `{0}`, `{1}`. Keys in a table are aligned to the longest one.
 
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
+
+**A new Windows release.** Add a line to `Modules\LunqDebloater\Data\Releases.psd1`: the build, the release name and the KB number of its enablement package, if there is one. The script uses this table to name the build, search the catalog for updates and install the enablement package separately from the cumulative updates. Build and KB numbers are not written anywhere else.
+
+**A new version of a script from `ThirdParty`.** Download the file from the author's tag, save it as UTF-8 with BOM and Windows line endings, and update the version, the commit and both SHA256 sums in `SOURCE.txt` next to it. A test in `Tests\Uninstall.Tests.ps1` checks the file against `SOURCE.txt`, so an edit without a new record turns CI red.
 
 **An external program.** Call it through `Invoke-Native`: that way stderr does not turn into an exception in 5.1, and tests can replace the call. Add a branch to the `Invoke-Native` stub in `Tests\Mocks\TestMocks.ps1` if the script later looks for that program's output.
 
@@ -183,4 +192,4 @@ Next to the program the loader keeps `.lunq-install.json` with the installed rel
 
 ## Versions and releases
 
-The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub. When the release is published, `.github/workflows/release.yml` attaches `LunqDebloater-vX.Y.Z.zip`, `SHA256SUMS` and a GitHub attestation to it: the loader takes that archive and checks it against the checksum.
+The version is set only in the manifest's `ModuleVersion`. It shows in the window title, the log, the summary and the build stamp. A change users notice goes into [CHANGELOG.md](CHANGELOG.md) under a new version: a new feature raises the second number, a fix or a small profile tweak the third. After the merge into `main`, a `vX.Y.Z` tag and a release with the CHANGELOG text are created on GitHub. When the release is published, `.github/workflows/release.yml` attaches `LunqDebloater-vX.Y.Z.zip`, `SHA256SUMS` and a GitHub attestation to it: the loader takes that archive and checks it against the checksum. Actions in the workflows are pinned to a commit SHA with the tag in a comment next to it: that way another repository cannot swap the code by moving a tag. Dependabot (`.github/dependabot.yml`) offers new versions once a month.

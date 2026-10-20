@@ -27,6 +27,8 @@ function New-LunqTestApp {
     }
 
     $iso = Join-Path $Root 'Win11.iso'
+    # Имя итогового ISO по умолчанию: имя исходного, _Lunq и версия LunqDebloater.
+    $outputName = 'Win11_Lunq_' + (Import-PowerShellDataFile -LiteralPath (Join-Path $app 'Modules\LunqDebloater\LunqDebloater.psd1')).ModuleVersion
     Set-Content -LiteralPath $iso -Value 'iso'
 
     $updates = Join-Path $Root 'updates'
@@ -47,7 +49,9 @@ function New-LunqTestApp {
         App       = $app
         Script    = Join-Path $app 'LunqDebloater.ps1'
         Iso       = $iso
-        OutputIso = Join-Path $Root 'Win11_Lunq.iso'
+        Name      = $outputName
+        OutputIso = Join-Path $Root ($outputName + '.iso')
+        Recipe    = Join-Path $Root ($outputName + '.lunq.json')
         WorkDir   = Join-Path $Root 'work'
         Updates   = $updates
         Drivers   = $drivers
@@ -77,7 +81,7 @@ function Exit-LunqTestEnvironment {
     foreach ($name in $script:SavedEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $script:SavedEnvironment[$name])
     }
-    foreach ($name in 'LUNQ_TEST_MOUNTED', 'LUNQ_TEST_DISM_EXIT', 'LUNQ_TEST_HOST_BUILD', 'LUNQ_TEST_NOT_ADMIN', 'LUNQ_TEST_ISO_ATTACHED', 'LUNQ_TEST_IMAGE_VERSION', 'LUNQ_TEST_FAIL_APPX', 'LUNQ_TEST_FOLDER', 'LUNQ_TEST_NO_HOST_DRIVERS', 'LUNQ_TEST_SYSPREP_UNATTEND', 'LUNQ_TEST_NETWORK_DRIVE', 'LUNQ_TEST_ISO_WIM', 'LUNQ_TEST_NO_WIFI', 'LUNQ_TEST_NO_TASK', 'LUNQ_TEST_APPX_GONE', 'LUNQ_TEST_OFFLINE', 'LUNQ_TEST_BAD_HASH', 'LUNQ_TEST_FREE_SPACE', 'LUNQ_TEST_CONSOLE_USER') {
+    foreach ($name in 'LUNQ_TEST_MOUNTED', 'LUNQ_TEST_DISM_EXIT', 'LUNQ_TEST_HOST_BUILD', 'LUNQ_TEST_NOT_ADMIN', 'LUNQ_TEST_ISO_ATTACHED', 'LUNQ_TEST_IMAGE_VERSION', 'LUNQ_TEST_FAIL_APPX', 'LUNQ_TEST_FOLDER', 'LUNQ_TEST_NO_HOST_DRIVERS', 'LUNQ_TEST_SYSPREP_UNATTEND', 'LUNQ_TEST_NETWORK_DRIVE', 'LUNQ_TEST_ISO_WIM', 'LUNQ_TEST_NO_WIFI', 'LUNQ_TEST_NO_TASK', 'LUNQ_TEST_APPX_GONE', 'LUNQ_TEST_OFFLINE', 'LUNQ_TEST_BAD_HASH', 'LUNQ_TEST_FREE_SPACE', 'LUNQ_TEST_CONSOLE_USER', 'LUNQ_TEST_NO_BOOTEX', 'LUNQ_TEST_DEFENDER') {
         [Environment]::SetEnvironmentVariable($name, $null)
     }
     Remove-Module Dism, LunqDebloater -Force -ErrorAction SilentlyContinue

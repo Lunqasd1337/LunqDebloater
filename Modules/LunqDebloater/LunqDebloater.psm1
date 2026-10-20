@@ -17,6 +17,9 @@ $script:ModuleRoot = $PSScriptRoot
 # и в реестре собранного образа.
 $script:LunqVersion = [string](Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'LunqDebloater.psd1')).ModuleVersion
 
+# Выпуски Windows: названия сборок, пакеты включения. Новый выпуск добавляется только в этот файл.
+$script:LunqReleases = @((Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'Data\Releases.psd1')).Releases)
+
 foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Private') -Filter '*.ps1' -File | Sort-Object Name)) {
     . $file.FullName
 }

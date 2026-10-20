@@ -34,4 +34,9 @@
     'Checks.OwnMount'            = 'An image from an interrupted run is still mounted, it will be unmounted without saving before the build'
     'Checks.ForeignMount'        = 'DISM images are already mounted on this system: {0}'
     'Checks.ForeignMountHint'    = 'If they are left over from an old run in another folder, run: dism /Cleanup-Wim'
+    'Checks.AskOutputName'       = 'Name of the finished ISO, the LunqDebloater version _{1} is added to it (Enter: {0})'
+    'Checks.OutputNameEmpty'     = 'The name of the finished ISO is empty.'
+    'Checks.OutputNameTooLong'   = 'The name of the finished ISO {0} is longer than 100 characters.'
+    'Checks.OutputNameBadChars'  = 'The name of the finished ISO {0} contains characters not allowed in file names: \ / : * ? " < > |'
+    'Checks.OutputNameBadForm'   = 'The name {0} cannot be used for a file: Windows reserves it (CON, NUL, COM1 and similar) or it ends with a dot or a space.'
 }

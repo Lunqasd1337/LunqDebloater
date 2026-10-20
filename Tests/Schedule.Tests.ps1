@@ -23,6 +23,10 @@ Describe 'Описание задания' {
             Get-LunqScheduleName -RecipePath 'd:\iso\WIN11_Lunq.lunq.json' | Should -Be $name
             Get-LunqScheduleName -RecipePath 'E:\Other\Win11_Lunq.lunq.json' | Should -Not -Be $name
             Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq.lunq.json' -Legacy | Should -Be 'LunqDebloater\Win11_Lunq'
+            # Версия LunqDebloater в имени рецепта не меняет задание: новая версия заменяет прежнее.
+            Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq_1.13.0.lunq.json' | Should -Be $name
+            Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq_1.14.2.lunq.json' | Should -Be $name
+            Get-LunqScheduleName -RecipePath 'D:\ISO\Win11_Lunq_1.13.0.lunq.json' -Legacy | Should -Be 'LunqDebloater\Win11_Lunq'
         }
     }
 

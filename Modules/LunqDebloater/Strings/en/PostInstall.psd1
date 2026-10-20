@@ -8,4 +8,5 @@
     'PostInstall.Added'          = 'Added: {0}. It will run at the first sign-in to Windows.'
     'PostInstall.Wifi'           = 'Wi-Fi networks: {0}'
     'PostInstall.Uninstall'      = 'uninstall: {0}'
+    'PostInstall.Password'       = 'password for {0}'
 }

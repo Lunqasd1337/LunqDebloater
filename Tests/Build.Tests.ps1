@@ -56,14 +56,20 @@ Describe 'Сборка с параметрами' {
         Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
         $run.Output | Should -Match 'Драйверы: добавлено 2, ошибок 1'
         $run.Output | Should -Match 'Обновления в установщике: установлено 2'
+        # Образ 1 boot.wim (Windows PE) получает те же обновления, а драйверы только образ 2.
+        $run.Output | Should -Match 'Обновления в Windows PE \(boot\.wim, образ 1\): установлено 2'
+        $run.Output | Should -Not -Match 'Драйверы в Windows PE'
         $run.Output | Should -Match 'Очистка хранилища компонентов: старые версии системных файлов удалены'
         # После обновления boot.wim setup.exe в sources берётся из него, иначе версии не совпадут.
         $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы из boot.wim в sources'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\sources\setup.exe') | Should -Be 'from boot.wim'
-        # Загрузчик на ISO тоже из обновлённого boot.wim, как в инструкции Microsoft.
-        $run.Output | Should -Match 'Загрузчик на ISO: efi\\boot\\bootx64\.efi, bootmgr\.efi обновлены из boot\.wim'
+        # Загрузчик на ISO тоже из обновлённого boot.wim, как в инструкции Microsoft, и efisys.bin
+        # вместе с ним: ISO, подключённый напрямую, грузится тем же загрузчиком, что и флешка.
+        $run.Output | Should -Match 'Загрузчик на ISO: efi\\boot\\bootx64\.efi, bootmgr\.efi, efi\\microsoft\\boot\\efisys\.bin обновлены из boot\.wim'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
         Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\bootmgr.efi') | Should -Be 'bootmgr.efi from boot.wim'
+        Get-Content -LiteralPath (Join-Path $t.WorkDir 'iso\efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin from boot.wim'
+        $run.Output | Should -Not -Match 'Windows UEFI CA 2023'
 
         $native = Get-Content -LiteralPath $t.NativeLog -Encoding UTF8
         # install.esd не копируется в рабочую папку: редакция экспортируется прямо с ISO, сначала
@@ -74,8 +80,8 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'export \S*install\.wim index 1 compression Max'
         # ISO подключается дважды: для выбора редакции и один раз на копирование и экспорт.
         @([regex]::Matches($run.Output, '\[mock\] dismount ISO')).Count | Should -Be 2
-        # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
-        @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 3
+        # Очистка идёт через dism.exe: в основном образе, в WinRE и в обоих образах boot.wim.
+        @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 4
         $registry = Get-Content -LiteralPath $t.RegLog -Encoding UTF8
         $registry | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\Policies\Microsoft\Windows\DataCollection|AllowTelemetry|DWord|0'
         $registry | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|CleanupComponents|String|да'
@@ -224,6 +230,29 @@ Describe 'Сборка с параметрами' {
         # Программы из Apps.txt есть, поэтому команда первого входа тоже в файле ответов.
         (Select-Xml -Xml $xml -XPath '//u:FirstLogonCommands//u:CommandLine' -Namespace $ns).Node.InnerText | Should -BeLike '*FirstLogon.ps1*'
         $run.Output | Should -Match 'В ISO уже есть файл ответов LunqDebloater'
+    }
+
+    It '-LocalAccountName: учётная запись создаётся файлом ответов, пароль предложит первый вход' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; LocalAccountName = 'Иван' }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Установка:\s+файл ответов, .*локальная учётная запись Иван без пароля'
+        $run.Output | Should -Match 'Учётная запись Иван будет без пароля'
+        $xml = [xml](Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\autounattend.xml') -Raw -Encoding UTF8)
+        $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
+        @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns)[-1].Node.InnerText | Should -BeLike "*New-LocalUser -Name 'Иван'*"
+        # Программ и скриптов нет, а первый вход в образе есть: он спросит пароль.
+        (Select-Xml -Xml $xml -XPath '//u:FirstLogonCommands//u:CommandLine' -Namespace $ns).Node.InnerText | Should -BeLike '*FirstLogon.ps1*'
+        Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'mount\Windows\Setup\Scripts\Lunq\LocalAccount.txt') -Encoding UTF8 | Should -Be 'Иван'
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Unattend.LocalAccountName | Should -Be 'Иван'
+        $recipe.Unattend.LocalAccount | Should -BeTrue
+    }
+
+    It 'недопустимое имя учётной записи останавливает запуск сразу' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; LocalAccountName = 'a/b' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        $run.Output | Should -Match 'недопустимые символы'
+        $run.Output | Should -Not -Match 'Шаг 1 из'
     }
 
     It 'чужой autounattend.xml в ISO останавливает сборку до её начала' {
@@ -396,6 +425,107 @@ Describe 'Ошибки и предупреждения' {
         $run.Output | Should -Match 'профиль рассчитан на сборку 26300'
     }
 
+    It '-BootCA2023: на ISO загрузчик Windows UEFI CA 2023 из install.wim, установщик обновляется сам' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true } -Prepare {
+            param($t)
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Загрузчик:\s+Windows UEFI CA 2023'
+        $run.Output | Should -Match 'не загрузится с включённым Secure Boot'
+        # Без -UpdatesToSetup установщик всё равно обновлён: Microsoft требует этого для загрузчика 2023 года.
+        $run.Output | Should -Match 'Обновления в установщике: установлено 1'
+        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: efi\\boot\\bootx64\.efi, bootmgr\.efi, efi\\microsoft\\boot\\efisys\.bin и шрифты \(1 шт\.\) заменены'
+        $iso = Join-Path $script:Test.WorkDir 'iso'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw_EX.efi from install.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'bootmgr.efi') | Should -Be 'bootmgr_EX.efi from install.wim'
+        # oscdimg делает загрузочный образ UEFI из efisys.bin, а в нём теперь efisys_EX.bin.
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys_EX.bin from install.wim'
+        $oscdimg = @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'oscdimg.exe|*' })
+        $oscdimg[0] | Should -BeLike '*-bootdata:*efisys.bin*'
+        # Шрифты кладутся без суффикса _EX.
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\fonts\wgl4_boot.ttf') | Should -Be 'wgl4_boot_EX.ttf from install.wim'
+        Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|да'
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Media.BootCA2023 | Should -BeTrue
+    }
+
+    It '-BootCA2023 без файлов _EX в образе: обычный загрузчик и предупреждение' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true } -Prepare {
+            param($t)
+            $env:LUNQ_TEST_NO_BOOTEX = '1'
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'В образе нет файлов загрузчика Windows UEFI CA 2023'
+        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: файлов _EX в образе нет, на ISO остался обычный загрузчик'
+        $iso = Join-Path $script:Test.WorkDir 'iso'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin from boot.wim'
+        Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|нет'
+    }
+
+    It '-BootCA2023 без накопительного обновления выключается с предупреждением' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'накопительного обновления среди обновлений нет'
+        $run.Output | Should -Not -Match 'Загрузчик:\s+Windows UEFI CA 2023'
+        Get-Content -LiteralPath (Join-Path $script:Test.WorkDir 'iso\efi\boot\bootx64.efi') | Should -Not -Match '_EX'
+    }
+
+    It '-SplitWim: на ISO части install.swm вместо install.wim, лишний шаг только с параметром' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; SplitWim = $true }
+        $run.Error | Should -BeNullOrEmpty
+        Assert-Steps -Output $run.Output -Expected 12
+        $run.Output | Should -Match 'install\.wim:\s+делится на части по 3800 МБ'
+        $run.Output | Should -Match 'Разделение install\.wim: .+ разделён на части по 3800 МБ: 2 шт\.'
+        $sources = Join-Path $script:Test.WorkDir 'iso\sources'
+        Test-Path -LiteralPath (Join-Path $sources 'install.wim') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $sources 'install.swm') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $sources 'install2.swm') | Should -BeTrue
+        $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.Media.SplitWim | Should -BeTrue
+    }
+
+    It '-DefenderExclusion: рабочая папка исключена на время сборки, и после сбоя тоже убрана' {
+        $record = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\DefenderExclusion.txt'
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Defender:\s+рабочая папка не проверяется до конца сборки'
+        $run.Output | Should -Match 'не проверяется Microsoft Defender до конца сборки'
+        $workDir = $script:Test.WorkDir.TrimEnd('\')
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) |
+            Should -Be @("defender|add|$workDir", "defender|remove|$workDir")
+        Test-Path -LiteralPath $record | Should -BeFalse
+
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -HaveCount 2
+        Test-Path -LiteralPath $record | Should -BeFalse
+    }
+
+    It 'исключение Defender, оставшееся от убитого запуска, убирается следующим, даже без -DefenderExclusion' {
+        $record = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\DefenderExclusion.txt'
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
+            New-Item -ItemType Directory -Path (Split-Path $record -Parent) -Force | Out-Null
+            Set-Content -LiteralPath $record -Value 'D:\OldWork' -Encoding UTF8
+        }
+        $run.Error | Should -BeNullOrEmpty
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -Be @('defender|remove|D:\OldWork')
+        Test-Path -LiteralPath $record | Should -BeFalse
+    }
+
+    It 'Defender не проверяет файлы: исключение не добавляется' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true } -Prepare { $env:LUNQ_TEST_DEFENDER = 'off' }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Microsoft Defender не проверяет файлы на этом компьютере'
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -BeNullOrEmpty
+    }
+
     It 'рабочая папка с пробелом: oscdimg получает пути без пробелов' {
         $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
             param($t)
@@ -433,16 +563,28 @@ Describe 'Реестр из своего профиля' {
 
 Describe 'Пошаговый режим' {
     It 'сборка с ответами по умолчанию: файл ответов включён' {
-        # Ответы: [1] собрать, Enter для категорий, Enter для сводки, номер редакции, Y на план.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '5', 'y')
+        # Ответы: [1] собрать, Enter для категорий, Enter для сводки, Enter для имени ISO, номер редакции, Y на план.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Установка:\s+файл ответов'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $script:Test.WorkDir 'iso') | Should -BeFalse
     }
 
+    It 'своё имя ISO: к нему добавляется версия, в рецепт пишется имя без версии' {
+        # .iso в конце можно не писать, а недопустимое имя спрашивается заново.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', 'a|b', 'Мой Win11.iso', '5', 'y')
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'символы, запрещённые в именах файлов'
+        $name = $script:Test.Name -replace '^Win11_Lunq', 'Мой Win11'
+        Test-Path -LiteralPath (Join-Path $script:Test.Root "$name.iso") | Should -BeTrue
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+        $recipe = Get-Content -LiteralPath (Join-Path $script:Test.Root "$name.lunq.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.OutputName | Should -Be 'Мой Win11'
+    }
+
     It 'отказ на плане: ничего не собирается' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '5', 'n')
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '', '5', 'n')
         $run.Output | Should -Match 'Сборка отменена'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
     }
@@ -453,7 +595,7 @@ Describe 'Пошаговый режим' {
     # [7] программы этого компьютера, [8] сети Wi-Fi и [9] файл ответов.
     It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
         # «9 4»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Драйверы: 3 шт\.'
         $run.Output | Should -Match 'add driver net\.inf'
@@ -461,7 +603,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка с обновлениями выбирается в сводке' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Обновления: 3 шт\.'
         # Два накопительных обновления Windows ставятся одним вызовом DISM, .NET отдельно.
@@ -473,7 +615,7 @@ Describe 'Пошаговый режим' {
     It 'драйверы этого компьютера выгружаются и встраиваются' {
         $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
         try {
-            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '5', 'y')
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '', '5', 'y')
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
@@ -484,7 +626,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y') -Prepare {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '', '5', 'y') -Prepare {
             param($t)
             $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
             $env:LUNQ_TEST_FOLDER = $empty.FullName
@@ -496,7 +638,7 @@ Describe 'Пошаговый режим' {
 
     It 'очистка хранилища включается вместе со скачиванием обновлений, без папки с обновлениями' {
         # «3»: очистка без обновлений не включается, «2 3»: скачать обновления и очистить хранилище.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '5', 'y')
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Пункт 3 работает только вместе с пунктом 2'
         $run.Output | Should -Match 'Обновления из каталога готовы'
@@ -512,28 +654,53 @@ Describe 'Рецепт и отчёт' {
         Enter-LunqTestEnvironment -Test $t
         try {
             $first = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true; UpdatesPath = $t.Updates; SkipDrivers = $true; SkipRegistry = $true }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             Remove-Item -LiteralPath $t.OutputIso -Force
             Remove-Item -LiteralPath $t.WorkDir -Recurse -Force
             $second = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
         $first.Error | Should -BeNullOrEmpty
-        $first.Output | Should -Match 'Рецепт для повтора сборки: .*Win11_Lunq\.lunq\.json'
+        $first.Output | Should -Match ('Рецепт для повтора сборки: .*' + [regex]::Escape($t.Name + '.lunq.json'))
         $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Iso.Sha256 | Should -Be (Get-FileHash -LiteralPath $t.Iso -Algorithm SHA256).Hash.ToLowerInvariant()
         $recipe.Steps.SkipRegistry | Should -BeTrue
         @($recipe.Updates.Files).Count | Should -Be 3
-        Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.html') -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
+        Get-Content -LiteralPath (Join-Path $root ($t.Name + '.lunq.html')) -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
 
         $second.Error | Should -BeNullOrEmpty
-        $second.Output | Should -Match 'Рецепт: .*Win11_Lunq\.lunq\.json'
+        $second.Output | Should -Match ('Рецепт: .*' + [regex]::Escape($t.Name + '.lunq.json'))
         # Повтор берёт из рецепта редакцию, обновления и пропуск реестра.
         $second.Output | Should -Match 'Редакция:\s+\[5\]'
         $second.Output | Should -Match 'Обновления:\s+3 шт\.'
         $second.Output | Should -Match 'Реестр:\s+пропущено'
         $second.Output | Should -Not -Match 'изменилось с прошлой сборки'
         Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
+        # В рецепте имя ISO без версии: повтор новой версией LunqDebloater подставит свою.
+        $recipe.OutputName | Should -Be 'Win11_Lunq'
+    }
+
+    It '-OutputName задаёт имя ISO рядом с исходным, вместе с -OutputIso не принимается' {
+        $root = Join-Path $TestDrive 'outname'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $named = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true; OutputName = 'Office' }
+            $both = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; OutputName = 'Office'; OutputIso = (Join-Path $root 'x.iso') }
+            $bad = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; OutputName = 'NUL' }
+            # Явный -OutputIso при повторе рецепта заменяет имя из рецепта.
+            $recipePath = Join-Path $root (($t.Name -replace '^Win11_Lunq', 'Office') + '.lunq.json')
+            $custom = Join-Path $root 'custom.iso'
+            $repeat = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true; OutputIso = $custom }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $named.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $root (($t.Name -replace '^Win11_Lunq', 'Office') + '.iso')) | Should -BeTrue
+        $both.Output | Should -Match 'Укажите что-то одно: -OutputIso'
+        $both.Output | Should -Not -Match 'Шаг 1 из'
+        $bad.Output | Should -Match 'Имя NUL не подходит для файла'
+        $repeat.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $custom | Should -BeTrue
     }
 
     It 'рецепт сборки без категорий повторяется без категорий, а не с умолчаниями профиля' {
@@ -543,7 +710,7 @@ Describe 'Рецепт и отчёт' {
         try {
             $all = 'apps', 'legacy', 'telemetry', 'ai', 'ads', 'search', 'store', 'onedrive'
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true; SkipCategory = $all }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
             Remove-Item -LiteralPath $t.RegLog -Force -ErrorAction SilentlyContinue
             $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
@@ -564,7 +731,7 @@ Describe 'Рецепт и отчёт' {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
             Add-Content -LiteralPath $t.Iso -Value 'changed'
             Add-Content -LiteralPath (Join-Path $t.App 'Config\Profile.json') -Value ' '
-            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = (Join-Path $root 'Win11_Lunq.lunq.json'); WorkDir = $t.WorkDir; Force = $true }
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = ($t.Recipe); WorkDir = $t.WorkDir; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
         $run.Error | Should -BeNullOrEmpty
@@ -579,7 +746,7 @@ Describe 'Рецепт и отчёт' {
         try {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
             Remove-Item -LiteralPath $t.Iso -Force
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
             # Рецепт без пути к ISO: понятная ошибка, а не ошибка привязки параметра.
             $json = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -598,12 +765,12 @@ Describe 'Рецепт и отчёт' {
         Enter-LunqTestEnvironment -Test $t
         try {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             Remove-Item -LiteralPath $t.NativeLog -Force
             $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
             $task = [regex]::Match([string]$on.Output, 'Задание LunqDebloater\\(Win11_Lunq-[0-9a-f]{8}) создано').Groups[1].Value
             $copy = Join-Path $root ('ProgramFiles\LunqDebloater-Schedule\' + $task)
-            $copied = @('LunqDebloater.ps1', 'Win11_Lunq.lunq.json', 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
+            $copied = @('LunqDebloater.ps1', ($t.Name + '.lunq.json'), 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
                 Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
             $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
             $env:LUNQ_TEST_NO_TASK = '1'
@@ -654,7 +821,7 @@ Describe 'Свежие обновления из каталога' {
         $first.Output | Should -Match 'Обновления из каталога готовы: 4 шт\.'
         $first.Output | Should -Match 'add package windows11\.0-kb5090000-x64\.msu'
         $first.Output | Should -Match 'add package windows11\.0-kb5090002-x64\.cab'
-        $recipe = Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe = Get-Content -LiteralPath ($t.Recipe) -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Updates.Download | Should -BeTrue
 
         $second.Error | Should -BeNullOrEmpty
@@ -725,7 +892,7 @@ Describe 'Этот компьютер без ISO и откат' {
         $online.Output | Should -Match '-Restore'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry', 'ads')
         $saved.Source | Should -Be 'Online'
-        Test-Path -LiteralPath (Join-Path $root 'Win11_Lunq.iso') | Should -BeFalse
+        Test-Path -LiteralPath $t.OutputIso | Should -BeFalse
 
         $restore.Error | Should -BeNullOrEmpty
         $restore.Output | Should -Match 'Реклама и предложения: возвращено \d+, ошибок 0'
@@ -756,7 +923,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $restore.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
         $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
-        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })
+        # В Windows путь полный (System32\WindowsPowerShell), вне Windows просто powershell.exe.
+        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like '*powershell.exe|*' })
         $calls.Count | Should -Be 2
         $calls[0] | Should -BeLike '*|-File|*ThirdParty*EdgeRemover*RemoveEdge.ps1|-UninstallEdge|-NonInteractive|*'
         $calls[1] | Should -BeLike '*RemoveEdge.ps1|-InstallEdge|-NonInteractive|*'
@@ -838,7 +1006,7 @@ Describe 'Английский интерфейс' {
     }
 
     It 'пошаговый режим: ни одной русской буквы в выводе' {
-        $run = Start-TestBuild -Interactive -Parameters @{ Language = 'en' } -Answers @('1', '', '', '5', 'y')
+        $run = Start-TestBuild -Interactive -Parameters @{ Language = 'en' } -Answers @('1', '', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Not -Match '[А-Яа-яЁё]'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue

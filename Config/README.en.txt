@@ -14,11 +14,14 @@ can be taken from this computer.
 
   Apps.txt       Programs that winget installs at the first sign-in to Windows.
                  One program per line, the winget Id (to find it: winget search <name>).
-                 Lines starting with # are skipped.
+                 Lines starting with # are skipped. Programs are installed for all
+                 users (--scope machine), or for the current user if a program has no
+                 such installer. A --scope of your own on the line wins.
 
   Scripts\       Your *.ps1 scripts. They run once at the first sign-in, after the
                  programs are installed, in name order (10-settings.ps1, 20-cleanup.ps1),
-                 with administrator rights. The other files in this folder are copied
+                 with administrator rights, each in its own PowerShell process, from the
+                 scripts folder. The other files in this folder are copied
                  too, and the scripts can use them by a relative path.
 
   Drivers\       Drivers: extracted .inf files together with .sys, .cat and the other

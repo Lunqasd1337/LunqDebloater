@@ -104,6 +104,20 @@ Describe 'Install-LunqFirstLogon' {
     }
 }
 
+Describe 'Install-LunqFirstLogon: пароль учётной записи' {
+    It 'без программ и скриптов кладёт отметку для вопроса о пароле' {
+        $mount = Join-Path $TestDrive 'accountmount'
+        New-Item -ItemType Directory -Path $mount -Force | Out-Null
+        & (Get-Module LunqDebloater) {
+            param($m)
+            $logon = [pscustomobject]@{ AppsPath = 'Apps.txt'; Apps = @(); ScriptsPath = 'Scripts'; Scripts = @(); LocalAccount = 'Иван' }
+            $result = Install-LunqFirstLogon -MountPath $m -FirstLogon $logon -Architecture amd64
+            $result.Summary | Should -Be 'пароль для Иван'
+        } $mount 6>$null
+        Get-Content -LiteralPath (Join-Path $mount 'Windows\Setup\Scripts\Lunq\LocalAccount.txt') -Encoding UTF8 | Should -Be 'Иван'
+    }
+}
+
 Describe 'Install-LunqFirstLogon: права' {
     It 'папки User и Wifi закрываются от пользователей уже в образе, до копирования файлов' {
         # Первый вход закрывает их только после согласия в UAC: без него пароли Wi-Fi остались бы
@@ -129,8 +143,9 @@ Describe 'Файл ответов' {
     BeforeAll {
         $regionInfo = [pscustomobject]@{ Locale = 'en-GB'; SystemLocale = 'ru-RU'; InputLocale = '0419:00000419;0409:00000409'; Keyboards = @('ru-RU', 'en-US'); TimeZone = 'Russian Standard Time' }
         function Get-Answers {
-            param([switch]$Oobe, [switch]$Region, [switch]$Bypass, [switch]$LocalAccount, [string]$Language = 'ru-RU', [string]$Command)
+            param([switch]$Oobe, [switch]$Region, [switch]$Bypass, [switch]$LocalAccount, [string]$Language = 'ru-RU', [string]$Command, [string]$AccountName)
             $answers = [pscustomobject]@{ Oobe = [bool]$Oobe; Region = $(if ($Region) { $regionInfo } else { $null }); Bypass = [bool]$Bypass; LocalAccount = [bool]$LocalAccount }
+            if ($AccountName) { $answers | Add-Member -NotePropertyName AccountName -NotePropertyValue $AccountName }
             $text = & (Get-Module LunqDebloater) { param($a, $l, $c) New-LunqUnattendXml -Unattend $a -Architecture 'amd64' -ImageLanguage $l -FirstLogonCommand $c } $answers $Language $Command
             [xml]$text
         }
@@ -177,6 +192,41 @@ Describe 'Файл ответов' {
         $commands = @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns)
         $commands.Count | Should -Be 1
         $commands[0].Node.InnerText | Should -Be 'reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f'
+    }
+
+    It 'учётная запись с именем создаётся в specialize, группа берётся по SID, экран учётной записи скрыт' {
+        $xml = Get-Answers -LocalAccount -AccountName 'Иван&Co'
+        $commands = @(Select-Xml -Xml $xml -XPath "//u:settings[@pass='specialize']//u:RunSynchronousCommand/u:Path" -Namespace $ns | ForEach-Object { $_.Node.InnerText })
+        $commands.Count | Should -Be 2
+        $commands[0] | Should -BeLike '*BypassNRO*'
+        $commands[1] | Should -BeLike "*New-LocalUser -Name 'Иван&Co' -NoPassword*"
+        $commands[1] | Should -BeLike "*Add-LocalGroupMember -SID S-1-5-32-544 -Member 'Иван&Co'*"
+        # Path у RunSynchronousCommand не длиннее 259 символов даже с самым длинным именем.
+        $long = Get-Answers -LocalAccount -AccountName ('a' * 20)
+        @(Select-Xml -Xml $long -XPath "//u:RunSynchronousCommand/u:Path" -Namespace $ns)[-1].Node.InnerText.Length | Should -BeLessOrEqual 259
+        (Select-Xml -Xml $xml -XPath '//u:HideLocalAccountScreen' -Namespace $ns).Node.InnerText | Should -Be 'true'
+        # Пароля в файле ответов нет.
+        Select-Xml -Xml $xml -XPath '//u:Password' -Namespace $ns | Should -BeNullOrEmpty
+        & (Get-Module LunqDebloater) { param($a) Format-LunqUnattendSummary -Unattend $a } ([pscustomobject]@{ Oobe = $false; Region = $null; Bypass = $false; LocalAccount = $true; AccountName = 'Иван' }) |
+            Should -Be 'локальная учётная запись Иван без пароля'
+    }
+
+    It 'без имени учётная запись не создаётся: имя и пароль спросит установка' {
+        $xml = Get-Answers -LocalAccount
+        Select-Xml -Xml $xml -XPath '//u:HideLocalAccountScreen' -Namespace $ns | Should -BeNullOrEmpty
+        ($xml.OuterXml) | Should -Not -Match 'New-LocalUser'
+    }
+
+    It 'имя учётной записи проверяется по правилам Windows' {
+        $check = { param($n) & (Get-Module LunqDebloater) { param($x) Test-LunqAccountName -Name $x } $n }
+        & $check 'Иван' | Should -BeNullOrEmpty
+        & $check 'user.name-1' | Should -BeNullOrEmpty
+        & $check '' | Should -Match 'пустое'
+        & $check ('a' * 21) | Should -Match 'длиннее 20'
+        foreach ($bad in 'a/b', 'a@b', 'a:b', "a'b", 'a%b', 'a"b', 'a\b') { & $check $bad | Should -Match 'недопустимые' }
+        & $check ' user' | Should -Match 'пробелом'
+        & $check 'user.' | Should -Match 'точкой'
+        & $check 'Administrator' | Should -Match 'занято'
     }
 
     It 'язык образа берётся без пометки (Default)' {

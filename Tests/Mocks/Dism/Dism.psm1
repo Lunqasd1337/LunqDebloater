@@ -37,6 +37,20 @@ function Mount-WindowsImage {
             New-Item -ItemType Directory -Path (Join-Path $Path 'Windows\System32\Sysprep') -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $Path 'Windows\System32\Sysprep\unattend.xml') -Value '<unattend />'
         }
+        # Загрузчик, подписанный Windows UEFI CA 2023 (-BootCA2023). LUNQ_TEST_NO_BOOTEX: образ без него.
+        if (-not $env:LUNQ_TEST_NO_BOOTEX) {
+            $files = @{
+                'Windows\Boot\EFI_EX\bootmgfw_EX.efi'           = 'bootmgfw_EX.efi from install.wim'
+                'Windows\Boot\EFI_EX\bootmgr_EX.efi'            = 'bootmgr_EX.efi from install.wim'
+                'Windows\Boot\DVD_EX\EFI\en-US\efisys_EX.bin' = 'efisys_EX.bin from install.wim'
+                'Windows\Boot\Fonts_EX\wgl4_boot_EX.ttf'        = 'wgl4_boot_EX.ttf from install.wim'
+            }
+            foreach ($name in $files.Keys) {
+                $file = Join-Path $Path $name
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value $files[$name]
+            }
+        }
     }
     if ($ImagePath -like '*boot.wim') {
         # Установщик внутри boot.wim: его setup.exe и setuphost.exe копируются в sources ISO.
@@ -45,6 +59,8 @@ function Mount-WindowsImage {
         # Загрузчик UEFI из WinPE: после обновления boot.wim он заменяет загрузчик на ISO.
         New-Item -ItemType Directory -Path (Join-Path $Path 'Windows\Boot\EFI') -Force | Out-Null
         foreach ($name in 'bootmgfw.efi', 'bootmgr.efi') { Set-Content -LiteralPath (Join-Path $Path "Windows\Boot\EFI\$name") -Value "$name from boot.wim" }
+        New-Item -ItemType Directory -Path (Join-Path $Path 'Windows\Boot\DVD\EFI\en-US') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $Path 'Windows\Boot\DVD\EFI\en-US\efisys.bin') -Value 'efisys.bin from boot.wim'
     }
 }
 
@@ -61,6 +77,15 @@ function Export-WindowsImage {
     param([Parameter(Mandatory)]$SourceImagePath, [Parameter(Mandatory)]$SourceIndex, [Parameter(Mandatory)]$DestinationImagePath, $CompressionType, [switch]$CheckIntegrity, [switch]$SetBootable, $LogPath)
     Write-Host "    [mock] export $SourceImagePath index $SourceIndex compression $CompressionType"
     Add-Content -LiteralPath $DestinationImagePath -Value 'wim'
+}
+
+function Split-WindowsImage {
+    # Две части, как у образа чуть больше 3800 МБ.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$ImagePath, [Parameter(Mandatory)]$SplitImagePath, [Parameter(Mandatory)]$FileSize, [switch]$CheckIntegrity, $LogPath)
+    Write-Host "    [mock] split $ImagePath -> $SplitImagePath size $FileSize"
+    Set-Content -LiteralPath $SplitImagePath -Value 'swm 1'
+    Set-Content -LiteralPath (Join-Path (Split-Path $SplitImagePath) 'install2.swm') -Value 'swm 2'
 }
 
 function Get-AppxProvisionedPackage {

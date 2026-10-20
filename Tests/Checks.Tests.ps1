@@ -298,10 +298,54 @@ Describe 'Test-LunqImageRequirements' {
     }
 }
 
+Describe 'Имя итогового ISO' {
+    It 'по умолчанию рядом с исходным, с _Lunq и версией LunqDebloater' {
+        InModuleScope LunqDebloater {
+            $version = Get-LunqVersion
+            Get-LunqDefaultOutputName -IsoPath (Join-Path $TestDrive 'Win11_26H2.iso') | Should -Be 'Win11_26H2_Lunq'
+            $path = Get-LunqOutputIsoPath -IsoPath (Join-Path $TestDrive 'Win11_26H2.iso')
+            $path | Should -Be (Join-Path $TestDrive "Win11_26H2_Lunq_$version.iso")
+            Get-LunqOutputIsoPath -IsoPath (Join-Path $TestDrive 'Win11.iso') -Name 'Офис' | Should -Be (Join-Path $TestDrive "Офис_$version.iso")
+        }
+    }
+
+    It 'имя проверяется по правилам имён файлов Windows' -TestCases @(
+        @{ Name = 'Win11 Офис-2026'; Problem = $null },
+        @{ Name = ''; Problem = '*пустое*' },
+        @{ Name = ('a' * 101); Problem = '*длиннее 100*' },
+        @{ Name = 'a:b'; Problem = '*запрещённые в именах файлов*' },
+        @{ Name = 'a/b'; Problem = '*запрещённые в именах файлов*' },
+        @{ Name = 'con'; Problem = '*занято Windows*' },
+        @{ Name = 'Win11.'; Problem = '*точкой или пробелом*' }
+    ) {
+        InModuleScope LunqDebloater -Parameters @{ Name = $Name; Problem = $Problem } {
+            param($Name, $Problem)
+            $result = Test-LunqOutputName -Name $Name
+            if ($Problem) { $result | Should -BeLike $Problem } else { $result | Should -BeNullOrEmpty }
+        }
+    }
+
+    It 'в пошаговом режиме Enter оставляет имя по умолчанию, .iso в конце отбрасывается' {
+        InModuleScope LunqDebloater {
+            $global:LunqNameAnswers = New-Object System.Collections.Generic.Queue[object]
+            foreach ($answer in '', 'a?b', 'Офис.ISO') { $global:LunqNameAnswers.Enqueue($answer) }
+            Mock Read-Host { $global:LunqNameAnswers.Dequeue() }
+            Mock Write-Warning { }
+            try {
+                Read-LunqOutputName -Default 'Win11_Lunq' | Should -Be 'Win11_Lunq'
+                Read-LunqOutputName -Default 'Win11_Lunq' | Should -Be 'Офис'
+                Should -Invoke Write-Warning -Times 1 -Exactly
+            }
+            finally { Remove-Variable -Name LunqNameAnswers -Scope Global }
+        }
+    }
+}
+
 Describe 'Get-LunqHostWarning' {
     It 'предупреждает, если система старше образа' {
         Get-LunqHostWarning -ImageBuild 26300 -HostBuild 19045 | Should -BeLike '*19045 (Windows 10)*старше образа*'
-        Get-LunqHostWarning -ImageBuild 26300 -HostBuild 22631 | Should -BeLike '*Windows 11 23H2*'
+        Get-LunqHostWarning -ImageBuild 26300 -HostBuild 22631 | Should -BeLike '*22631 (Windows 11)*старше образа*'
+        Get-LunqHostWarning -ImageBuild 26300 -HostBuild 26100 | Should -BeLike '*26100 (Windows 11 24H2)*старше образа*'
     }
 
     It 'молчит, если система той же версии или новее, или версия неизвестна' {
@@ -355,6 +399,34 @@ Describe 'Редакции в ISO' {
         InModuleScope LunqDebloater {
             Get-WindowsReleaseName -Build 26100 | Should -Be 'Windows 11 24H2'
             Get-WindowsReleaseName -Build 12345 | Should -Be ''
+            # Выпуски старше 24H2 в таблицу не входят.
+            Get-WindowsReleaseName -Build 22631 | Should -Be ''
+            Get-WindowsReleaseName -Build 19045 | Should -Be ''
+        }
+    }
+
+    It 'Data\Releases.psd1: сборки не повторяются и не старше 24H2, KB записаны цифрами, сборка профиля по умолчанию известна' {
+        $repo = Split-Path $PSScriptRoot -Parent
+        $releases = @((Import-PowerShellDataFile -LiteralPath (Join-Path $repo 'Modules\LunqDebloater\Data\Releases.psd1')).Releases)
+        $releases.Count | Should -BeGreaterThan 0
+        @($releases | ForEach-Object { $_.Build } | Select-Object -Unique).Count | Should -Be $releases.Count
+        foreach ($release in $releases) {
+            $release.Build | Should -BeOfType [int]
+            $release.Build | Should -BeGreaterOrEqual 26100
+            $release.Name | Should -Match '^\d{2}H\d$'
+            [string]$release.Enablement | Should -Match '^(\d{7})?$'
+        }
+        $profileBuild = [int](Get-Content -LiteralPath (Join-Path $repo 'Config\Profile.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Requirements.Build
+        @($releases | Where-Object { $_.Build -eq $profileBuild }).Count | Should -Be 1
+    }
+
+    It 'пакеты включения узнаются по номерам из Data\Releases.psd1' {
+        InModuleScope LunqDebloater {
+            Test-LunqEnablementUpdate 'windows11.0-kb5054156-x64.msu' | Should -BeTrue
+            # Имя файла 26H2 из каталога, с хэшем после архитектуры.
+            Test-LunqEnablementUpdate 'Windows11.0-KB5121794-x64_5e20a3cce48d6611b16bdec42b07167f5456586a.msu' | Should -BeTrue
+            Test-LunqEnablementUpdate 'windows11.0-kb5090000-x64.msu' | Should -BeFalse
+            Test-LunqEnablementUpdate 'windows11.0-x64.msu' | Should -BeFalse
         }
     }
 

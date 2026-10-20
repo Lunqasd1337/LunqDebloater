@@ -5,6 +5,7 @@
     'Servicing.UpdatesIn'           = 'Обновления в {0}'
     'Servicing.DriversIn'           = 'Драйверы в {0}'
     'Servicing.WhereSetup'          = 'установщике'
+    'Servicing.WherePE'             = 'Windows PE (boot.wim, образ 1)'
     'Servicing.Installing'          = '[{0}/{1}] Устанавливаю {2} ({3})...'
     'Servicing.UpdateFailed'        = 'Не удалось установить {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} не подходит к этому образу, пропускаю.'
@@ -30,4 +31,9 @@
     'Servicing.BootFilesTitle'      = 'Загрузчик на ISO'
     'Servicing.BootFilesDone'       = '{0} обновлены из boot.wim'
     'Servicing.BootFileFailed'      = 'Не удалось обновить {0} из boot.wim: {1}'
+    'Servicing.BootCA2023Title'     = 'Загрузчик Windows UEFI CA 2023'
+    'Servicing.BootCA2023Done'      = '{0} и шрифты ({1} шт.) заменены файлами _EX из образа'
+    'Servicing.BootCA2023Fallback'  = 'файлов _EX в образе нет, на ISO остался обычный загрузчик'
+    'Servicing.BootCA2023Missing'   = 'В образе нет файлов загрузчика Windows UEFI CA 2023 ({0}), поэтому на ISO останется обычный загрузчик. Обычно их приносит свежее накопительное обновление.'
+    'Servicing.BootCA2023Failed'    = 'Не удалось заменить {0} загрузчиком Windows UEFI CA 2023: {1}'
 }
