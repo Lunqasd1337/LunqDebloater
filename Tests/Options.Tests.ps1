@@ -1,5 +1,5 @@
 ﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
-# Сводка «Что войдёт в образ» (Private\Options.ps1): зависимость пунктов от родителя и переключение по номерам.
+# Сводка «Что войдёт в образ» (Private\Options.ps1): зависимость пунктов от родителя, разделы и переключение по номерам.
 
 BeforeAll {
     $repo = Split-Path $PSScriptRoot -Parent
@@ -45,7 +45,7 @@ Describe 'Test-LunqOption' {
     }
 }
 
-Describe 'Select-LunqBuildOptions' {
+Describe 'Select-LunqOptionList' {
     BeforeEach {
         $global:LunqOptionAnswers = New-Object System.Collections.Generic.Queue[string]
     }
@@ -66,7 +66,7 @@ Describe 'Select-LunqBuildOptions' {
                 (New-LunqOption -Key 'drivers' -Name 'd' -Available $false))
             # Недоступный пункт без номера: 1 updates, 2 cleanup, 3 pick.
             $global:LunqOptionAnswers.Enqueue('3, 2')
-            Select-LunqBuildOptions -Options $options | Should -Be 'pick'
+            Select-LunqOptionList -Options $options -Prompt 'p' | Should -Be 'pick'
             $options[1].Enabled | Should -BeTrue
         }
     }
@@ -82,7 +82,7 @@ Describe 'Select-LunqBuildOptions' {
                 (New-LunqOption -Key 'cleanup' -Name 'c' -Parent 'updates' -Enabled $false))
             $global:LunqOptionAnswers.Enqueue('2 9')
             $global:LunqOptionAnswers.Enqueue('')
-            Select-LunqBuildOptions -Options $options | Should -BeNullOrEmpty
+            Select-LunqOptionList -Options $options -Prompt 'p' | Should -BeNullOrEmpty
             $options[1].Enabled | Should -BeFalse
             Should -Invoke Write-Warning -Times 2 -Exactly
         }
@@ -101,9 +101,72 @@ Describe 'Select-LunqBuildOptions' {
             $global:LunqOptionAnswers.Enqueue('3')
             $global:LunqOptionAnswers.Enqueue('2 3')
             $global:LunqOptionAnswers.Enqueue('')
-            Select-LunqBuildOptions -Options $options | Should -BeNullOrEmpty
+            Select-LunqOptionList -Options $options -Prompt 'p' | Should -BeNullOrEmpty
             Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -eq 'Пункт 3 работает только вместе с одним из пунктов 1, 2. Сначала включите какой-нибудь из них.' }
             Test-LunqOption -Options $options -Key 'cleanup' | Should -BeTrue
+        }
+    }
+}
+
+Describe 'Select-LunqBuildOptions' {
+    BeforeEach {
+        $global:LunqOptionAnswers = New-Object System.Collections.Generic.Queue[string]
+        $global:LunqOptionScreen = New-Object System.Collections.Generic.List[string]
+    }
+
+    AfterEach {
+        Remove-Variable -Name LunqOptionAnswers, LunqOptionScreen -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It 'главный экран показывает разделы с включённым, номер открывает раздел, Enter возвращает и завершает' {
+        InModuleScope LunqDebloater {
+            Mock Write-Host { if (-not $NoNewline) { $global:LunqOptionScreen.Add([string]$Object) } }
+            Mock Write-Info { }
+            Mock Read-Host { $global:LunqOptionAnswers.Dequeue() }
+            $options = @(
+                (New-LunqOption -Key 'updates' -Name 'Обновления: 2 шт.' -Short 'из папки' -Section 'updates'),
+                (New-LunqOption -Key 'pick' -Name 'p' -Action -Section 'updates'),
+                (New-LunqOption -Key 'drivers' -Name 'd' -Available $false -Section 'drivers'),
+                (New-LunqOption -Key 'splitWim' -Name 'Разделить' -Short 'части для FAT32' -Enabled $false -Section 'extra'))
+            # Раздел 3 «Дополнительно»: включить пункт 1 и вернуться, затем Enter на главном экране.
+            foreach ($answer in '3', '1', '', '') { $global:LunqOptionAnswers.Enqueue($answer) }
+            Select-LunqBuildOptions -Options $options | Should -BeNullOrEmpty
+            $options[3].Enabled | Should -BeTrue
+            $global:LunqOptionScreen | Should -Contain 'из папки'
+            $global:LunqOptionScreen | Should -Contain 'ничего не найдено'
+            $global:LunqOptionScreen | Should -Contain 'ничего не включено'
+            $global:LunqOptionScreen | Should -Contain 'части для FAT32'
+        }
+    }
+
+    It 'действие из раздела возвращается сразу, неверный номер раздела предупреждает' {
+        InModuleScope LunqDebloater {
+            Mock Write-Host { }
+            Mock Write-Info { }
+            Mock Write-Warning { }
+            Mock Read-Host { $global:LunqOptionAnswers.Dequeue() }
+            $options = @(
+                (New-LunqOption -Key 'updates' -Name 'u' -Section 'updates'),
+                (New-LunqOption -Key 'pick' -Name 'p' -Action -Section 'updates'))
+            foreach ($answer in '7', '1', '2') { $global:LunqOptionAnswers.Enqueue($answer) }
+            Select-LunqBuildOptions -Options $options | Should -Be 'pick'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -eq 'Номера 7 нет в списке.' }
+        }
+    }
+
+    It 'родителя из другого раздела называет по имени и разделу' {
+        InModuleScope LunqDebloater {
+            Mock Write-Host { }
+            Mock Write-Info { }
+            Mock Write-Warning { }
+            Mock Read-Host { $global:LunqOptionAnswers.Dequeue() }
+            $options = @(
+                (New-LunqOption -Key 'download' -Name 'Скачать' -Enabled $false -Section 'updates'),
+                (New-LunqOption -Key 'cleanup' -Name 'c' -Parent 'download' -Enabled $false -Section 'extra'))
+            foreach ($answer in '2', '1', '', '') { $global:LunqOptionAnswers.Enqueue($answer) }
+            Select-LunqBuildOptions -Options $options | Should -BeNullOrEmpty
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -eq 'Пункт 1 работает только вместе с пунктом «Скачать» в разделе «Обновления». Сначала включите его.' }
+            $options[1].Enabled | Should -BeFalse
         }
     }
 }

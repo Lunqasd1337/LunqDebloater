@@ -2,6 +2,7 @@
     # Пункт сводки «Что войдёт в образ». Parent: Key пункта, без которого этот не имеет смысла,
     # или несколько Key, если пункту хватает любого из них.
     # Action: пункт не включается и не выключается, а запускает действие (например, выбор папки).
+    # Section: раздел сводки, Short: как пункт называется в строке раздела на главном экране.
     param(
         [Parameter(Mandatory)][string]$Key,
         [Parameter(Mandatory)][string]$Name,
@@ -9,11 +10,14 @@
         [bool]$Available = $true,
         [string[]]$Details = @(),
         [string[]]$Parent,
-        [switch]$Action
+        [switch]$Action,
+        [string]$Section = '',
+        [string]$Short = ''
     )
+    if (-not $Short) { $Short = $Name }
     return [pscustomobject]@{
         Key = $Key; Name = $Name; Enabled = $Enabled; Available = $Available
-        Details = @($Details); Parent = $Parent; Action = [bool]$Action
+        Details = @($Details); Parent = $Parent; Action = [bool]$Action; Section = $Section; Short = $Short
     }
 }
 
@@ -29,20 +33,73 @@ function Test-LunqOption {
     return $false
 }
 
+function Get-LunqOptionSectionTitle {
+    # Заголовок раздела сводки по его ключу (Section у пунктов).
+    param([string]$Section)
+    switch ($Section) {
+        'updates' { return Get-LunqText 'Options.SectionUpdates' }
+        'drivers' { return Get-LunqText 'Options.SectionDrivers' }
+        'firstLogon' { return Get-LunqText 'Options.SectionFirstLogon' }
+        'setup' { return Get-LunqText 'Options.SectionSetup' }
+        'extra' { return Get-LunqText 'Options.SectionExtra' }
+    }
+    return $Section
+}
+
 function Select-LunqBuildOptions {
-    # Одна сводка вместо отдельных вопросов: всё, что найдено в папке Config, с переключением по номерам.
-    # Пункты, для которых ничего не найдено, показываются с подсказкой и без номера.
+    # Сводка по разделам: на главном экране по строке на раздел с тем, что в нём включено,
+    # а номер открывает раздел с его пунктами. Так два десятка пунктов не идут одним списком.
     # Возвращает Key выбранного действия или $null, когда пользователь нажал Enter.
     param([Parameter(Mandatory)]$Options)
 
-    $numbered = @($Options | Where-Object { $_.Available })
+    $sections = @($Options | ForEach-Object { $_.Section } | Select-Object -Unique)
+    $titles = @($sections | ForEach-Object { Get-LunqOptionSectionTitle $_ })
+    $width = ($titles | Measure-Object -Property Length -Maximum).Maximum + 2
+    while ($true) {
+        Write-Info ''
+        for ($i = 0; $i -lt $sections.Count; $i++) {
+            $section = $sections[$i]
+            $toggles = @($Options | Where-Object { $_.Section -eq $section -and $_.Available -and -not $_.Action })
+            $on = @($toggles | Where-Object { Test-LunqOption -Options $Options -Key $_.Key })
+            if ($on.Count -gt 0) { $status = ($on | ForEach-Object { $_.Short }) -join '; ' }
+            elseif ($toggles.Count -gt 0) { $status = Get-LunqText 'Options.StatusOff' }
+            else { $status = Get-LunqText 'Options.StatusNone' }
+            Write-Host ('    {0,-4} ' -f "[$($i + 1)]") -ForegroundColor Cyan -NoNewline
+            Write-Host $titles[$i].PadRight($width) -NoNewline
+            if ($on.Count -gt 0) { Write-Host $status -ForegroundColor Green } else { Write-Host $status -ForegroundColor DarkGray }
+        }
+        Write-Info ''
+        $answer = ([string](Read-Host ('    ' + (Get-LunqText 'Options.MainPrompt')))).Trim()
+        if (-not $answer) { return $null }
+        $parsed = 0
+        if (-not ([int]::TryParse($answer, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $sections.Count)) {
+            Write-Warning (Get-LunqText 'Options.NoSuchNumber' $answer)
+            continue
+        }
+        Write-Info ''
+        Write-Host ('    ' + $titles[$parsed - 1]) -ForegroundColor Cyan
+        $items = @($Options | Where-Object { $_.Section -eq $sections[$parsed - 1] })
+        $action = Select-LunqOptionList -Options $Options -Items $items -Prompt (Get-LunqText 'Options.SectionPrompt')
+        if ($action) { return $action }
+    }
+}
+
+function Select-LunqOptionList {
+    # Список пунктов с переключением по номерам. Items: показываемые пункты (раздел сводки),
+    # номера идут по ним. Options: все пункты, чтобы проверять родителей из других разделов.
+    # Пункты, для которых ничего не найдено, показываются с подсказкой и без номера.
+    # Возвращает Key выбранного действия или $null, когда пользователь нажал Enter.
+    param([Parameter(Mandatory)]$Options, $Items, [Parameter(Mandatory)][string]$Prompt)
+    if ($null -eq $Items) { $Items = $Options }
+
+    $numbered = @($Items | Where-Object { $_.Available })
     $numbers = @{}
     for ($i = 0; $i -lt $numbered.Count; $i++) { $numbers[$numbered[$i].Key] = $i + 1 }
     while ($true) {
         Write-Info ''
-        foreach ($option in $Options) {
+        foreach ($option in $Items) {
             if (-not $option.Available -and $option.Parent) { continue }
-            $indent = if ($option.Parent) { '    ' } else { '' }
+            $indent = if ($option.Parent -and ($Items | Where-Object { $option.Parent -contains $_.Key })) { '    ' } else { '' }
             $on = Test-LunqOption -Options $Options -Key $option.Key
             if ($option.Available) {
                 Write-Host ('    {0,-4} ' -f "[$($numbers[$option.Key])]") -ForegroundColor Cyan -NoNewline
@@ -56,7 +113,7 @@ function Select-LunqBuildOptions {
         }
         Write-Info ''
         if ($numbered.Count -eq 0) { return $null }
-        $answer = Read-Host ('    ' + (Get-LunqText 'Options.Prompt'))
+        $answer = Read-Host ('    ' + $Prompt)
         if (-not $answer -or -not $answer.Trim()) { return $null }
         $action = $null
         foreach ($token in ($answer -split '[\s,;]+' | Where-Object { $_ })) {
@@ -77,9 +134,12 @@ function Select-LunqBuildOptions {
             }
             if (-not $parentOn) {
                 # Родитель без номера (например, обновлений в папке нет) включить нельзя, его не называем.
-                $parentNumbers = @($option.Parent | ForEach-Object { $numbers[$_] } | Where-Object { $_ })
-                if ($parentNumbers.Count -gt 1) { Write-Warning (Get-LunqText 'Options.NeedsAnyParent' $parsed ($parentNumbers -join ', ')) }
-                else { Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($parentNumbers -join '')) }
+                # Родителя из другого раздела называем по имени: его номер здесь не виден.
+                $parents = @($option.Parent | ForEach-Object { $numbers[$_] } | Where-Object { $_ })
+                $parents += @($Options | Where-Object { $option.Parent -contains $_.Key -and $_.Available -and -not $numbers.ContainsKey($_.Key) } |
+                        ForEach-Object { Get-LunqText 'Options.ParentIn' $_.Name (Get-LunqOptionSectionTitle $_.Section) })
+                if ($parents.Count -gt 1) { Write-Warning (Get-LunqText 'Options.NeedsAnyParent' $parsed ($parents -join ', ')) }
+                else { Write-Warning (Get-LunqText 'Options.NeedsParent' $parsed ($parents -join '')) }
                 continue
             }
             $option.Enabled = -not $option.Enabled
@@ -142,8 +202,12 @@ function New-LunqContentOptions {
     $hasApps = $FirstLogon.Apps.Count -gt 0
     $hasScripts = $FirstLogon.Scripts.Count -gt 0
 
+    $updatesShort = ''
+    $driversShort = ''
     if ($hasUpdates) {
-        $updatesName = Get-LunqText 'Main.UpdatesFound' ($Found.Updates.Count + $foundDU.Count) (Format-Size (Get-LunqFilesSize (@($Found.Updates) + $foundDU)))
+        $updatesSize = Format-Size (Get-LunqFilesSize (@($Found.Updates) + $foundDU))
+        $updatesName = Get-LunqText 'Main.UpdatesFound' ($Found.Updates.Count + $foundDU.Count) $updatesSize
+        $updatesShort = Get-LunqText 'Main.ShortUpdates' ($Found.Updates.Count + $foundDU.Count) $updatesSize
         $updatesDetails = @($Found.Updates | ForEach-Object { $_.Name }) + $Found.DUNames + (Get-LunqText 'Main.FoundIn' $UpdatesDir) + (Get-LunqText 'Main.UpdatesFoundHint')
     }
     else {
@@ -151,7 +215,9 @@ function New-LunqContentOptions {
         $updatesDetails = Get-LunqText 'Main.UpdatesNoneHint'
     }
     if ($hasDrivers) {
-        $driversName = Get-LunqText 'Main.DriversFound' $Found.Drivers.Count (Format-Size (Get-FolderSize $DriversDir -Cache $SizeCache))
+        $driversSize = Format-Size (Get-FolderSize $DriversDir -Cache $SizeCache)
+        $driversName = Get-LunqText 'Main.DriversFound' $Found.Drivers.Count $driversSize
+        $driversShort = Get-LunqText 'Main.ShortDrivers' $Found.Drivers.Count $driversSize
         $driversDetails = @((Get-LunqText 'Main.FoundIn' $DriversDir), (Get-LunqText 'Main.DriversFoundHint'))
     }
     else {
@@ -179,43 +245,49 @@ function New-LunqContentOptions {
     $updatesToSetupDetails = @(Get-LunqText 'Main.OptUpdatesToSetupHint')
     if ($foundDU.Count -gt 0) { $updatesToSetupDetails += Get-LunqText 'Main.OptUpdatesToSetupDU' $Found.SafeOS.Count $Found.SetupDU.Count }
 
+    # Порядок пунктов задаёт и порядок разделов. Редкие пункты собраны в разделе «Дополнительно».
     return @(
-        (New-LunqOption -Key 'updates' -Enabled $Use.updates -Available $hasUpdates -Name $updatesName -Details $updatesDetails),
-        (New-LunqOption -Key 'updatesToSetup' -Parent 'updates' -Enabled ($Use.updatesToSetup -or $foundDU.Count -gt 0) -Available $hasUpdates `
-            -Name (Get-LunqText 'Main.OptUpdatesToSetup') `
+        (New-LunqOption -Key 'updates' -Section 'updates' -Enabled $Use.updates -Available $hasUpdates -Name $updatesName -Details $updatesDetails -Short $updatesShort),
+        (New-LunqOption -Key 'updatesToSetup' -Section 'updates' -Parent 'updates' -Enabled ($Use.updatesToSetup -or $foundDU.Count -gt 0) -Available $hasUpdates `
+            -Name (Get-LunqText 'Main.OptUpdatesToSetup') -Short (Get-LunqText 'Main.ShortUpdatesToSetup') `
             -Details $updatesToSetupDetails),
-        (New-LunqOption -Key 'pickUpdates' -Action -Name (Get-LunqText 'Main.OptPickUpdates') -Details (Get-LunqText 'Main.OptPickUpdatesHint')),
-        (New-LunqOption -Key 'download' -Enabled $Use.download -Name (Get-LunqText 'Main.OptDownload') -Details (Get-LunqText 'Main.OptDownloadHint')),
-        # Очистка нужна и обновлениям из папки, и скачанным, поэтому у неё два родителя. Она стоит
-        # после скачивания, чтобы её было видно и тогда, когда папка с обновлениями пуста.
-        (New-LunqOption -Key 'cleanup' -Parent 'updates', 'download' -Enabled $Use.cleanup `
-            -Name (Get-LunqText 'Main.OptCleanup') `
-            -Details (Get-LunqText 'Main.OptCleanupHint')),
-        (New-LunqOption -Key 'drivers' -Enabled $Use.drivers -Available $hasDrivers -Name $driversName -Details $driversDetails),
-        (New-LunqOption -Key 'driversToSetup' -Parent 'drivers' -Enabled $Use.driversToSetup -Available $hasDrivers `
-            -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) `
+        (New-LunqOption -Key 'pickUpdates' -Section 'updates' -Action -Name (Get-LunqText 'Main.OptPickUpdates') -Details (Get-LunqText 'Main.OptPickUpdatesHint')),
+        (New-LunqOption -Key 'download' -Section 'updates' -Enabled $Use.download -Name (Get-LunqText 'Main.OptDownload') -Short (Get-LunqText 'Main.ShortDownload') `
+            -Details (Get-LunqText 'Main.OptDownloadHint')),
+        (New-LunqOption -Key 'drivers' -Section 'drivers' -Enabled $Use.drivers -Available $hasDrivers -Name $driversName -Details $driversDetails -Short $driversShort),
+        (New-LunqOption -Key 'driversToSetup' -Section 'drivers' -Parent 'drivers' -Enabled $Use.driversToSetup -Available $hasDrivers `
+            -Name (Get-LunqText 'Main.OptDriversToSetup' $peDriversCount) -Short (Get-LunqText 'Main.ShortDriversToSetup') `
             -Details (Get-LunqText 'Main.OptDriversToSetupHint')),
-        (New-LunqOption -Key 'pickDrivers' -Action -Name (Get-LunqText 'Main.OptPickDrivers') -Details (Get-LunqText 'Main.OptPickDriversHint')),
-        (New-LunqOption -Key 'hostDrivers' -Action -Name (Get-LunqText 'Main.OptHostDrivers') -Details (Get-LunqText 'Main.OptHostDriversHint')),
-        (New-LunqOption -Key 'apps' -Enabled $Use.apps -Available $hasApps -Name $appsName -Details $appsDetails),
-        (New-LunqOption -Key 'hostApps' -Enabled $Use.hostApps -Name (Get-LunqText 'Main.OptHostApps') -Details (Get-LunqText 'Main.OptHostAppsHint')),
-        (New-LunqOption -Key 'scripts' -Enabled $Use.scripts -Available $hasScripts -Name $scriptsName -Details $scriptsDetails),
-        (New-LunqOption -Key 'wifi' -Enabled $Use.wifi -Name (Get-LunqText 'Main.OptHostWifi') -Details @((Get-LunqText 'Main.OptHostWifiHint'), (Get-LunqText 'Main.OptHostWifiWarning'))),
-        (New-LunqOption -Key 'unattend' -Enabled $Use.unattend -Name (Get-LunqText 'Main.OptUnattend') `
+        (New-LunqOption -Key 'pickDrivers' -Section 'drivers' -Action -Name (Get-LunqText 'Main.OptPickDrivers') -Details (Get-LunqText 'Main.OptPickDriversHint')),
+        (New-LunqOption -Key 'hostDrivers' -Section 'drivers' -Action -Name (Get-LunqText 'Main.OptHostDrivers') -Details (Get-LunqText 'Main.OptHostDriversHint')),
+        (New-LunqOption -Key 'apps' -Section 'firstLogon' -Enabled $Use.apps -Available $hasApps -Name $appsName -Details $appsDetails `
+            -Short (Get-LunqText 'Main.ShortApps' $FirstLogon.Apps.Count)),
+        (New-LunqOption -Key 'hostApps' -Section 'firstLogon' -Enabled $Use.hostApps -Name (Get-LunqText 'Main.OptHostApps') -Short (Get-LunqText 'Main.ShortHostApps') `
+            -Details (Get-LunqText 'Main.OptHostAppsHint')),
+        (New-LunqOption -Key 'scripts' -Section 'firstLogon' -Enabled $Use.scripts -Available $hasScripts -Name $scriptsName -Details $scriptsDetails `
+            -Short (Get-LunqText 'Main.ShortScripts' $FirstLogon.Scripts.Count)),
+        (New-LunqOption -Key 'wifi' -Section 'firstLogon' -Enabled $Use.wifi -Name (Get-LunqText 'Main.OptHostWifi') -Short (Get-LunqText 'Main.ShortHostWifi') `
+            -Details @((Get-LunqText 'Main.OptHostWifiHint'), (Get-LunqText 'Main.OptHostWifiWarning'))),
+        (New-LunqOption -Key 'unattend' -Section 'setup' -Enabled $Use.unattend -Name (Get-LunqText 'Main.OptUnattend') -Short (Get-LunqText 'Main.ShortUnattend') `
             -Details (Get-LunqText 'Main.OptUnattendHint')),
-        (New-LunqOption -Key 'oobe' -Parent 'unattend' -Enabled $Use.oobe -Name (Get-LunqText 'Main.OptOobe') `
+        (New-LunqOption -Key 'oobe' -Section 'setup' -Parent 'unattend' -Enabled $Use.oobe -Name (Get-LunqText 'Main.OptOobe') -Short (Get-LunqText 'Main.ShortOobe') `
             -Details (Get-LunqText 'Main.OptOobeHint')),
-        (New-LunqOption -Key 'region' -Parent 'unattend' -Enabled $Use.region -Name (Get-LunqText 'Main.OptRegion') `
+        (New-LunqOption -Key 'region' -Section 'setup' -Parent 'unattend' -Enabled $Use.region -Name (Get-LunqText 'Main.OptRegion') -Short (Get-LunqText 'Main.ShortRegion') `
             -Details $regionDetails),
-        (New-LunqOption -Key 'bypass' -Parent 'unattend' -Enabled $Use.bypass -Name (Get-LunqText 'Main.OptBypass') `
+        (New-LunqOption -Key 'bypass' -Section 'setup' -Parent 'unattend' -Enabled $Use.bypass -Name (Get-LunqText 'Main.OptBypass') -Short (Get-LunqText 'Main.ShortBypass') `
             -Details (Get-LunqText 'Main.OptBypassHint')),
-        (New-LunqOption -Key 'localAccount' -Parent 'unattend' -Enabled $Use.localAccount -Name (Get-LunqText 'Main.OptLocalAccount') `
-            -Details (Get-LunqText 'Main.OptLocalAccountHint')),
-        # Новые пункты добавляются в конец, чтобы номера прежних не менялись.
-        (New-LunqOption -Key 'bootCA2023' -Enabled ([bool]$Use.bootCA2023) -Name (Get-LunqText 'Main.OptBootCA2023') `
+        (New-LunqOption -Key 'localAccount' -Section 'setup' -Parent 'unattend' -Enabled $Use.localAccount -Name (Get-LunqText 'Main.OptLocalAccount') `
+            -Short (Get-LunqText 'Main.ShortLocalAccount') -Details (Get-LunqText 'Main.OptLocalAccountHint')),
+        # Очистка нужна и обновлениям из папки, и скачанным, поэтому у неё два родителя.
+        (New-LunqOption -Key 'cleanup' -Section 'extra' -Parent 'updates', 'download' -Enabled $Use.cleanup `
+            -Name (Get-LunqText 'Main.OptCleanup') -Short (Get-LunqText 'Main.ShortCleanup') `
+            -Details (Get-LunqText 'Main.OptCleanupHint')),
+        (New-LunqOption -Key 'bootCA2023' -Section 'extra' -Enabled ([bool]$Use.bootCA2023) -Name (Get-LunqText 'Main.OptBootCA2023') -Short (Get-LunqText 'Main.ShortBootCA2023') `
             -Details @((Get-LunqText 'Main.OptBootCA2023Hint'), (Get-LunqText 'Main.BootCA2023Warning'))),
-        (New-LunqOption -Key 'splitWim' -Enabled ([bool]$Use.splitWim) -Name (Get-LunqText 'Main.OptSplitWim') -Details (Get-LunqText 'Main.OptSplitWimHint')),
-        (New-LunqOption -Key 'defender' -Enabled ([bool]$Use.defender) -Name (Get-LunqText 'Main.OptDefender') -Details (Get-LunqText 'Main.OptDefenderHint'))
+        (New-LunqOption -Key 'splitWim' -Section 'extra' -Enabled ([bool]$Use.splitWim) -Name (Get-LunqText 'Main.OptSplitWim') -Short (Get-LunqText 'Main.ShortSplitWim') `
+            -Details (Get-LunqText 'Main.OptSplitWimHint')),
+        (New-LunqOption -Key 'defender' -Section 'extra' -Enabled ([bool]$Use.defender) -Name (Get-LunqText 'Main.OptDefender') -Short (Get-LunqText 'Main.ShortDefender') `
+            -Details (Get-LunqText 'Main.OptDefenderHint'))
     )
 }
 
