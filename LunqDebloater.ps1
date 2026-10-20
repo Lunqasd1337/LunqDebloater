@@ -24,6 +24,7 @@
 param(
     [string]$IsoPath,
     [string]$OutputIso,
+    [string]$OutputName,
     [string]$ConfigPath,
     [string]$ProfilePath,
     [string[]]$SkipCategory,
@@ -212,7 +213,12 @@ try {
         if ((Get-Item -LiteralPath $IsoPath).Length -ne [long]$recipeData.Iso.Size) { Write-Warning (Get-LunqText 'Main.RecipeIsoChanged' $IsoPath) }
     }
 
-    # Имя учётной записи проверяется сразу: ошибка в нём иначе всплыла бы только при установке Windows.
+    # Имя итогового ISO и имя учётной записи проверяются сразу: ошибка иначе всплыла бы после сборки.
+    if ($OutputIso -and $OutputName) { throw (Get-LunqText 'Main.OutputNameAndIso') }
+    if ($OutputName) {
+        $nameProblem = Test-LunqOutputName -Name $OutputName
+        if ($nameProblem) { throw $nameProblem }
+    }
     if ($LocalAccountName) {
         $nameProblem = Test-LunqAccountName -Name $LocalAccountName
         if ($nameProblem) { throw $nameProblem }
@@ -244,6 +250,7 @@ try {
         return
     }
 
+    $outputBaseName = ''
     if (-not $Online) {
         if ($interactive) {
             Write-Section (Get-LunqText 'Main.SectionIso')
@@ -255,8 +262,12 @@ try {
             $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
         }
 
+        # Без -OutputIso итоговый ISO лежит рядом с исходным, в имени версия LunqDebloater. Имя без
+        # версии ($outputBaseName) пишется в рецепт, а с -OutputIso путь берётся как есть.
         if (-not $OutputIso) {
-            $OutputIso = Join-Path (Split-Path $IsoPath -Parent) ('{0}_Lunq.iso' -f [IO.Path]::GetFileNameWithoutExtension($IsoPath))
+            $outputBaseName = $OutputName
+            if (-not $outputBaseName) { $outputBaseName = Get-LunqDefaultOutputName -IsoPath $IsoPath }
+            $OutputIso = Get-LunqOutputIsoPath -IsoPath $IsoPath -Name $outputBaseName
         }
         $OutputIso = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputIso)
     }
@@ -337,6 +348,11 @@ try {
     if (-not $listMode -and $use.unattend -and $use.localAccount) {
         if ($interactive -and -not $LocalAccountName) { $LocalAccountName = Read-LunqAccountName -Default $env:USERNAME }
         $accountName = [string]$LocalAccountName
+    }
+    # Своё имя ISO спрашивается, только если его не задали параметром.
+    if ($interactive -and -not $listMode -and $outputBaseName -and -not $OutputName) {
+        $outputBaseName = Read-LunqOutputName -Default $outputBaseName
+        $OutputIso = Get-LunqOutputIsoPath -IsoPath $IsoPath -Name $outputBaseName
     }
     # Microsoft требует, чтобы с загрузчиком 2023 года был обновлён и boot.wim.
     if ($BootCA2023) { $UpdatesToSetup = [switch]$true }
@@ -588,7 +604,7 @@ try {
     $recipeValues = @{
         ProfilePath = $ProfilePath; ProfileOriginalPath = $profileOriginal; Profile = $lunqProfile
         IsoPath = $IsoPath; Index = $selected; EditionName = $editionName; BuildText = $buildText
-        OutputIso = $OutputIso; Label = $Label; ConfigPath = $ConfigPath
+        OutputIso = $OutputIso; OutputName = $outputBaseName; Label = $Label; ConfigPath = $ConfigPath
         SkipAppx = $SkipAppx; SkipComponents = $SkipComponents; SkipRegistry = $SkipRegistry; CleanupComponents = $CleanupComponents
         DownloadUpdates = $DownloadUpdates; UpdatesPath = $UpdatesPath; UpdatesToSetup = $UpdatesToSetup
         Updates = $updates; SafeOS = $safeOSUpdates; SetupDU = $setupDU

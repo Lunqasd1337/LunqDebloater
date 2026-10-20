@@ -37,7 +37,7 @@ function New-LunqRecipe {
     param([Parameter(Mandatory)][hashtable]$Values, [hashtable]$HashCache = @{})
     # Не переданные ключи считаются пустыми: в строгом режиме обращение к ним было бы ошибкой.
     $v = $Values.Clone()
-    foreach ($key in 'ProfilePath', 'ProfileOriginalPath', 'Profile', 'IsoPath', 'Index', 'EditionName', 'BuildText', 'OutputIso', 'Label', 'ConfigPath',
+    foreach ($key in 'ProfilePath', 'ProfileOriginalPath', 'Profile', 'IsoPath', 'Index', 'EditionName', 'BuildText', 'OutputIso', 'OutputName', 'Label', 'ConfigPath',
         'SkipAppx', 'SkipComponents', 'SkipRegistry', 'CleanupComponents', 'DownloadUpdates', 'UpdatesPath', 'UpdatesToSetup', 'Updates', 'SafeOS', 'SetupDU',
         'DriversPath', 'HostDrivers', 'DriversToSetup', 'Drivers', 'Apps', 'HostApps', 'Scripts', 'HostWifi', 'SetupAnswers', 'BypassRequirements', 'LocalAccount',
         'BootCA2023', 'SplitWim', 'LocalAccountName') {
@@ -61,6 +61,8 @@ function New-LunqRecipe {
         Iso           = [ordered]@{ Path = $v.IsoPath; Size = [long](Get-Item -LiteralPath $v.IsoPath).Length; Sha256 = Get-LunqFileSha256 -Path $v.IsoPath -Cache $HashCache }
         Edition       = [ordered]@{ Index = [int]$v.Index; Name = $v.EditionName; Build = $v.BuildText }
         OutputIso     = $v.OutputIso
+        # Имя ISO без версии, если путь не задан через -OutputIso. В рецептах до 1.13.0 его нет.
+        OutputName    = [string]$v.OutputName
         Label         = $v.Label
         ConfigPath    = $v.ConfigPath
         Profile       = [ordered]@{ Path = $recordedProfile; Sha256 = $profileHash; Content = $profileContent }
@@ -121,7 +123,9 @@ function Get-LunqRecipeParameters {
     $values = [ordered]@{}
     $values.IsoPath = [string]$r.Iso.Path
     $values.Index = [int]$r.Edition.Index
-    if ($r.PSObject.Properties['OutputIso'] -and $r.OutputIso) { $values.OutputIso = [string]$r.OutputIso }
+    # По имени ISO путь считается заново: рядом с ISO из рецепта и с версией этого запуска.
+    if ($r.PSObject.Properties['OutputName'] -and $r.OutputName) { $values.OutputName = [string]$r.OutputName }
+    elseif ($r.PSObject.Properties['OutputIso'] -and $r.OutputIso) { $values.OutputIso = [string]$r.OutputIso }
     if ($r.PSObject.Properties['Label'] -and $r.Label) { $values.Label = [string]$r.Label }
     $configPath = [string](Get-ConfigValue $r 'ConfigPath')
     if ($configPath -and (Test-Path -LiteralPath $configPath -PathType Container)) { $values.ConfigPath = $configPath }

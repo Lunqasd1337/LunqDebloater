@@ -298,6 +298,49 @@ Describe 'Test-LunqImageRequirements' {
     }
 }
 
+Describe 'Имя итогового ISO' {
+    It 'по умолчанию рядом с исходным, с _Lunq и версией LunqDebloater' {
+        InModuleScope LunqDebloater {
+            $version = Get-LunqVersion
+            Get-LunqDefaultOutputName -IsoPath (Join-Path $TestDrive 'Win11_26H2.iso') | Should -Be 'Win11_26H2_Lunq'
+            $path = Get-LunqOutputIsoPath -IsoPath (Join-Path $TestDrive 'Win11_26H2.iso')
+            $path | Should -Be (Join-Path $TestDrive "Win11_26H2_Lunq_$version.iso")
+            Get-LunqOutputIsoPath -IsoPath (Join-Path $TestDrive 'Win11.iso') -Name 'Офис' | Should -Be (Join-Path $TestDrive "Офис_$version.iso")
+        }
+    }
+
+    It 'имя проверяется по правилам имён файлов Windows' -TestCases @(
+        @{ Name = 'Win11 Офис-2026'; Problem = $null },
+        @{ Name = ''; Problem = '*пустое*' },
+        @{ Name = ('a' * 101); Problem = '*длиннее 100*' },
+        @{ Name = 'a:b'; Problem = '*запрещённые в именах файлов*' },
+        @{ Name = 'a/b'; Problem = '*запрещённые в именах файлов*' },
+        @{ Name = 'con'; Problem = '*занято Windows*' },
+        @{ Name = 'Win11.'; Problem = '*точкой или пробелом*' }
+    ) {
+        InModuleScope LunqDebloater -Parameters @{ Name = $Name; Problem = $Problem } {
+            param($Name, $Problem)
+            $result = Test-LunqOutputName -Name $Name
+            if ($Problem) { $result | Should -BeLike $Problem } else { $result | Should -BeNullOrEmpty }
+        }
+    }
+
+    It 'в пошаговом режиме Enter оставляет имя по умолчанию, .iso в конце отбрасывается' {
+        InModuleScope LunqDebloater {
+            $global:LunqNameAnswers = New-Object System.Collections.Generic.Queue[object]
+            foreach ($answer in '', 'a?b', 'Офис.ISO') { $global:LunqNameAnswers.Enqueue($answer) }
+            Mock Read-Host { $global:LunqNameAnswers.Dequeue() }
+            Mock Write-Warning { }
+            try {
+                Read-LunqOutputName -Default 'Win11_Lunq' | Should -Be 'Win11_Lunq'
+                Read-LunqOutputName -Default 'Win11_Lunq' | Should -Be 'Офис'
+                Should -Invoke Write-Warning -Times 1 -Exactly
+            }
+            finally { Remove-Variable -Name LunqNameAnswers -Scope Global }
+        }
+    }
+}
+
 Describe 'Get-LunqHostWarning' {
     It 'предупреждает, если система старше образа' {
         Get-LunqHostWarning -ImageBuild 26300 -HostBuild 19045 | Should -BeLike '*19045 (Windows 10)*старше образа*'

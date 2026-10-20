@@ -10,6 +10,9 @@ function Get-LunqScheduleName {
     # задание в папке LunqDebloater. Одного имени мало: рецепты Win11 из двух папок затирали бы задание
     # и копию друг друга. -Legacy: имя без отпечатка, так задания назывались до 1.12.0.
     param([Parameter(Mandatory)][string]$RecipePath, [switch]$Legacy)
+    # Версия LunqDebloater в имени рецепта (Win11_Lunq_1.13.0) на задание не влияет: после обновления
+    # программы -Schedule Monthly заменяет прежнее задание этого ISO, а не создаёт рядом второе.
+    $RecipePath = $RecipePath -replace '_\d+\.\d+\.\d+(?=\.lunq\.json$)', ''
     # Имя файла вырезается сразу по обоим разделителям: путь бывает и с / .
     $name = ($RecipePath -split '[\\/]')[-1] -replace '\.lunq\.json$', ''
     # Имя задания не может содержать \ / : * ? " < > |.

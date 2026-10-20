@@ -40,6 +40,8 @@ function Resolve-LunqRecipeParameters {
         # Редакция по имени и выбранные вручную категории важнее записанных в рецепте.
         if ($name -eq 'Index' -and $BoundParameters.ContainsKey('Edition')) { continue }
         if ($name -eq 'Category' -and $BoundParameters.ContainsKey('SkipCategory')) { continue }
+        # -OutputIso и -OutputName взаимоисключающие: заданное в командной строке заменяет оба из рецепта.
+        if (@('OutputIso', 'OutputName') -contains $name -and ($BoundParameters.ContainsKey('OutputIso') -or $BoundParameters.ContainsKey('OutputName'))) { continue }
         if ($name -eq 'Category') { $categoryFromRecipe = $true }
         $values[$name] = $recipeValues[$name]
     }

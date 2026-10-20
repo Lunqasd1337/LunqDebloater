@@ -34,4 +34,9 @@
     'Checks.OwnMount'            = 'Остался образ от прерванного запуска, он будет отключён без сохранения перед сборкой'
     'Checks.ForeignMount'        = 'В системе уже есть смонтированные образы DISM: {0}'
     'Checks.ForeignMountHint'    = 'Если это остатки старого запуска в другой папке, выполните: dism /Cleanup-Wim'
+    'Checks.AskOutputName'       = 'Имя итогового ISO, к нему добавится версия LunqDebloater _{1} (Enter: {0})'
+    'Checks.OutputNameEmpty'     = 'Имя итогового ISO пустое.'
+    'Checks.OutputNameTooLong'   = 'Имя итогового ISO {0} длиннее 100 символов.'
+    'Checks.OutputNameBadChars'  = 'В имени итогового ISO {0} есть символы, запрещённые в именах файлов: \ / : * ? " < > |'
+    'Checks.OutputNameBadForm'   = 'Имя {0} не подходит для файла: оно занято Windows (CON, NUL, COM1 и подобные) или кончается точкой или пробелом.'
 }

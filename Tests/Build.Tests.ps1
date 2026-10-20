@@ -563,16 +563,28 @@ Describe 'Реестр из своего профиля' {
 
 Describe 'Пошаговый режим' {
     It 'сборка с ответами по умолчанию: файл ответов включён' {
-        # Ответы: [1] собрать, Enter для категорий, Enter для сводки, номер редакции, Y на план.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '5', 'y')
+        # Ответы: [1] собрать, Enter для категорий, Enter для сводки, Enter для имени ISO, номер редакции, Y на план.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Установка:\s+файл ответов'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $script:Test.WorkDir 'iso') | Should -BeFalse
     }
 
+    It 'своё имя ISO: к нему добавляется версия, в рецепт пишется имя без версии' {
+        # .iso в конце можно не писать, а недопустимое имя спрашивается заново.
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', 'a|b', 'Мой Win11.iso', '5', 'y')
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'символы, запрещённые в именах файлов'
+        $name = $script:Test.Name -replace '^Win11_Lunq', 'Мой Win11'
+        Test-Path -LiteralPath (Join-Path $script:Test.Root "$name.iso") | Should -BeTrue
+        Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
+        $recipe = Get-Content -LiteralPath (Join-Path $script:Test.Root "$name.lunq.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe.OutputName | Should -Be 'Мой Win11'
+    }
+
     It 'отказ на плане: ничего не собирается' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '5', 'n')
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '', '', '5', 'n')
         $run.Output | Should -Match 'Сборка отменена'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeFalse
     }
@@ -583,7 +595,7 @@ Describe 'Пошаговый режим' {
     # [7] программы этого компьютера, [8] сети Wi-Fi и [9] файл ответов.
     It 'папка с драйверами выбирается в сводке, остальной выбор сохраняется' {
         # «9 4»: выключить файл ответов и выбрать папку, затем Enter в обновлённой сводке.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '9 4', '', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Drivers }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Драйверы: 3 шт\.'
         $run.Output | Should -Match 'add driver net\.inf'
@@ -591,7 +603,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка с обновлениями выбирается в сводке' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '1', '', '', '5', 'y') -Prepare { param($t) $env:LUNQ_TEST_FOLDER = $t.Updates }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Обновления: 3 шт\.'
         # Два накопительных обновления Windows ставятся одним вызовом DISM, .NET отдельно.
@@ -603,7 +615,7 @@ Describe 'Пошаговый режим' {
     It 'драйверы этого компьютера выгружаются и встраиваются' {
         $hostDrivers = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\HostDrivers'
         try {
-            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '5', 'y')
+            $run = Start-TestBuild -Interactive -Answers @('1', '', '5', '', '', '5', 'y')
             $run.Error | Should -BeNullOrEmpty
             $run.Output | Should -Match 'Выгружаю драйверы этого компьютера'
             $run.Output | Should -Match 'add driver hostnet\.inf'
@@ -614,7 +626,7 @@ Describe 'Пошаговый режим' {
     }
 
     It 'папка без драйверов: предупреждение, драйверы не встраиваются' {
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '5', 'y') -Prepare {
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '4', '', '', '5', 'y') -Prepare {
             param($t)
             $empty = New-Item -ItemType Directory -Path (Join-Path $t.Root 'empty') -Force
             $env:LUNQ_TEST_FOLDER = $empty.FullName
@@ -626,7 +638,7 @@ Describe 'Пошаговый режим' {
 
     It 'очистка хранилища включается вместе со скачиванием обновлений, без папки с обновлениями' {
         # «3»: очистка без обновлений не включается, «2 3»: скачать обновления и очистить хранилище.
-        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '5', 'y')
+        $run = Start-TestBuild -Interactive -Answers @('1', '', '3', '2 3', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'Пункт 3 работает только вместе с пунктом 2'
         $run.Output | Should -Match 'Обновления из каталога готовы'
@@ -642,28 +654,53 @@ Describe 'Рецепт и отчёт' {
         Enter-LunqTestEnvironment -Test $t
         try {
             $first = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true; UpdatesPath = $t.Updates; SkipDrivers = $true; SkipRegistry = $true }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             Remove-Item -LiteralPath $t.OutputIso -Force
             Remove-Item -LiteralPath $t.WorkDir -Recurse -Force
             $second = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; KeepWorkDir = $true; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
         $first.Error | Should -BeNullOrEmpty
-        $first.Output | Should -Match 'Рецепт для повтора сборки: .*Win11_Lunq\.lunq\.json'
+        $first.Output | Should -Match ('Рецепт для повтора сборки: .*' + [regex]::Escape($t.Name + '.lunq.json'))
         $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Iso.Sha256 | Should -Be (Get-FileHash -LiteralPath $t.Iso -Algorithm SHA256).Hash.ToLowerInvariant()
         $recipe.Steps.SkipRegistry | Should -BeTrue
         @($recipe.Updates.Files).Count | Should -Be 3
-        Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.html') -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
+        Get-Content -LiteralPath (Join-Path $root ($t.Name + '.lunq.html')) -Raw -Encoding UTF8 | Should -Match 'Отчёт о сборке'
 
         $second.Error | Should -BeNullOrEmpty
-        $second.Output | Should -Match 'Рецепт: .*Win11_Lunq\.lunq\.json'
+        $second.Output | Should -Match ('Рецепт: .*' + [regex]::Escape($t.Name + '.lunq.json'))
         # Повтор берёт из рецепта редакцию, обновления и пропуск реестра.
         $second.Output | Should -Match 'Редакция:\s+\[5\]'
         $second.Output | Should -Match 'Обновления:\s+3 шт\.'
         $second.Output | Should -Match 'Реестр:\s+пропущено'
         $second.Output | Should -Not -Match 'изменилось с прошлой сборки'
         Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
+        # В рецепте имя ISO без версии: повтор новой версией LunqDebloater подставит свою.
+        $recipe.OutputName | Should -Be 'Win11_Lunq'
+    }
+
+    It '-OutputName задаёт имя ISO рядом с исходным, вместе с -OutputIso не принимается' {
+        $root = Join-Path $TestDrive 'outname'
+        $t = New-LunqTestApp -Root $root
+        Enter-LunqTestEnvironment -Test $t
+        try {
+            $named = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true; OutputName = 'Office' }
+            $both = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; OutputName = 'Office'; OutputIso = (Join-Path $root 'x.iso') }
+            $bad = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; OutputName = 'NUL' }
+            # Явный -OutputIso при повторе рецепта заменяет имя из рецепта.
+            $recipePath = Join-Path $root (($t.Name -replace '^Win11_Lunq', 'Office') + '.lunq.json')
+            $custom = Join-Path $root 'custom.iso'
+            $repeat = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true; OutputIso = $custom }
+        }
+        finally { Exit-LunqTestEnvironment }
+        $named.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $root (($t.Name -replace '^Win11_Lunq', 'Office') + '.iso')) | Should -BeTrue
+        $both.Output | Should -Match 'Укажите что-то одно: -OutputIso'
+        $both.Output | Should -Not -Match 'Шаг 1 из'
+        $bad.Output | Should -Match 'Имя NUL не подходит для файла'
+        $repeat.Error | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $custom | Should -BeTrue
     }
 
     It 'рецепт сборки без категорий повторяется без категорий, а не с умолчаниями профиля' {
@@ -673,7 +710,7 @@ Describe 'Рецепт и отчёт' {
         try {
             $all = 'apps', 'legacy', 'telemetry', 'ai', 'ads', 'search', 'store', 'onedrive'
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true; SkipCategory = $all }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             $recipe = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
             Remove-Item -LiteralPath $t.RegLog -Force -ErrorAction SilentlyContinue
             $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
@@ -694,7 +731,7 @@ Describe 'Рецепт и отчёт' {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
             Add-Content -LiteralPath $t.Iso -Value 'changed'
             Add-Content -LiteralPath (Join-Path $t.App 'Config\Profile.json') -Value ' '
-            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = (Join-Path $root 'Win11_Lunq.lunq.json'); WorkDir = $t.WorkDir; Force = $true }
+            $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = ($t.Recipe); WorkDir = $t.WorkDir; Force = $true }
         }
         finally { Exit-LunqTestEnvironment }
         $run.Error | Should -BeNullOrEmpty
@@ -709,7 +746,7 @@ Describe 'Рецепт и отчёт' {
         try {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
             Remove-Item -LiteralPath $t.Iso -Force
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             $run = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; WorkDir = $t.WorkDir; Force = $true }
             # Рецепт без пути к ISO: понятная ошибка, а не ошибка привязки параметра.
             $json = Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -728,12 +765,12 @@ Describe 'Рецепт и отчёт' {
         Enter-LunqTestEnvironment -Test $t
         try {
             $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
-            $recipePath = Join-Path $root 'Win11_Lunq.lunq.json'
+            $recipePath = $t.Recipe
             Remove-Item -LiteralPath $t.NativeLog -Force
             $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
             $task = [regex]::Match([string]$on.Output, 'Задание LunqDebloater\\(Win11_Lunq-[0-9a-f]{8}) создано').Groups[1].Value
             $copy = Join-Path $root ('ProgramFiles\LunqDebloater-Schedule\' + $task)
-            $copied = @('LunqDebloater.ps1', 'Win11_Lunq.lunq.json', 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
+            $copied = @('LunqDebloater.ps1', ($t.Name + '.lunq.json'), 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
                 Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
             $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
             $env:LUNQ_TEST_NO_TASK = '1'
@@ -784,7 +821,7 @@ Describe 'Свежие обновления из каталога' {
         $first.Output | Should -Match 'Обновления из каталога готовы: 4 шт\.'
         $first.Output | Should -Match 'add package windows11\.0-kb5090000-x64\.msu'
         $first.Output | Should -Match 'add package windows11\.0-kb5090002-x64\.cab'
-        $recipe = Get-Content -LiteralPath (Join-Path $root 'Win11_Lunq.lunq.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $recipe = Get-Content -LiteralPath ($t.Recipe) -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Updates.Download | Should -BeTrue
 
         $second.Error | Should -BeNullOrEmpty
@@ -855,7 +892,7 @@ Describe 'Этот компьютер без ISO и откат' {
         $online.Output | Should -Match '-Restore'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('telemetry', 'ads')
         $saved.Source | Should -Be 'Online'
-        Test-Path -LiteralPath (Join-Path $root 'Win11_Lunq.iso') | Should -BeFalse
+        Test-Path -LiteralPath $t.OutputIso | Should -BeFalse
 
         $restore.Error | Should -BeNullOrEmpty
         $restore.Output | Should -Match 'Реклама и предложения: возвращено \d+, ошибок 0'
@@ -969,7 +1006,7 @@ Describe 'Английский интерфейс' {
     }
 
     It 'пошаговый режим: ни одной русской буквы в выводе' {
-        $run = Start-TestBuild -Interactive -Parameters @{ Language = 'en' } -Answers @('1', '', '', '5', 'y')
+        $run = Start-TestBuild -Interactive -Parameters @{ Language = 'en' } -Answers @('1', '', '', '', '5', 'y')
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Not -Match '[А-Яа-яЁё]'
         Test-Path -LiteralPath $script:Test.OutputIso | Should -BeTrue

@@ -113,12 +113,13 @@ Get-ChildItem -Recurse | Unblock-File   # if the archive was downloaded from the
 .\LunqDebloater.ps1 -IsoPath D:\Win11_26H2.iso -Edition "Windows 11 Pro"
 ```
 
-Without `-Edition` or `-Index` the script shows the list of editions and asks for a number. Without `-IsoPath` it runs in step-by-step mode, as with `Start.cmd`. By default the finished ISO appears next to the original one (`Win11_26H2_Lunq.iso`), and the log of the run is in the `Logs` folder next to the script (see "Logs and version").
+Without `-Edition` or `-Index` the script shows the list of editions and asks for a number. Without `-IsoPath` it runs in step-by-step mode, as with `Start.cmd`. By default the finished ISO appears next to the original one, with the LunqDebloater version in its name (`Win11_26H2_Lunq_1.13.0.iso`). In step-by-step mode the script asks for your own name after the summary, and Enter keeps this one. The log of the run is in the `Logs` folder next to the script (see "Logs and version").
 
 | Parameter | Purpose |
 |---|---|
 | `-IsoPath` | The original ISO. Without it the script runs in step-by-step mode |
-| `-OutputIso` | Path to the finished ISO |
+| `-OutputIso` | Full path to the finished ISO, used as is, without the version |
+| `-OutputName` | Name of the finished ISO next to the original one, without `.iso`: the LunqDebloater version is added to it, so `-OutputName Office` gives `Office_1.13.0.iso`. Not used together with `-OutputIso` |
 | `-ConfigPath` | Settings folder instead of `Config` next to the script |
 | `-ProfilePath` | Your own JSON profile instead of `Config\Profile.json` |
 | `-SkipCategory` | Ids of profile categories to skip, separated by commas |
@@ -286,11 +287,11 @@ The catalog has no official API: the script reads the same page a browser shows.
 An ISO built with downloading can be rebuilt every month without you. In step-by-step mode the script offers this at the end of the build; with parameters the task is created from the recipe (see below):
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Monthly   # every month on the 15th
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Schedule Off       # stop rebuilding
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Monthly   # every month on the 15th
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Off       # stop rebuilding
 ```
 
-The task `LunqDebloater\<ISO name>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy; `-Schedule Off` removes the task together with the copy.
+The task `LunqDebloater\<ISO name without the version>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy. The recipe of a build made by the new version works too: an ISO has one task, and it is replaced rather than joined by a second one. The new version builds the ISO under a new name, and the ISO of the previous version stays, so delete it yourself if you do not need it; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 
@@ -302,7 +303,7 @@ After every build two files appear next to the output ISO:
 `-Recipe` repeats the build from the recipe without questions:
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq.lunq.json -Force
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Force
 ```
 
 Command line parameters win over the recipe: for example, `-IsoPath` builds the same thing from a new ISO, and `-SkipUpdates` builds it without updates. If the profile has changed or is gone since then, its copy from the recipe is used. If the updates in the folder differ from the ones in the recipe, the script warns about it before the build.

@@ -106,6 +106,7 @@
     'Main.HostWarningHint'       = 'Надёжнее собирать образ на Windows 11 той же версии, что и ISO, или новее.'
     'Main.ContextMissing'        = 'Внутренняя ошибка LunqDebloater: в контексте режима {0} нет ключей {1}.'
     'Main.ContextUnknown'        = 'Внутренняя ошибка LunqDebloater: в контексте режима {0} лишние ключи {1}.'
+    'Main.OutputNameAndIso'      = 'Укажите что-то одно: -OutputIso (полный путь к ISO) или -OutputName (имя ISO рядом с исходным).'
     'Main.StepPrepare'           = 'Подготовка рабочей папки'
     'Main.StepPrepareHint'       = 'Очищаю следы прошлого запуска и создаю {0}.'
     'Main.StepCopyEdition'       = 'Копирование редакции'

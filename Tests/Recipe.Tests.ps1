@@ -99,6 +99,20 @@ Describe 'Запись и чтение рецепта' {
             $values.HostWifi | Should -BeTrue
             $values.SkipRegistry | Should -BeTrue
             $values.Label | Should -Be 'LUNQ'
+            # В рецепте нет имени ISO (как до 1.13.0): путь берётся как записан.
+            $values.OutputIso | Should -Be (Join-Path $T.Root 'Win11_Lunq.iso')
+            $values.Contains('OutputName') | Should -BeFalse
+        }
+    }
+
+    It 'с именем ISO в рецепте путь не берётся: его считают заново с версией этого запуска' {
+        InModuleScope LunqDebloater -Parameters @{ Path = $script:RecipePath } {
+            param($Path)
+            $recipe = Read-LunqRecipe -Path $Path
+            $recipe | Add-Member -NotePropertyName OutputName -NotePropertyValue 'Win11_Lunq' -Force
+            $values = Get-LunqRecipeParameters -Recipe $recipe
+            $values.OutputName | Should -Be 'Win11_Lunq'
+            $values.Contains('OutputIso') | Should -BeFalse
         }
     }
 

@@ -55,6 +55,17 @@ Describe 'Resolve-LunqRecipeParameters' {
         }
     }
 
+    It 'с -OutputIso или -OutputName в командной строке имя и путь ISO из рецепта не берутся' {
+        InModuleScope LunqDebloater {
+            Mock Get-LunqRecipeParameters { [ordered]@{ IsoPath = 'D:\win.iso'; OutputName = 'Win11_Lunq' } }
+            $r = Resolve-LunqRecipeParameters -Recipe ([pscustomobject]@{}) -BoundParameters @{ OutputIso = 'E:\out.iso' }
+            $r.Values.Contains('OutputName') | Should -BeFalse
+            Mock Get-LunqRecipeParameters { [ordered]@{ IsoPath = 'D:\win.iso'; OutputIso = 'D:\old.iso' } }
+            $r = Resolve-LunqRecipeParameters -Recipe ([pscustomobject]@{}) -BoundParameters @{ OutputName = 'Office' }
+            $r.Values.Contains('OutputIso') | Should -BeFalse
+        }
+    }
+
     It 'принимает $PSBoundParameters скрипта' {
         InModuleScope LunqDebloater -Parameters @{ RecipeValues = $script:RecipeValues } {
             Mock Get-LunqRecipeParameters { $RecipeValues }

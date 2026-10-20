@@ -27,6 +27,8 @@ function New-LunqTestApp {
     }
 
     $iso = Join-Path $Root 'Win11.iso'
+    # Имя итогового ISO по умолчанию: имя исходного, _Lunq и версия LunqDebloater.
+    $outputName = 'Win11_Lunq_' + (Import-PowerShellDataFile -LiteralPath (Join-Path $app 'Modules\LunqDebloater\LunqDebloater.psd1')).ModuleVersion
     Set-Content -LiteralPath $iso -Value 'iso'
 
     $updates = Join-Path $Root 'updates'
@@ -47,7 +49,9 @@ function New-LunqTestApp {
         App       = $app
         Script    = Join-Path $app 'LunqDebloater.ps1'
         Iso       = $iso
-        OutputIso = Join-Path $Root 'Win11_Lunq.iso'
+        Name      = $outputName
+        OutputIso = Join-Path $Root ($outputName + '.iso')
+        Recipe    = Join-Path $Root ($outputName + '.lunq.json')
         WorkDir   = Join-Path $Root 'work'
         Updates   = $updates
         Drivers   = $drivers
