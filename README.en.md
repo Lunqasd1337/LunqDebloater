@@ -143,11 +143,10 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
-| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run from a recipe or on schedule stops when space is short, and step-by-step mode asks |
+| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run with parameters or from a recipe stops when space is short, and step-by-step mode asks |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
 | `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates every month") |
 | `-Recipe` | Repeat the build from the recipe `<ISO name>.lunq.json`. Parameters you pass win over the recipe (see "Build recipe and report") |
-| `-Schedule` | Together with `-Recipe`: `Monthly` creates a task that rebuilds the ISO every month with fresh updates, `Off` removes it. Nothing is built |
 | `-Online` | Apply the profile to this Windows, without an ISO. What was there is saved for restore (see "This computer without an ISO, and restore") |
 | `-Restore` | Bring back what LunqDebloater removed on this Windows or in the image it was installed from |
 | `-Category` | Category Ids separated by commas: only these are applied or restored, the others are off |
@@ -284,14 +283,13 @@ Instead of looking up the cumulative update in the catalog by hand, turn on "Dow
 
 The catalog has no official API: the script reads the same page a browser shows. If Microsoft changes it, the script says that it found nothing, and the update can be downloaded by hand as before.
 
-An ISO built with downloading can be rebuilt every month without you. In step-by-step mode the script offers this at the end of the build; with parameters the task is created from the recipe (see below):
+To get an ISO with fresh updates every month, repeat the build from its recipe (see below) with `-DownloadUpdates`, and `-Force` lets it overwrite the previous ISO:
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Monthly   # every month on the 15th
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Off       # stop rebuilding
+.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -DownloadUpdates -Force
 ```
 
-The task `LunqDebloater\<ISO name without the version>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy. The recipe of a build made by the new version works too: an ISO has one task, and it is replaced rather than joined by a second one. The new version builds the ISO under a new name, and the ISO of the previous version stays, so delete it yourself if you do not need it; `-Schedule Off` removes the task together with the copy.
+The script builds the same ISO with the latest cumulative updates. There is no scheduled task anymore: it ran as the system account and was an extra risk, see the CHANGELOG for 1.14.0.
 
 ## Build recipe and report
 

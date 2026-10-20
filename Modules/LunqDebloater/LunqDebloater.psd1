@@ -2,7 +2,7 @@
     # Манифест модуля LunqDebloater. Версия отсюда видна в заголовке окна, в логе, в итоге
     # сборки и в реестре собранного образа (HKLM\SOFTWARE\LunqDebloater).
     RootModule        = 'LunqDebloater.psm1'
-    ModuleVersion     = '1.13.1'
+    ModuleVersion     = '1.14.0'
     GUID              = '2e51670f-e6c1-4bef-936f-7455bd5dff55'
     Author            = 'Lunqasd1337'
     Description       = 'Офлайн-преднастройка ISO-образа Windows 11 через DISM.'
@@ -51,7 +51,6 @@
         'Invoke-LunqInventoryMode',
         'Invoke-LunqOnlineMode',
         'Invoke-LunqRestoreMode',
-        'Invoke-LunqScheduleMode',
         'Merge-LunqAppsList',
         'Mount-IsoImage',
         'New-LunqBugReport',
@@ -62,6 +61,7 @@
         'Read-LunqRecipe',
         'Read-YesNo',
         'Remove-LunqDefenderExclusion',
+        'Remove-LunqScheduleLeftovers',
         'Remove-LunqWorkDir',
         'Resolve-LunqRecipeParameters',
         'Save-LunqBuildOutputs',

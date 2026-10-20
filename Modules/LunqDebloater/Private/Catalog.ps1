@@ -7,7 +7,7 @@ $script:CatalogBase = 'https://www.catalog.update.microsoft.com'
 # подменено или изменилось, и такой файл не скачивается.
 $script:CatalogHosts = @('windowsupdate.com', 'delivery.mp.microsoft.com')
 # Сколько раз пробовать скачать файл и сколько секунд ждать между попытками: накопительное весит
-# 3-4 ГБ, и один обрыв сети не должен останавливать запуск по расписанию.
+# 3-4 ГБ, и один обрыв сети не должен останавливать запуск без вопросов.
 $script:DownloadAttempts = 3
 $script:DownloadRetrySeconds = 15
 

@@ -1,4 +1,4 @@
-﻿# Режимы LunqDebloater.ps1: расписание, рецепт, откат, -Online, сводка «Что войдёт в образ»,
+﻿# Режимы LunqDebloater.ps1: рецепт, откат, -Online, сводка «Что войдёт в образ»,
 # «Что в образе», план сборки и то, что пишется рядом с ISO. В скрипте остаются параметры,
 # перезапуск, права, блокировка, лог и уборка в finally: они должны работать и после Ctrl+C.
 
@@ -6,25 +6,6 @@ function Split-LunqIdList {
     # При запуске через -File список приходит одной строкой, поэтому делим по запятым сами.
     param($Ids)
     return , @($Ids | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-}
-
-function Invoke-LunqScheduleMode {
-    # -Schedule: только создать или удалить задание, без сборки. Настройки те же, что при повторе
-    # рецепта: из командной строки, иначе из рецепта.
-    param(
-        [Parameter(Mandatory)][ValidateSet('Monthly', 'Off')][string]$Schedule,
-        [string]$RecipePath,
-        [Parameter(Mandatory)][string]$SourceRoot,
-        [Parameter(Mandatory)][string]$ConfigPath,
-        [switch]$ConfigFromCommandLine
-    )
-    if (-not $RecipePath) { throw (Get-LunqText 'Main.ScheduleNeedsRecipe') }
-    if ($Schedule -eq 'Off') { Unregister-LunqSchedule -RecipePath $RecipePath; return }
-    $recipe = Read-LunqRecipe -Path $RecipePath
-    $config = $ConfigPath
-    $recipeConfig = [string](Get-ConfigValue $recipe 'ConfigPath')
-    if (-not $ConfigFromCommandLine -and $recipeConfig -and (Test-Path -LiteralPath $recipeConfig -PathType Container)) { $config = $recipeConfig }
-    $null = Register-LunqSchedule -SourceRoot $SourceRoot -ConfigPath $config -RecipePath $RecipePath
 }
 
 function Resolve-LunqRecipeParameters {
@@ -506,8 +487,7 @@ function Write-LunqBuildPlan {
 }
 
 function Save-LunqBuildOutputs {
-    # Рецепт и HTML-отчёт рядом с ISO, а после сборки со свежими обновлениями предложение
-    # повторять её каждый месяц. Не шаг сборки: ISO уже готов, и сбой здесь его не портит.
+    # Рецепт и HTML-отчёт рядом с ISO. Не шаг сборки: ISO уже готов, и сбой здесь его не портит.
     # RecipeValues: значения для New-LunqRecipe, кроме списков программ и скриптов, которые
     # берутся из FirstLogon.
     param(
@@ -517,10 +497,7 @@ function Save-LunqBuildOutputs {
         [Parameter(Mandatory)]$Results,
         [Parameter(Mandatory)]$LunqProfile,
         $StepTimes,
-        [Parameter(Mandatory)][timespan]$Elapsed,
-        [Parameter(Mandatory)][string]$SourceRoot,
-        [switch]$Interactive,
-        [switch]$OfferSchedule
+        [Parameter(Mandatory)][timespan]$Elapsed
     )
     $outputIso = $RecipeValues.OutputIso
     $recipePath = Get-LunqRecipePath -OutputIso $outputIso
@@ -544,14 +521,4 @@ function Save-LunqBuildOutputs {
         Write-Info (Get-LunqText 'Main.HtmlSaved' $htmlPath)
     }
     catch { Write-Warning (Get-LunqText 'Main.RecipeFailed' $_.Exception.Message) }
-
-    # Со свежими обновлениями из каталога ту же сборку есть смысл повторять каждый месяц.
-    if ($Interactive -and $OfferSchedule -and (Test-Path -LiteralPath $recipePath)) {
-        Write-Info ''
-        Write-Info (Get-LunqText 'Main.ScheduleOffer')
-        if (Read-YesNo (Get-LunqText 'Main.AskSchedule')) {
-            try { $null = Register-LunqSchedule -SourceRoot $SourceRoot -ConfigPath $values.ConfigPath -RecipePath $recipePath }
-            catch { Write-Warning $_.Exception.Message }
-        }
-    }
 }

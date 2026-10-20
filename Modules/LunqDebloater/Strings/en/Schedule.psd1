@@ -1,10 +1,8 @@
-﻿# Strings for Private\Schedule.ps1.
+﻿# Strings for Private\Schedule.ps1: cleanup of the monthly rebuild tasks, removed in 1.14.0.
 @{
-    'Schedule.Description'  = 'LunqDebloater: rebuilds the ISO with fresh updates from the recipe {0}'
-    'Schedule.CreateFailed' = 'Could not create the scheduled task (schtasks, code {0}).'
-    'Schedule.Created'      = 'Task {0} created: the ISO will be rebuilt on the 15th of every month, first run {1}.'
-    'Schedule.Removed'      = 'Task {0} removed.'
-    'Schedule.NotFound'     = 'There is no task {0}, nothing to remove.'
-    'Schedule.LegacyRemoved' = 'Removed the old-format task {0}: it ran the program folder, which the user can change. If it belonged to another recipe with the same name, create it again with -Schedule Monthly.'
-    'Schedule.Copy'         = 'The task runs a copy of LunqDebloater, its settings and the recipe in {0}: only administrators can change it. After updating LunqDebloater or changing the settings, run -Schedule Monthly again.'
+    'Schedule.Removing'          = 'The monthly rebuild was removed in LunqDebloater 1.14.0. Removing its tasks and program copies.'
+    'Schedule.Removed'           = 'Task {0} removed.'
+    'Schedule.RemoveFailed'      = 'Could not remove the task {0} (schtasks, code {1}). Remove it in Task Scheduler, folder LunqDebloater.'
+    'Schedule.CopiesRemoved'     = 'Program copies for the tasks removed: {0}'
+    'Schedule.CopiesNotRemoved'  = 'Could not remove the program copies for the tasks in {0}: {1}'
 }

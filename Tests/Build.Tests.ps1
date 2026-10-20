@@ -759,42 +759,42 @@ Describe 'Рецепт и отчёт' {
         $empty.Output | Should -Match 'нет пути к ISO\. Укажите ISO через -IsoPath'
     }
 
-    It '-Schedule Monthly создаёт задание по рецепту, -Schedule Off удаляет его' {
+    It 'запуск убирает задания и копии ежемесячной пересборки прошлых версий, -Schedule больше нет' {
         $root = Join-Path $TestDrive 'schedule'
         $t = New-LunqTestApp -Root $root
+        # Копия программы, которую до 1.14.0 запускало задание от SYSTEM.
+        $copies = Join-Path $root 'ProgramFiles\LunqDebloater-Schedule'
+        New-Item -ItemType Directory -Path (Join-Path $copies 'Win11_Lunq-1a2b3c4d') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $copies 'Win11_Lunq-1a2b3c4d\LunqDebloater.ps1') -Value '# old copy'
         Enter-LunqTestEnvironment -Test $t
         try {
-            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
-            $recipePath = $t.Recipe
+            $env:LUNQ_TEST_OLD_TASKS = 'LunqDebloater\Win11_Lunq-1a2b3c4d,LunqDebloater\Win11_Lunq'
+            $first = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+            $calls = @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'schtasks.exe|*' -or $_ -like 'taskfolder|*' })
+            # Убирать больше нечего: второй запуск об этом молчит.
+            $env:LUNQ_TEST_OLD_TASKS = $null
             Remove-Item -LiteralPath $t.NativeLog -Force
-            $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
-            $task = [regex]::Match([string]$on.Output, 'Задание LunqDebloater\\(Win11_Lunq-[0-9a-f]{8}) создано').Groups[1].Value
-            $copy = Join-Path $root ('ProgramFiles\LunqDebloater-Schedule\' + $task)
-            $copied = @('LunqDebloater.ps1', ($t.Name + '.lunq.json'), 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
-                Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
-            $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
-            $env:LUNQ_TEST_NO_TASK = '1'
-            $none = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
-            $noRecipe = Invoke-LunqTestRun -Test $t -Parameters @{ Schedule = 'Monthly' }
+            $again = Invoke-LunqTestRun -Test $t -Parameters @{ Restore = $true; Force = $true }
+            $againCalls = @(Get-Content -LiteralPath $t.NativeLog -ErrorAction SilentlyContinue | Where-Object { $_ -like 'schtasks.exe|*' -or $_ -like 'taskfolder|*' })
+            $schedule = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $t.Recipe; Schedule = 'Monthly' }
         }
         finally { Exit-LunqTestEnvironment }
-        $on.Error | Should -BeNullOrEmpty
-        $on.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq-[0-9a-f]{8} создано: ISO будет пересобираться 15-го числа'
-        # Задание старого формата с именем без отпечатка удаляется.
-        $on.Output | Should -Match 'Удалено задание LunqDebloater\\Win11_Lunq старого формата'
-        # Задание только создаётся: сборки в этом запуске нет.
-        $on.Output | Should -Not -Match 'Шаг 1 из'
-        $calls = @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'schtasks.exe|*' })
-        $calls[0] | Should -Match ('^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\' + $task + '\|/XML\|')
-        $calls[1] | Should -Match '^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\Win11_Lunq\|/F'
-        $calls[2] | Should -Match ('^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\' + $task + '\|/F')
-        $off.Output | Should -Match ('Задание LunqDebloater\\' + $task + ' удалено')
-        # Задание запускает копию из закрытой папки, а -Schedule Off удаляет её вместе с заданием.
-        @($copied).Count | Should -Be 4
-        $on.Output | Should -Match 'Задание запускает копию LunqDebloater'
-        Test-Path -LiteralPath $copy | Should -BeFalse
-        $none.Output | Should -Match ('Задания LunqDebloater\\' + $task + ' нет, удалять нечего')
-        $noRecipe.Output | Should -Match '-Schedule работает только с -Recipe'
+        $first.Error | Should -BeNullOrEmpty
+        $first.Output | Should -Match 'Ежемесячная пересборка убрана из LunqDebloater 1\.14\.0'
+        $first.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq-1a2b3c4d удалено'
+        $first.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq удалено'
+        $first.Output | Should -Match 'Копии программы для заданий удалены'
+        # Сначала задания, потом их папка в планировщике; копии программы удалены.
+        $calls[0] | Should -BeLike 'schtasks.exe|/Delete|/TN|LunqDebloater\Win11_Lunq-1a2b3c4d|/F|*'
+        $calls[1] | Should -BeLike 'schtasks.exe|/Delete|/TN|LunqDebloater\Win11_Lunq|/F|*'
+        $calls[2] | Should -Be 'taskfolder|delete'
+        Test-Path -LiteralPath $copies | Should -BeFalse
+        # Работа запуска после уборки идёт как обычно.
+        $first.Output | Should -Match 'Возвращать нечего'
+        $again.Output | Should -Not -Match 'Ежемесячная пересборка убрана'
+        $againCalls | Should -BeNullOrEmpty
+        $schedule.Error | Should -Not -BeNullOrEmpty
+        [string]$schedule.Error | Should -Match 'Schedule'
     }
 }
 

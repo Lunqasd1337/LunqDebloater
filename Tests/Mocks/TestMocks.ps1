@@ -38,8 +38,13 @@ function Set-LunqDefenderExclusion {
     if ($env:LUNQ_TEST_NATIVE_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_NATIVE_LOG -Value "defender|$action|$Path" -Encoding UTF8 }
 }
 
-# Копии для заданий по расписанию: вместо Program Files папка теста.
+# Остатки ежемесячной пересборки (до 1.14.0): копии вместо Program Files в папке теста, задания
+# из LUNQ_TEST_OLD_TASKS через запятую, удаление папки планировщика пишется в LUNQ_TEST_NATIVE_LOG.
 function Get-LunqScheduleRoot { return (Join-Path $env:LUNQ_TEST_ROOT 'ProgramFiles\LunqDebloater-Schedule') }
+function Get-LunqScheduleTasks { return , @(([string]$env:LUNQ_TEST_OLD_TASKS -split ',') | Where-Object { $_ }) }
+function Remove-LunqScheduleTaskFolder {
+    if ($env:LUNQ_TEST_NATIVE_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_NATIVE_LOG -Value 'taskfolder|delete' -Encoding UTF8 }
+}
 
 # Окно выбора папки: папку задаёт тест, пустое значение означает «Отмена».
 function Select-LunqFolder {
