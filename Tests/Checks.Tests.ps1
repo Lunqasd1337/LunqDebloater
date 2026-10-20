@@ -378,6 +378,8 @@ Describe 'Редакции в ISO' {
     It 'пакеты включения узнаются по номерам из Data\Releases.psd1' {
         InModuleScope LunqDebloater {
             Test-LunqEnablementUpdate 'windows11.0-kb5054156-x64.msu' | Should -BeTrue
+            # Имя файла 26H2 из каталога, с хэшем после архитектуры.
+            Test-LunqEnablementUpdate 'Windows11.0-KB5121794-x64_5e20a3cce48d6611b16bdec42b07167f5456586a.msu' | Should -BeTrue
             Test-LunqEnablementUpdate 'windows10.0-kb5015684-x64.cab' | Should -BeTrue
             Test-LunqEnablementUpdate 'windows11.0-kb5090000-x64.msu' | Should -BeFalse
             Test-LunqEnablementUpdate 'windows11.0-x64.msu' | Should -BeFalse

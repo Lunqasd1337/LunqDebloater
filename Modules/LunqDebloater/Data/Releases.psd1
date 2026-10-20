@@ -14,7 +14,6 @@
         @{ Build = 22631; Product = 'Windows 11'; Name = '23H2'; Enablement = '5027397' }
         @{ Build = 26100; Product = 'Windows 11'; Name = '24H2'; Enablement = '' }
         @{ Build = 26200; Product = 'Windows 11'; Name = '25H2'; Enablement = '5054156' }
-        # Номер пакета включения 26H2 здесь не записан: впишите его, когда он будет известен.
-        @{ Build = 26300; Product = 'Windows 11'; Name = '26H2'; Enablement = '' }
+        @{ Build = 26300; Product = 'Windows 11'; Name = '26H2'; Enablement = '5121794' }
     )
 }
