@@ -886,7 +886,8 @@ Describe 'Этот компьютер без ISO и откат' {
         $restore.Output | Should -Match 'Скрипт запущен от имени PC\\admin, а в Windows вошёл PC\\user'
         @($saved.Categories | ForEach-Object { $_.Id }) | Should -Be @('edge')
         $restore.Output | Should -Match 'Microsoft Edge: возвращено 1, ошибок 0'
-        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'powershell.exe|*' })
+        # В Windows путь полный (System32\WindowsPowerShell), вне Windows просто powershell.exe.
+        $calls = @(Get-Content -LiteralPath $t.NativeLog -Encoding UTF8 | Where-Object { $_ -like '*powershell.exe|*' })
         $calls.Count | Should -Be 2
         $calls[0] | Should -BeLike '*|-File|*ThirdParty*EdgeRemover*RemoveEdge.ps1|-UninstallEdge|-NonInteractive|*'
         $calls[1] | Should -BeLike '*RemoveEdge.ps1|-InstallEdge|-NonInteractive|*'

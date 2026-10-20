@@ -11,6 +11,10 @@ BeforeAll {
     # Внутренние функции модуля под теми же именами: снаружи модуля они не видны.
     function Get-LunqUpdateFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqUpdateFiles -Path $p } $Path }
     function Get-LunqDriverFiles { param($Path) & (Get-Module LunqDebloater) { param($p) Get-LunqDriverFiles -Path $p } $Path }
+    function Select-LunqPEDrivers {
+        param($InfFiles, [hashtable]$Cache = @{})
+        & (Get-Module LunqDebloater) { param($i, $c) Select-LunqPEDrivers -InfFiles $i -Cache $c } $InfFiles $Cache
+    }
     function Split-LunqDynamicUpdates {
         param($Files, $TempDir, $Cache)
         & (Get-Module LunqDebloater) { param($f, $t, $c) Split-LunqDynamicUpdates -Files $f -TempDir $t -Cache $c } $Files $TempDir $Cache
