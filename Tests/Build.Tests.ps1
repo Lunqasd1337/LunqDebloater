@@ -758,44 +758,6 @@ Describe 'Рецепт и отчёт' {
         $run.Output | Should -Match 'ISO из рецепта не найден: .*Укажите другой через -IsoPath'
         $empty.Output | Should -Match 'нет пути к ISO\. Укажите ISO через -IsoPath'
     }
-
-    It '-Schedule Monthly создаёт задание по рецепту, -Schedule Off удаляет его' {
-        $root = Join-Path $TestDrive 'schedule'
-        $t = New-LunqTestApp -Root $root
-        Enter-LunqTestEnvironment -Test $t
-        try {
-            $null = Invoke-LunqTestRun -Test $t -Parameters @{ IsoPath = $t.Iso; Index = 5; WorkDir = $t.WorkDir; Force = $true; SkipUpdates = $true; SkipDrivers = $true }
-            $recipePath = $t.Recipe
-            Remove-Item -LiteralPath $t.NativeLog -Force
-            $on = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Monthly' }
-            $task = [regex]::Match([string]$on.Output, 'Задание LunqDebloater\\(Win11_Lunq-[0-9a-f]{8}) создано').Groups[1].Value
-            $copy = Join-Path $root ('ProgramFiles\LunqDebloater-Schedule\' + $task)
-            $copied = @('LunqDebloater.ps1', ($t.Name + '.lunq.json'), 'Config\Profile.json', 'ThirdParty\EdgeRemover\RemoveEdge.ps1') |
-                Where-Object { Test-Path -LiteralPath (Join-Path $copy $_) }
-            $off = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
-            $env:LUNQ_TEST_NO_TASK = '1'
-            $none = Invoke-LunqTestRun -Test $t -Parameters @{ Recipe = $recipePath; Schedule = 'Off' }
-            $noRecipe = Invoke-LunqTestRun -Test $t -Parameters @{ Schedule = 'Monthly' }
-        }
-        finally { Exit-LunqTestEnvironment }
-        $on.Error | Should -BeNullOrEmpty
-        $on.Output | Should -Match 'Задание LunqDebloater\\Win11_Lunq-[0-9a-f]{8} создано: ISO будет пересобираться 15-го числа'
-        # Задание старого формата с именем без отпечатка удаляется.
-        $on.Output | Should -Match 'Удалено задание LunqDebloater\\Win11_Lunq старого формата'
-        # Задание только создаётся: сборки в этом запуске нет.
-        $on.Output | Should -Not -Match 'Шаг 1 из'
-        $calls = @(Get-Content -LiteralPath $t.NativeLog | Where-Object { $_ -like 'schtasks.exe|*' })
-        $calls[0] | Should -Match ('^schtasks\.exe\|/Create\|/TN\|LunqDebloater\\' + $task + '\|/XML\|')
-        $calls[1] | Should -Match '^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\Win11_Lunq\|/F'
-        $calls[2] | Should -Match ('^schtasks\.exe\|/Delete\|/TN\|LunqDebloater\\' + $task + '\|/F')
-        $off.Output | Should -Match ('Задание LunqDebloater\\' + $task + ' удалено')
-        # Задание запускает копию из закрытой папки, а -Schedule Off удаляет её вместе с заданием.
-        @($copied).Count | Should -Be 4
-        $on.Output | Should -Match 'Задание запускает копию LunqDebloater'
-        Test-Path -LiteralPath $copy | Should -BeFalse
-        $none.Output | Should -Match ('Задания LunqDebloater\\' + $task + ' нет, удалять нечего')
-        $noRecipe.Output | Should -Match '-Schedule работает только с -Recipe'
-    }
 }
 
 Describe 'Свежие обновления из каталога' {

@@ -57,7 +57,6 @@ param(
     [ValidateSet('ru', 'en')][string]$Language,
     [string]$Recipe,
     [switch]$DownloadUpdates,
-    [ValidateSet('Monthly', 'Off')][string]$Schedule,
     [switch]$Online,
     [switch]$Restore,
     [string[]]$Category,
@@ -70,8 +69,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# Любой из этих параметров значит запуск без вопросов: из командной строки или по расписанию.
-$interactive = -not ($IsoPath -or $Recipe -or $Online -or $Restore -or $Schedule)
+# Любой из этих параметров значит запуск без вопросов: из командной строки, своего скрипта или задания.
+$interactive = -not ($IsoPath -or $Recipe -or $Online -or $Restore)
 
 if ($env:OS -ne 'Windows_NT') {
     # Модуль с таблицами строк ещё не загружен, поэтому язык выбирается здесь же.
@@ -182,12 +181,6 @@ try {
 
     if ($Online -and $Restore) { throw (Get-LunqText 'Main.OnlineAndRestore') }
     if ($Recipe) { $Recipe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Recipe) }
-
-    # ---------- Расписание: только создать или удалить задание, без сборки ----------
-    if ($Schedule) {
-        Invoke-LunqScheduleMode -Schedule $Schedule -RecipePath $Recipe -SourceRoot $PSScriptRoot -ConfigPath $ConfigPath -ConfigFromCommandLine:($PSBoundParameters.ContainsKey('ConfigPath'))
-        return
-    }
 
     # ---------- Рецепт прошлой сборки ----------
     # Параметры, не заданные в командной строке, берутся из рецепта: так сборку можно повторить,
@@ -408,7 +401,7 @@ try {
         -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:(-not $PSBoundParameters.ContainsKey('WorkDir')) `
         -ExtraSize $extraSize -SkipOscdimg:$listMode -SkipOutputCheck:$listMode -OwnMountPaths $allMountDirs
     if ($check.Errors -gt 0) { throw (Get-LunqText 'Main.FixErrors') }
-    # Без вопросов (рецепт, расписание) никто не ответит на предупреждение, а многочасовая сборка на
+    # Без вопросов (рецепт, параметры) никто не ответит на предупреждение, а многочасовая сборка на
     # почти полном диске упадёт посередине. Поэтому нехватка места там останавливает запуск.
     if ($check.SpaceLow -and -not $interactive -and -not $listMode -and -not $IgnoreSpace) { throw (Get-LunqText 'Main.SpaceLowStop') }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo (Get-LunqText 'Main.AskContinueWarnings'))) { return }
@@ -614,7 +607,7 @@ try {
         BootCA2023 = $BootCA2023; SplitWim = $SplitWim; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
     }
     Save-LunqBuildOutputs -RecipeValues $recipeValues -HashCache $hashCache -FirstLogon $firstLogon -Results $results -LunqProfile $lunqProfile `
-        -StepTimes $state['StepTimes'] -Elapsed $elapsed -SourceRoot $PSScriptRoot -Interactive:$interactive -OfferSchedule:$DownloadUpdates
+        -StepTimes $state['StepTimes'] -Elapsed $elapsed
 }
 catch {
     $failed = $true

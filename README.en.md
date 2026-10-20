@@ -143,11 +143,10 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-CleanupComponents` | Clean up the component store (`/ResetBase`): the image is smaller, but the updates in it cannot be removed |
 | `-KeepWorkDir` | Do not delete the working folder after the build |
 | `-Force` | Overwrite an existing finished ISO |
-| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run from a recipe or on schedule stops when space is short, and step-by-step mode asks |
+| `-IgnoreSpace` | Start a build without questions even if there is less free disk space than needed. Without it a run from a recipe or with parameters stops when space is short, and step-by-step mode asks |
 | `-Language` | Interface language: `ru` or `en`. By default Russian on Russian Windows and English on any other |
-| `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates every month") |
+| `-DownloadUpdates` | Download the latest cumulative and .NET updates from the Microsoft catalog, and with `-UpdatesToSetup` also Safe OS and Setup Dynamic Update (see "Fresh updates from the catalog") |
 | `-Recipe` | Repeat the build from the recipe `<ISO name>.lunq.json`. Parameters you pass win over the recipe (see "Build recipe and report") |
-| `-Schedule` | Together with `-Recipe`: `Monthly` creates a task that rebuilds the ISO every month with fresh updates, `Off` removes it. Nothing is built |
 | `-Online` | Apply the profile to this Windows, without an ISO. What was there is saved for restore (see "This computer without an ISO, and restore") |
 | `-Restore` | Bring back what LunqDebloater removed on this Windows or in the image it was installed from |
 | `-Category` | Category Ids separated by commas: only these are applied or restored, the others are off |
@@ -278,20 +277,18 @@ To make your own profile, it helps to know the exact names of apps and component
 
 The script builds and changes nothing. It copies the edition to the working folder, opens it read-only and saves the file `<ISO name>_<edition number>_contents.txt` next to the ISO. The file lists the Appx apps, the installed components (Capabilities) and the Windows features (enabled and disabled). On the right of each item are the profile categories that already remove it. At the end of the file are the profile entries that are not in the image. Windows ADK is not needed for this mode.
 
-## Fresh updates every month
+## Fresh updates from the catalog
 
 Instead of looking up the cumulative update in the catalog by hand, turn on "Download fresh updates from the Microsoft catalog" in the summary or add `-DownloadUpdates`. Once the edition is selected and its release (for example, 26H2) and architecture are known, the script finds the latest cumulative and .NET updates in the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com), and together with updating Setup (`-UpdatesToSetup`, turned on automatically in step-by-step mode) also Safe OS and Setup Dynamic Update. Preview and server updates are skipped. The files are downloaded only from the Microsoft download servers, checked against the catalog checksum (a file without one is not downloaded) and kept in `Config\Updates\Catalog\<release>-<architecture>`: the next build does not download them again, and last month's updates are deleted. Updates from `Config\Updates` are added together with the downloaded ones. Setup Dynamic Update, downloaded or your own, is expanded into Setup only if it is signed by Microsoft.
 
 The catalog has no official API: the script reads the same page a browser shows. If Microsoft changes it, the script says that it found nothing, and the update can be downloaded by hand as before.
 
-An ISO built with downloading can be rebuilt every month without you. In step-by-step mode the script offers this at the end of the build; with parameters the task is created from the recipe (see below):
+You can repeat a build with fresh updates at any time with `.\LunqDebloater.ps1 -Recipe <recipe> -DownloadUpdates -Force`, including from your own scheduled task. Since version 1.14.0 there is no built-in task for monthly rebuilds (`-Schedule`). If you created one with an earlier version, remove the task and the program copy yourself, in PowerShell as administrator:
 
 ```powershell
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Monthly   # every month on the 15th
-.\LunqDebloater.ps1 -Recipe D:\Win11_26H2_Lunq_1.13.0.lunq.json -Schedule Off       # stop rebuilding
+Get-ScheduledTask -TaskPath '\LunqDebloater\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+Remove-Item -LiteralPath "$env:ProgramFiles\LunqDebloater-Schedule" -Recurse -Force -ErrorAction SilentlyContinue
 ```
-
-The task `LunqDebloater\<ISO name without the version>-<recipe path fingerprint>` in Task Scheduler runs as the system account on the 15th (cumulative updates come out on the second Tuesday of the month) and, if the computer was off, at the next start. It repeats the build from the recipe with fresh updates and overwrites the output ISO. The task does not run the program folder, which any program of the user could change, but a copy of LunqDebloater, `Config` and the recipe in `C:\Program Files\LunqDebloater-Schedule\<task name>` that only administrators can change. Its log is in `Logs` of that copy. After updating LunqDebloater or changing `Config`, run `-Schedule Monthly` again to refresh the copy. The recipe of a build made by the new version works too: an ISO has one task, and it is replaced rather than joined by a second one. The new version builds the ISO under a new name, and the ISO of the previous version stays, so delete it yourself if you do not need it; `-Schedule Off` removes the task together with the copy.
 
 ## Build recipe and report
 
@@ -436,7 +433,7 @@ The code is laid out like this:
 | `LunqDebloater.ps1` | The script itself: parameters, restart, administrator rights, the log and the cleanup after the build. The modes, the summary and the plan live in the module (`Modes`) |
 | `Install.ps1` | Loader for the one-command start (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | The module with the functions. The version is set in the `LunqDebloater.psd1` manifest |
-| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Modes` (the script's modes), `Build` (build steps), `Report`, `System`, `Catalog`, `Schedule`, `Recipe`, `Restore`, `Uninstall`, `Host` |
+| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Modes` (the script's modes), `Build` (build steps), `Report`, `System`, `Catalog`, `Recipe`, `Restore`, `Uninstall`, `Host` |
 | `Modules\LunqDebloater\Data\Releases.psd1` | Windows releases from 24H2 on: builds, names and enablement packages |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
