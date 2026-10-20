@@ -344,10 +344,34 @@ function Get-LunqBuildStampValues {
     }
 }
 
+# Ключи контекста каждого режима. Контекст собирают LunqDebloater.ps1 и функции режимов, и
+# опечатка в имени ключа без этой проверки превратилась бы в $null посреди сборки.
+$script:LunqContextKeys = @{
+    Build     = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'BootMountDir', 'ReMountDir', 'IsoPath', 'IsoDir', 'WimPath', 'Index',
+        'OutputIso', 'Oscdimg', 'Label', 'Updates', 'SafeOSUpdates', 'SetupUpdates', 'PEUpdates', 'Drivers', 'PEDrivers', 'DriversPath',
+        'ServiceRecovery', 'ServicePE', 'FirstLogon', 'SetupAnswers', 'Architecture', 'Config', 'SkipAppx', 'SkipComponents',
+        'SkipRegistry', 'CleanupComponents', 'BootCA2023', 'SplitWim', 'Profile', 'ProfilePath', 'EditionName', 'BuildText', 'Restore')
+    Inventory = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'WimPath', 'IsoPath', 'Index', 'DirectMount', 'Profile', 'ContentsPath', 'Header')
+    Online    = @('State', 'Config', 'SkipAppx', 'SkipComponents', 'SkipRegistry', 'Restore', 'RestorePath')
+}
+
+function Assert-LunqContext {
+    # Сбой с понятным текстом до первого шага, если в контексте нет нужного ключа или есть лишний.
+    param([Parameter(Mandatory)][hashtable]$Context, [Parameter(Mandatory)][ValidateSet('Build', 'Inventory', 'Online')][string]$Mode)
+    $expected = $script:LunqContextKeys[$Mode]
+    $missing = @($expected | Where-Object { -not $Context.ContainsKey($_) })
+    if ($missing.Count -gt 0) { throw (Get-LunqText 'Main.ContextMissing' $Mode ($missing -join ', ')) }
+    $unknown = @($Context.Keys | Where-Object { $expected -notcontains $_ } | Sort-Object)
+    if ($unknown.Count -gt 0) { throw (Get-LunqText 'Main.ContextUnknown' $Mode ($unknown -join ', ')) }
+}
+
 function Invoke-LunqBuild {
     # Выполняет нужные шаги по порядку и возвращает их результаты для итога.
     # -Inventory: шаги режима «Что в образе» вместо сборки, -Online: шаги для этой Windows.
     param([Parameter(Mandatory)][hashtable]$Context, [switch]$Inventory, [switch]$Online)
+    $mode = 'Build'
+    if ($Inventory) { $mode = 'Inventory' } elseif ($Online) { $mode = 'Online' }
+    Assert-LunqContext -Context $Context -Mode $mode
     if ($Inventory) { $steps = @(Get-LunqInventorySteps -Context $Context | Where-Object { $_.When }) }
     elseif ($Online) { $steps = @(Get-LunqOnlineSteps -Context $Context | Where-Object { $_.When }) }
     else { $steps = @(Get-LunqBuildSteps -Context $Context | Where-Object { $_.When }) }

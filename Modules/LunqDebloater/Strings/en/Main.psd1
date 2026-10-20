@@ -104,6 +104,8 @@
     'Main.WhatToDoSkip'          = 'If you are building the image on a different build on purpose, run the script with -SkipVersionCheck.'
     'Main.VersionMismatch'       = 'The Windows version in the ISO does not match the profile.'
     'Main.HostWarningHint'       = 'It is safer to build the image on Windows 11 of the same version as the ISO or newer.'
+    'Main.ContextMissing'        = 'LunqDebloater internal error: the {0} mode context lacks the keys {1}.'
+    'Main.ContextUnknown'        = 'LunqDebloater internal error: the {0} mode context has unknown keys {1}.'
     'Main.StepPrepare'           = 'Preparing the working folder'
     'Main.StepPrepareHint'       = 'Cleaning up after the previous run and creating {0}.'
     'Main.StepCopyEdition'       = 'Copying the edition'

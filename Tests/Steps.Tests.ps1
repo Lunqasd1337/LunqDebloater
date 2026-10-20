@@ -239,7 +239,8 @@ Describe 'Get-LunqBuildStampValues' {
 
 Describe 'Invoke-LunqBuild' {
     It 'в итог попадают только результаты шагов, по порядку' {
-        InModuleScope LunqDebloater {
+        InModuleScope LunqDebloater -Parameters @{ Context = (New-TestContext) } {
+            param($Context)
             Mock Write-Host { }
             Mock Get-LunqBuildSteps {
                 @(
@@ -248,7 +249,7 @@ Describe 'Invoke-LunqBuild' {
                     @{ Name = 'C'; When = $true; Title = 'C'; Hint = ''; Run = { param($c) $c.State.Seen = $true; $null; New-LunqResult 'Второй' 'Test' } }
                 )
             }
-            $context = @{ State = @{} }
+            $context = $Context
             $results = Invoke-LunqBuild -Context $context
             @($results | ForEach-Object { $_.Title }) | Should -Be @('Первый', 'Второй')
             $context.State.Seen | Should -BeTrue
@@ -259,7 +260,8 @@ Describe 'Invoke-LunqBuild' {
     }
 
     It 'перед каждым шагом в лог DISM пишется метка' {
-        InModuleScope LunqDebloater {
+        InModuleScope LunqDebloater -Parameters @{ Context = (New-TestContext) } {
+            param($Context)
             Mock Write-Host { }
             Mock Get-LunqBuildSteps {
                 @(
@@ -269,7 +271,7 @@ Describe 'Invoke-LunqBuild' {
             }
             $old = $script:DismLogPath
             $script:DismLogPath = Join-Path $TestDrive 'dism.log'
-            try { Invoke-LunqBuild -Context @{ State = @{} } | Out-Null }
+            try { Invoke-LunqBuild -Context $Context | Out-Null }
             finally { $log = $script:DismLogPath; $script:DismLogPath = $old }
             $text = Get-Content -LiteralPath $log -Raw
             $text | Should -Match '===== LunqDebloater \d{4}-\d\d-\d\d \d\d:\d\d:\d\d: step 1/2: Updates ====='
@@ -278,10 +280,29 @@ Describe 'Invoke-LunqBuild' {
     }
 }
 
+Describe 'Assert-LunqContext' {
+    It 'нет ключа или лишний ключ: понятная ошибка до первого шага' {
+        $missing = New-TestContext
+        $missing.Remove('SplitWim')
+        $parameters = @{ Missing = $missing; Typo = (New-TestContext -Values @{ SplitWimm = $true }); Full = (New-TestContext) }
+        InModuleScope LunqDebloater -Parameters $parameters {
+            param($Missing, $Typo, $Full)
+            Mock Write-Host { }
+            Mock Get-LunqBuildSteps { throw 'шаги не должны строиться' }
+            Mock Get-LunqOnlineSteps { throw 'шаги не должны строиться' }
+            { Invoke-LunqBuild -Context $Missing } | Should -Throw '*в контексте режима Build нет ключей SplitWim.'
+            { Invoke-LunqBuild -Context $Typo } | Should -Throw '*в контексте режима Build лишние ключи SplitWimm.'
+            # У контекста сборки нет ключа, который нужен -Online.
+            { Invoke-LunqBuild -Context $Full -Online } | Should -Throw '*в контексте режима Online нет ключей RestorePath.'
+        }
+    }
+}
+
 Describe 'Invoke-LunqBuild -Online' {
     It 'данные для отката записываются после каждого шага, и после упавшего тоже' {
         $path = Join-Path $TestDrive 'online\Restore.json'
-        InModuleScope LunqDebloater -Parameters @{ Path = $path; Context = (New-TestContext -Values @{ RestorePath = $path }) } {
+        $context = @{ State = @{}; Config = $null; SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; Restore = $null; RestorePath = $path }
+        InModuleScope LunqDebloater -Parameters @{ Path = $path; Context = $context } {
             param($Path, $Context)
             Mock Write-Step { }
             $Context.Restore = New-LunqRestoreData -LunqProfile ([pscustomobject]@{ Name = 'Test'; Categories = @() }) -Source Online

@@ -57,7 +57,8 @@ Tests\                       Pester tests and stubs
 | `PostInstall.ps1` | First sign-in programs and scripts: copying them into the image, `unattend.xml` in Sysprep |
 | `Unattend.ps1` | `autounattend.xml` in the ISO root: region, requirements bypass, local account (with `-LocalAccountName` it is created in specialize, the group by SID) and its name check |
 | `Inventory.ps1` | "What is in the image" mode: the list of Appx, capabilities and features marked with profile categories |
-| `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) and the build stamp values |
+| `Build.ps1` | Build steps (`Get-LunqBuildSteps`) and the "What is in the image" steps (`Get-LunqInventorySteps`), running them in order (`Invoke-LunqBuild`) with a check of the context keys (`Assert-LunqContext`), and the build stamp values |
+| `Modes.ps1` | The modes and sections of `LunqDebloater.ps1`: the schedule (`Invoke-LunqScheduleMode`), parameters from a recipe (`Resolve-LunqRecipeParameters`), restore (`Invoke-LunqRestoreMode`), `-Online` (`Invoke-LunqOnlineMode`), the "What goes into the image" summary (`Select-LunqBuildContents`), updates and drivers for the build (`Get-LunqBuildInputs`), "What is in the image" (`Invoke-LunqInventoryMode`), the build plan (`Write-LunqBuildPlan`), and the recipe and report next to the ISO (`Save-LunqBuildOutputs`). The script keeps the parameters, restart, rights, lock, log and the cleanup in `finally` |
 | `Report.ps1` | Common step result format (`New-LunqResult`) and the build result (`Write-LunqReport`) |
 | `Catalog.ps1` | Fresh updates from the Microsoft Update Catalog: parsing the search page and the download dialog, picking the newest, downloading with a SHA-1 check and a cache (`Save-LunqCatalogUpdates`). Network access only through `Invoke-LunqWebRequest`, which the tests replace |
 | `Schedule.ps1` | The scheduled task that rebuilds from a recipe every month (`Register-LunqSchedule`, `Unregister-LunqSchedule`, through `schtasks.exe /XML`). The task runs as SYSTEM and starts a copy of the program, `Config` and the recipe in `Program Files\LunqDebloater-Schedule` (`Copy-LunqScheduleFiles`), not the user's folder |
@@ -86,7 +87,7 @@ Before every change the removal functions and `Set-LunqRegistry` record in `Cont
 
 The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`. Each one has `Name`, `Title`, `Hint`, `When` (whether to run it) and `Run` (what to do). "Step N of M" is counted from `When`, so the numbers always go in a row.
 
-`LunqDebloater.ps1` puts everything the steps need into one hashtable, the build context, and passes it to `Invoke-LunqBuild`. Each `Run` gets the context as a parameter and returns its results; `Invoke-LunqBuild` collects them for the summary. In `Context.State` the steps record what matters on error: whether the image is mounted (`Mounted`) and whether this run created the working folder (`WorkDirOwned`). The script reads the same table in `catch` and `finally`. The module runs under `StrictMode`, so the context must contain every key, even empty ones.
+`LunqDebloater.ps1` puts everything the steps need into one hashtable, the build context, and passes it to `Invoke-LunqBuild`. Each `Run` gets the context as a parameter and returns its results; `Invoke-LunqBuild` collects them for the summary. In `Context.State` the steps record what matters on error: whether the image is mounted (`Mounted`) and whether this run created the working folder (`WorkDirOwned`). The script reads the same table in `catch` and `finally`. The module runs under `StrictMode`, so the context must contain every key, even empty ones. The keys for a build, "What is in the image" and `-Online` are listed in `$script:LunqContextKeys` (`Private\Build.ps1`): `Invoke-LunqBuild` checks the context against it before the first step, so a missing or misspelled key shows up at once, not half an hour into the build.
 
 | Step | What it does | When |
 |---|---|---|
@@ -151,7 +152,9 @@ Everything the user sees comes from `Get-LunqText 'Area.Name' arguments...` and 
 | `Tests\Servicing.Tests.ps1` | Update order, picking updates and drivers for Windows Setup and WinRE, recognizing Dynamic Updates by their `.cab`, skipping packages that do not apply |
 | `Tests\PostInstall.Tests.ps1` | Re-saving scripts as UTF-8 with BOM, the answer file |
 | `Tests\Build.Tests.ps1` | End-to-end runs of `LunqDebloater.ps1` with parameters and in step-by-step mode (including choosing folders and this computer's drivers), in Russian and English |
-| `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp |
+| `Tests\Steps.Tests.ps1` | Build steps on their own: which ones run with which settings, a single step with a stub, the build stamp, the context key check |
+| `Tests\Modes.Tests.ps1` | The modes in `Private\Modes.ps1`: the category list from `-File`, parameters from a recipe and which wins, the config folder for the scheduled task |
+| `Tests\System.Tests.ps1` | Excluding the working folder from Microsoft Defender scanning: adding, a folder excluded beforehand, an exclusion that could not be added or removed |
 | `Tests\Install.Tests.ps1` | The loader: unpacking a release, updating while keeping changes in `Config`, working offline |
 | `Tests\FirstLogon.Tests.ps1` | The first sign-in script in a separate process with a fake winget, network and task scheduler |
 | `Tests\Uninstall.Tests.ps1` | Uninstalling programs from `Uninstall`: running the script from `ThirdParty` with the right parameters, `Uninstall.json` for the image, EdgeRemover's parameters |
@@ -167,7 +170,7 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **A parameter.** Add it to `param()` in `LunqDebloater.ps1` and to the parameter table in `README.md` and `README.en.md` (a test checks this). If it is a path, add its name to `$pathParams` so it is passed as an absolute path on relaunch.
 
-**A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
+**A build step.** Add an entry to `Get-LunqBuildSteps` (`Private\Build.ps1`) in the right place, and the strings `Main.Step<Name>` and `Main.Step<Name>Hint` to both tables. `Run` gets the context as a parameter and returns a `New-LunqResult`. If the step needs a new value, add the key to the context in `LunqDebloater.ps1`, to `$script:LunqContextKeys` and to `New-TestContext` in `Tests\Steps.Tests.ps1`. Update the step lists in `Tests\Steps.Tests.ps1` and the expected step counts in `Tests\Build.Tests.ps1`.
 
 **An interface string.** Add the key to `Strings\ru\<Area>.psd1` and `Strings\en\<Area>.psd1` with the same `{0}`, `{1}`. Keys in a table are aligned to the longest one.
 

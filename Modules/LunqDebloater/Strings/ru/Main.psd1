@@ -104,6 +104,8 @@
     'Main.WhatToDoSkip'          = 'Если вы сознательно собираете образ на другой сборке, запустите скрипт с -SkipVersionCheck.'
     'Main.VersionMismatch'       = 'Версия Windows в ISO не подходит профилю.'
     'Main.HostWarningHint'       = 'Надёжнее собирать образ на Windows 11 той же версии, что и ISO, или новее.'
+    'Main.ContextMissing'        = 'Внутренняя ошибка LunqDebloater: в контексте режима {0} нет ключей {1}.'
+    'Main.ContextUnknown'        = 'Внутренняя ошибка LunqDebloater: в контексте режима {0} лишние ключи {1}.'
     'Main.StepPrepare'           = 'Подготовка рабочей папки'
     'Main.StepPrepareHint'       = 'Очищаю следы прошлого запуска и создаю {0}.'
     'Main.StepCopyEdition'       = 'Копирование редакции'

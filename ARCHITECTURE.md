@@ -57,7 +57,8 @@ Tests\                       Тесты Pester и заглушки
 | `PostInstall.ps1` | Программы и скрипты первого входа: копирование в образ, `unattend.xml` в Sysprep |
 | `Unattend.ps1` | `autounattend.xml` в корне ISO: регион, обход требований, локальная учётная запись (с `-LocalAccountName` она создаётся в specialize, группа по SID) и проверка её имени |
 | `Inventory.ps1` | Режим «Что в образе»: список Appx, компонентов и функций с пометками категорий профиля |
-| `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) и значения отметки о сборке |
+| `Build.ps1` | Шаги сборки (`Get-LunqBuildSteps`) и режима «Что в образе» (`Get-LunqInventorySteps`), их запуск по порядку (`Invoke-LunqBuild`) с проверкой ключей контекста (`Assert-LunqContext`) и значения отметки о сборке |
+| `Modes.ps1` | Режимы и разделы `LunqDebloater.ps1`: расписание (`Invoke-LunqScheduleMode`), параметры из рецепта (`Resolve-LunqRecipeParameters`), откат (`Invoke-LunqRestoreMode`), `-Online` (`Invoke-LunqOnlineMode`), сводка «Что войдёт в образ» (`Select-LunqBuildContents`), обновления и драйверы для сборки (`Get-LunqBuildInputs`), «Что в образе» (`Invoke-LunqInventoryMode`), план сборки (`Write-LunqBuildPlan`) и рецепт с отчётом рядом с ISO (`Save-LunqBuildOutputs`). В скрипте остаются параметры, перезапуск, права, блокировка, лог и уборка в `finally` |
 | `Report.ps1` | Общий формат результата шага (`New-LunqResult`) и итог сборки (`Write-LunqReport`) |
 | `Catalog.ps1` | Свежие обновления из каталога Центра обновления: разбор страницы поиска и окна скачивания, выбор самого нового, скачивание с проверкой SHA-1 и кэшем (`Save-LunqCatalogUpdates`). Сеть только через `Invoke-LunqWebRequest`, тесты подменяют её |
 | `Schedule.ps1` | Задание планировщика для пересборки по рецепту каждый месяц (`Register-LunqSchedule`, `Unregister-LunqSchedule`, через `schtasks.exe /XML`). Задание идёт от SYSTEM и запускает копию программы, `Config` и рецепта в `Program Files\LunqDebloater-Schedule` (`Copy-LunqScheduleFiles`), а не папку пользователя |
@@ -86,7 +87,7 @@ Tests\                       Тесты Pester и заглушки
 
 Шаги описаны в `Private\Build.ps1` списком, который возвращает `Get-LunqBuildSteps`. У каждого есть `Name`, `Title`, `Hint`, `When` (выполнять ли) и `Run` (что делать). По `When` считается «Шаг N из M», поэтому номера всегда идут подряд.
 
-`LunqDebloater.ps1` собирает всё, что нужно шагам, в одну хэш-таблицу, контекст сборки, и передаёт её в `Invoke-LunqBuild`. Каждый `Run` получает этот контекст параметром и возвращает результаты, `Invoke-LunqBuild` собирает их для итога. В `Context.State` шаги отмечают то, что нужно знать при ошибке: смонтирован ли образ (`Mounted`) и создал ли запуск рабочую папку (`WorkDirOwned`). Скрипт читает эту же таблицу в `catch` и `finally`. В модуле включён `StrictMode`, поэтому в контексте должны быть все ключи, даже пустые.
+`LunqDebloater.ps1` собирает всё, что нужно шагам, в одну хэш-таблицу, контекст сборки, и передаёт её в `Invoke-LunqBuild`. Каждый `Run` получает этот контекст параметром и возвращает результаты, `Invoke-LunqBuild` собирает их для итога. В `Context.State` шаги отмечают то, что нужно знать при ошибке: смонтирован ли образ (`Mounted`) и создал ли запуск рабочую папку (`WorkDirOwned`). Скрипт читает эту же таблицу в `catch` и `finally`. В модуле включён `StrictMode`, поэтому в контексте должны быть все ключи, даже пустые. Список ключей для сборки, «Что в образе» и `-Online` записан в `$script:LunqContextKeys` (`Private\Build.ps1`): `Invoke-LunqBuild` сверяет с ним контекст до первого шага, и пропущенный или опечатанный ключ виден сразу, а не через полчаса сборки.
 
 | Шаг | Что делает | Когда |
 |---|---|---|
@@ -151,7 +152,9 @@ Tests\                       Тесты Pester и заглушки
 | `Tests\Servicing.Tests.ps1` | Порядок обновлений, отбор обновлений и драйверов для установщика и WinRE, распознавание Dynamic Update по `.cab`, пропуск неподходящих пакетов |
 | `Tests\PostInstall.Tests.ps1` | Пересохранение скриптов в UTF-8 с BOM, файл ответов |
 | `Tests\Build.Tests.ps1` | Сквозные запуски `LunqDebloater.ps1` с параметрами и в пошаговом режиме (в том числе выбор папок и драйверы этого компьютера), на русском и английском |
-| `Tests\Steps.Tests.ps1` | Шаги сборки по отдельности: какие выполняются при каких настройках, отдельный шаг с заглушкой, отметка о сборке |
+| `Tests\Steps.Tests.ps1` | Шаги сборки по отдельности: какие выполняются при каких настройках, отдельный шаг с заглушкой, отметка о сборке, проверка ключей контекста |
+| `Tests\Modes.Tests.ps1` | Режимы из `Private\Modes.ps1`: список категорий из `-File`, параметры из рецепта и что важнее, папка настроек для задания по расписанию |
+| `Tests\System.Tests.ps1` | Исключение рабочей папки из проверки Microsoft Defender: добавление, папка, исключённая заранее, исключение, которое не добавилось или не убралось |
 | `Tests\Install.Tests.ps1` | Загрузчик: раскладка релиза, обновление с сохранением правок в `Config`, работа без сети |
 | `Tests\FirstLogon.Tests.ps1` | Скрипт первого входа в отдельном процессе с ненастоящим winget, сетью и планировщиком |
 | `Tests\Uninstall.Tests.ps1` | Удаление программ из `Uninstall`: запуск скрипта из `ThirdParty` с нужными параметрами, `Uninstall.json` для образа, параметры EdgeRemover |
@@ -167,7 +170,7 @@ Tests\                       Тесты Pester и заглушки
 
 **Параметр.** Добавьте его в `param()` в `LunqDebloater.ps1` и в таблицу параметров в `README.md` и `README.en.md` (тест это проверяет). Если это путь, добавьте имя в `$pathParams`, чтобы при перезапуске он передался полным.
 
-**Шаг сборки.** Добавьте запись в `Get-LunqBuildSteps` (`Private\Build.ps1`) на правильное место, строки `Main.Step<Имя>` и `Main.Step<Имя>Hint` в обе таблицы. `Run` получает контекст параметром и возвращает `New-LunqResult`. Если шагу нужно новое значение, добавьте ключ в контекст в `LunqDebloater.ps1` и в `New-TestContext` в `Tests\Steps.Tests.ps1`. Поправьте списки шагов в `Tests\Steps.Tests.ps1` и ожидаемое число шагов в `Tests\Build.Tests.ps1`.
+**Шаг сборки.** Добавьте запись в `Get-LunqBuildSteps` (`Private\Build.ps1`) на правильное место, строки `Main.Step<Имя>` и `Main.Step<Имя>Hint` в обе таблицы. `Run` получает контекст параметром и возвращает `New-LunqResult`. Если шагу нужно новое значение, добавьте ключ в контекст в `LunqDebloater.ps1`, в `$script:LunqContextKeys` и в `New-TestContext` в `Tests\Steps.Tests.ps1`. Поправьте списки шагов в `Tests\Steps.Tests.ps1` и ожидаемое число шагов в `Tests\Build.Tests.ps1`.
 
 **Строку интерфейса.** Добавьте ключ в `Strings\ru\<Область>.psd1` и `Strings\en\<Область>.psd1` с одинаковыми `{0}`, `{1}`. Ключи в таблице выровнены по самому длинному.
 
