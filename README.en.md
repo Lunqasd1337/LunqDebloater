@@ -52,7 +52,7 @@ All settings are in one `Config` folder next to the script. There is no need to 
 
 A short guide to each item is in [Config/README.en.txt](Config/README.en.txt). Drivers and updates are not stored in git.
 
-Before the build the script shows the "What goes into the image" summary: what it found in `Config`, with numbers. You can turn off anything you do not need by its number without deleting it from the folder. The same summary turns on component store cleanup, adding updates and drivers to Windows Setup and the recovery environment, and the answer file (see "Answer file"). Drivers and updates do not have to be put in `Config`: the items marked with an arrow in the summary open a folder picker (for example, Downloads or a USB stick with the vendor's drivers), and the "Take this computer's drivers" item exports the drivers of the current Windows. After that the summary is shown again and keeps the rest of your choices.
+Before the build the script shows the "What goes into the image" summary: what it found in `Config`, split into the Updates, Drivers, First sign-in, Windows Setup and More sections. A section's line shows what is turned on in it, and its number opens the section with its items. You can turn off anything you do not need by its number without deleting it from the folder. The same summary turns on component store cleanup, adding updates and drivers to Windows Setup and the recovery environment, and the answer file (see "Answer file"). Drivers and updates do not have to be put in `Config`: the items marked with an arrow in the summary open a folder picker (for example, Downloads or a USB stick with the vendor's drivers), and the "Take this computer's drivers" item exports the drivers of the current Windows. After that the summary is shown again and keeps the rest of your choices.
 
 To keep several sets of settings, copy the folder (for example, to `Config-Office`) and run with `-ConfigPath .\Config-Office`.
 
@@ -203,7 +203,7 @@ Updates are installed right after the image is mounted, before apps and componen
 
 1. If the ISO is built for this same computer, choose "Take this computer's drivers" in the summary: the script exports the third-party drivers of the current Windows. For another computer choose a folder with extracted drivers (`.inf` files together with `.sys`, `.cat` and the rest, any subfolders) with "Choose a folder with drivers", for example a USB stick with the vendor's drivers. You can also put them in `Config\Drivers`, and with parameters set the folder with `-DriversPath`. How to extract drivers is described in [Config/README.en.txt](Config/README.en.txt).
 2. The drivers appear in the summary before the build, and with parameters they are added automatically (add `-SkipDrivers` if you do not want that).
-3. If Windows Setup does not see the disk (Intel RST/VMD controllers, RAID), add the drivers to it as well: in the summary it is the item under the drivers, with parameters you need the `-DriversToSetup` switch. The drivers then also go into the recovery environment (WinRE), so it sees the disk too. Only disk controller drivers are added there (class `SCSIAdapter` or `HDC` in the `.inf`): Windows Setup is loaded into memory completely at boot, and all drivers would slow it down a lot.
+3. If Windows Setup does not see the disk (Intel RST/VMD controllers, RAID), add the drivers to it as well: in the summary it is the item in the Drivers section, with parameters you need the `-DriversToSetup` switch. The drivers then also go into the recovery environment (WinRE), so it sees the disk too. Only disk controller drivers are added there (class `SCSIAdapter` or `HDC` in the `.inf`): Windows Setup is loaded into memory completely at boot, and all drivers would slow it down a lot.
 
 The drivers go into the driver store of the image, and Windows installs the matching ones during setup. Each `.inf` is added separately, so an unsuitable driver does not break the build but shows up in the result as an error. A driver that comes as an `.exe` without an `.inf` cannot be added; extract it first.
 
@@ -222,7 +222,7 @@ By default they stay as they are in the ISO. With `-UpdatesToSetup` they get the
 
 Microsoft is changing the certificate that signs the Windows boot manager (the BlackLotus vulnerability, CVE-2023-24932): the old Windows Production PCA 2011 is being revoked step by step, and the new one is called Windows UEFI CA 2023. A regular ISO boots with the old boot manager and will not boot with Secure Boot on a computer where the old certificate is already on the revocation list (DBX).
 
-With `-BootCA2023` (an item at the end of the summary) the ISO gets the boot manager signed with the new certificate: the `_EX` files from the updated image (`Windows\Boot\EFI_EX`, `DVD_EX` and `Fonts_EX`) replace `efi\boot\bootx64.efi`, `bootmgr.efi`, `efisys.bin` and the boot fonts. This needs a cumulative update in the updates folder or `-DownloadUpdates`, and Windows Setup is updated along with the system, as Microsoft requires. If the image has no `_EX` files, the ISO keeps the regular boot manager and the summary warns about it.
+With `-BootCA2023` (an item in the More section of the summary) the ISO gets the boot manager signed with the new certificate: the `_EX` files from the updated image (`Windows\Boot\EFI_EX`, `DVD_EX` and `Fonts_EX`) replace `efi\boot\bootx64.efi`, `bootmgr.efi`, `efisys.bin` and the boot fonts. This needs a cumulative update in the updates folder or `-DownloadUpdates`, and Windows Setup is updated along with the system, as Microsoft requires. If the image has no `_EX` files, the ISO keeps the regular boot manager and the summary warns about it.
 
 Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks the Windows UEFI CA 2023 certificate: usually computers from before 2024 without recent firmware and Windows updates. If unsure, keep the regular boot manager.
 
@@ -231,7 +231,7 @@ Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks
 A USB drive for UEFI boot is usually formatted as FAT32, and FAT32 cannot hold files over 4 GB. With recent updates and drivers `install.wim` can be bigger, and then the build summary warns about it. There are two ways out:
 
 - write the ISO with [Rufus](https://rufus.ie): it handles a big `install.wim` itself;
-- build the ISO with `-SplitWim` (an item at the end of the summary): `install.wim` is split into 3800 MB parts `install.swm`, `install2.swm` and so on, and the ISO can simply be copied to a FAT32 drive. Windows Setup joins the parts itself.
+- build the ISO with `-SplitWim` (an item in the More section of the summary): `install.wim` is split into 3800 MB parts `install.swm`, `install2.swm` and so on, and the ISO can simply be copied to a FAT32 drive. Windows Setup joins the parts itself.
 
 ## After installation
 
