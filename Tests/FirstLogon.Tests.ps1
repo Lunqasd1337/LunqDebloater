@@ -132,7 +132,7 @@ function global:netsh { Add-Content -LiteralPath $global:NetshLog -Value ($args 
 # пишет, кому и какой пароль задан бы был.
 $global:Answers = New-Object System.Collections.Generic.Queue[string]
 $answersFile = Join-Path $State 'answers.txt'
-if (Test-Path -LiteralPath $answersFile) { foreach ($a in @(Get-Content -LiteralPath $answersFile)) { $global:Answers.Enqueue($a) } }
+if (Test-Path -LiteralPath $answersFile) { foreach ($a in @(Get-Content -LiteralPath $answersFile -Encoding UTF8)) { $global:Answers.Enqueue($a) } }
 $global:SetUserLog = Join-Path $State 'setuser.log'
 function global:Read-Host {
     param($Prompt, [switch]$AsSecureString)
@@ -294,7 +294,7 @@ Describe 'Скрипт первого входа' {
     It 'учётная запись без пароля: пароль спрашивается дважды и задаётся, вопрос больше не повторяется' {
         $t = New-FirstLogonTest
         [IO.File]::WriteAllText((Join-Path $t.Lunq 'LocalAccount.txt'), 'Иван', (New-Object Text.UTF8Encoding($false)))
-        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value @('секрет1', 'другой', 'секрет2', 'секрет2')
+        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value @('секрет1', 'другой', 'секрет2', 'секрет2') -Encoding UTF8
         $out = Invoke-FirstLogon -Test $t
         $out | Should -Match 'Пароль для Иван'
         $out | Should -Match 'Пароли не совпали'
@@ -315,7 +315,7 @@ Describe 'Скрипт первого входа' {
 
     It 'без отметки пароль не спрашивается' {
         $t = New-FirstLogonTest -Apps @('7zip.7zip')
-        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value 'секрет'
+        Set-Content -LiteralPath (Join-Path $t.Root 'answers.txt') -Value 'секрет' -Encoding UTF8
         $out = Invoke-FirstLogon -Test $t
         $out | Should -Not -Match 'Пароль для'
         Test-Path -LiteralPath (Join-Path $t.Root 'setuser.log') | Should -BeFalse
