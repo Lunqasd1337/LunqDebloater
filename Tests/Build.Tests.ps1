@@ -56,6 +56,9 @@ Describe 'Сборка с параметрами' {
         Test-Path -LiteralPath $t.OutputIso | Should -BeTrue
         $run.Output | Should -Match 'Драйверы: добавлено 2, ошибок 1'
         $run.Output | Should -Match 'Обновления в установщике: установлено 2'
+        # Образ 1 boot.wim (Windows PE) получает те же обновления, а драйверы только образ 2.
+        $run.Output | Should -Match 'Обновления в Windows PE \(boot\.wim, образ 1\): установлено 2'
+        $run.Output | Should -Not -Match 'Драйверы в Windows PE'
         $run.Output | Should -Match 'Очистка хранилища компонентов: старые версии системных файлов удалены'
         # После обновления boot.wim setup.exe в sources берётся из него, иначе версии не совпадут.
         $run.Output | Should -Match 'Файлы установщика: setup.exe, setuphost.exe скопированы из boot.wim в sources'
@@ -77,8 +80,8 @@ Describe 'Сборка с параметрами' {
         $run.Output | Should -Match 'export \S*install\.wim index 1 compression Max'
         # ISO подключается дважды: для выбора редакции и один раз на копирование и экспорт.
         @([regex]::Matches($run.Output, '\[mock\] dismount ISO')).Count | Should -Be 2
-        # Очистка идёт через dism.exe: в основном образе, в WinRE и в установщике.
-        @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 3
+        # Очистка идёт через dism.exe: в основном образе, в WinRE и в обоих образах boot.wim.
+        @($native | Where-Object { $_ -like 'dism.exe|*/StartComponentCleanup|/ResetBase*' }).Count | Should -Be 4
         $registry = Get-Content -LiteralPath $t.RegLog -Encoding UTF8
         $registry | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\Policies\Microsoft\Windows\DataCollection|AllowTelemetry|DWord|0'
         $registry | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|CleanupComponents|String|да'
@@ -486,6 +489,41 @@ Describe 'Ошибки и предупреждения' {
         Test-Path -LiteralPath (Join-Path $sources 'install2.swm') | Should -BeTrue
         $recipe = Get-Content -LiteralPath ([IO.Path]::ChangeExtension($script:Test.OutputIso, '.lunq.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
         $recipe.Media.SplitWim | Should -BeTrue
+    }
+
+    It '-DefenderExclusion: рабочая папка исключена на время сборки, и после сбоя тоже убрана' {
+        $record = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\DefenderExclusion.txt'
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Defender:\s+рабочая папка не проверяется до конца сборки'
+        $run.Output | Should -Match 'не проверяется Microsoft Defender до конца сборки'
+        $workDir = $script:Test.WorkDir.TrimEnd('\')
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) |
+            Should -Be @("defender|add|$workDir", "defender|remove|$workDir")
+        Test-Path -LiteralPath $record | Should -BeFalse
+
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true } -Prepare { $env:LUNQ_TEST_FAIL_APPX = '1' }
+        $run.Error | Should -Not -BeNullOrEmpty
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -HaveCount 2
+        Test-Path -LiteralPath $record | Should -BeFalse
+    }
+
+    It 'исключение Defender, оставшееся от убитого запуска, убирается следующим, даже без -DefenderExclusion' {
+        $record = Join-Path ([IO.Path]::GetTempPath()) 'LunqDebloater\DefenderExclusion.txt'
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true } -Prepare {
+            New-Item -ItemType Directory -Path (Split-Path $record -Parent) -Force | Out-Null
+            Set-Content -LiteralPath $record -Value 'D:\OldWork' -Encoding UTF8
+        }
+        $run.Error | Should -BeNullOrEmpty
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -Be @('defender|remove|D:\OldWork')
+        Test-Path -LiteralPath $record | Should -BeFalse
+    }
+
+    It 'Defender не проверяет файлы: исключение не добавляется' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; DefenderExclusion = $true } -Prepare { $env:LUNQ_TEST_DEFENDER = 'off' }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'Microsoft Defender не проверяет файлы на этом компьютере'
+        @(Get-Content -LiteralPath $script:Test.NativeLog -Encoding UTF8 | Where-Object { $_ -like 'defender|*' }) | Should -BeNullOrEmpty
     }
 
     It 'рабочая папка с пробелом: oscdimg получает пути без пробелов' {

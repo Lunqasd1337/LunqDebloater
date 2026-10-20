@@ -31,6 +31,12 @@ public static class FakeWinget {
         }
         int i = Array.IndexOf(args, "--id"); string id = i >= 0 ? args[i + 1] : "";
         File.AppendAllText(Path.Combine(root, "winget.log"), id + Environment.NewLine);
+        // scope.log: Id и --scope каждого вызова; useronly.txt: установщик только для текущего
+        // пользователя, на --scope machine winget отвечает 0x8A150010.
+        int s = Array.IndexOf(args, "--scope"); string scope = s >= 0 ? args[s + 1] : "";
+        File.AppendAllText(Path.Combine(root, "scope.log"), id + " " + scope + Environment.NewLine);
+        string userOnly = Path.Combine(root, "useronly.txt");
+        if (scope == "machine" && File.Exists(userOnly) && File.ReadAllLines(userOnly).Contains(id)) return unchecked((int)0x8A150010);
         // hang.txt: установщик завис; reboot.txt: установлено, нужна перезагрузка (0x8A150109).
         string hang = Path.Combine(root, "hang.txt");
         if (File.Exists(hang) && File.ReadAllLines(hang).Contains(id)) System.Threading.Thread.Sleep(30000);
@@ -51,7 +57,7 @@ public static class FakeWinget {
         if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать winget.exe: $compilerOutput" }
     }
     else {
-        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nif [ `"`$1`" = '--version' ]; then left=0; if [ -f `"`$root/notready.txt`" ]; then left=`$(cat `"`$root/notready.txt`"); fi; if [ `"`$left`" -gt 0 ]; then echo `$((left - 1)) > `"`$root/notready.txt`"; exit 1; fi; echo v1.0.0; exit 0; fi`nid=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`nif [ -f `"`$root/hang.txt`" ] && grep -qx `"`$id`" `"`$root/hang.txt`"; then sleep 30; fi`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`necho `"Successfully installed `$id`"`nexit 0`n"
+        $sh = "#!/bin/sh`nroot=`"`$(dirname `"`$(dirname `"`$0`")`")`"`nif [ `"`$1`" = '--version' ]; then left=0; if [ -f `"`$root/notready.txt`" ]; then left=`$(cat `"`$root/notready.txt`"); fi; if [ `"`$left`" -gt 0 ]; then echo `$((left - 1)) > `"`$root/notready.txt`"; exit 1; fi; echo v1.0.0; exit 0; fi`nid=''`nscope=''`nwhile [ `$# -gt 0 ]; do if [ `"`$1`" = '--id' ]; then id=`"`$2`"; fi; if [ `"`$1`" = '--scope' ]; then scope=`"`$2`"; fi; shift; done`necho `"`$id`" >> `"`$root/winget.log`"`necho `"`$id `$scope`" >> `"`$root/scope.log`"`nif [ -f `"`$root/hang.txt`" ] && grep -qx `"`$id`" `"`$root/hang.txt`"; then sleep 30; fi`nif [ -f `"`$root/failing.txt`" ] && grep -qx `"`$id`" `"`$root/failing.txt`"; then exit 1; fi`necho `"Successfully installed `$id`"`nexit 0`n"
         [IO.File]::WriteAllText($script:FakeWinget, $sh)
         & chmod +x $script:FakeWinget
     }
@@ -96,6 +102,8 @@ public static class FakeWinget {
         $wrapper = @'
 param($Lunq, $Windows, $Bin, $State, [switch]$Offline, [switch]$NoTask, [switch]$AclFails, [switch]$NcsiBlocked, [switch]$WifiFails)
 $env:PATH = $Bin + [IO.Path]::PathSeparator + $env:PATH
+# Номер процесса скрипта первого входа: тест сверяет, что ваши скрипты идут в другом.
+Set-Content -LiteralPath (Join-Path $State 'pid.txt') -Value $PID
 $env:WINDIR = $Windows
 $global:Now = [datetime]'2026-01-01'
 $global:Offline = [bool]$Offline
@@ -194,6 +202,8 @@ Describe 'Скрипт первого входа' {
         $t = New-FirstLogonTest -Apps @('7zip.7zip', 'Mozilla.Firefox --scope machine') -Scripts @{ '10-hello.ps1' = "Set-Content -LiteralPath (Join-Path `$PSScriptRoot 'hello.txt') -Value 'Готово'" }
         $out = Invoke-FirstLogon -Test $t
         Get-Lines $t.WingetLog | Should -Be @('7zip.7zip', 'Mozilla.Firefox')
+        # Программы ставятся для всех пользователей, а своё --scope из Apps.txt не дублируется.
+        Get-Lines (Join-Path $t.Root 'scope.log') | Should -Be @('7zip.7zip machine', 'Mozilla.Firefox machine')
         Get-Lines (Join-Path $t.Lunq 'apps.installed') | Should -Be @('7zip.7zip', 'Mozilla.Firefox')
         Get-Lines (Join-Path $t.Lunq 'scripts.done') | Should -Be @('10-hello.ps1')
         # Копии скриптов и файлов рядом с ними удалены, Apps.txt остался.
@@ -291,6 +301,16 @@ Describe 'Скрипт первого входа' {
         Test-Path -LiteralPath $t.Task | Should -BeFalse
     }
 
+    It 'нет установщика для всех пользователей: программа ставится для текущего' -Skip:(-not $script:OnWindows) {
+        # Код 0x8A150010 отрицательный, такой код выхода есть только у программ Windows.
+        $t = New-FirstLogonTest -Apps @('User.App', 'Mozilla.Firefox --scope user')
+        Set-Content -LiteralPath (Join-Path $t.Root 'useronly.txt') -Value 'User.App'
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'User.App: установщика для всех пользователей нет'
+        Get-Lines (Join-Path $t.Root 'scope.log') | Should -Be @('User.App machine', 'User.App ', 'Mozilla.Firefox user')
+        Get-Lines (Join-Path $t.Lunq 'apps.installed') | Should -Be @('User.App', 'Mozilla.Firefox')
+    }
+
     It 'учётная запись без пароля: пароль спрашивается дважды и задаётся, вопрос больше не повторяется' {
         $t = New-FirstLogonTest
         [IO.File]::WriteAllText((Join-Path $t.Lunq 'LocalAccount.txt'), 'Иван', (New-Object Text.UTF8Encoding($false)))
@@ -339,9 +359,10 @@ Describe 'Скрипт первого входа' {
         # Задание запускает этот же скрипт при входе этого пользователя с повышенными правами,
         # и от батареи, без ограничения по времени.
         $script = Join-Path $t.Lunq 'FirstLogon.ps1'
+        $powershell = Join-Path $t.Windows 'System32\WindowsPowerShell\v1.0\powershell.exe'
         Get-Content -LiteralPath $t.Task | Should -Be @(
             'name: LunqFirstLogon',
-            "action: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`"",
+            "action: $powershell -NoProfile -ExecutionPolicy Bypass -File `"$script`"",
             'trigger: atlogon=True user=PC\user',
             'principal: user=PC\user logon=Interactive level=Highest',
             'battery=True,True limit=00:00:00')
@@ -394,7 +415,22 @@ Describe 'Скрипт первого входа' {
     It 'скрипт с исключением считается неудачным' {
         $t = New-FirstLogonTest -Scripts @{ '10-throw.ps1' = "throw 'сломалось'" }
         $out = Invoke-FirstLogon -Test $t
-        $out | Should -Match 'Ошибка в 10-throw.ps1: сломалось'
+        $out | Should -Match '10-throw.ps1 завершился с кодом 1'
+        $out | Should -Match 'сломалось'
+        $out | Should -Match 'С ошибками: 10-throw.ps1'
+    }
+
+    It 'скрипт идёт в отдельном процессе в папке User' {
+        # Скрипт пишет номер своего процесса и текущую папку в папку теста.
+        $t = New-FirstLogonTest -Scripts @{
+            '10-own.ps1' = "Set-Content -LiteralPath (Join-Path (Split-Path (Split-Path `$PSScriptRoot)) 'script.txt') -Value @(`$PID, (Get-Location).Path)"
+            '20-fail.ps1' = 'exit 1'
+        }
+        $out = Invoke-FirstLogon -Test $t
+        $out | Should -Match 'С ошибками: 20-fail.ps1'
+        $lines = Get-Lines (Join-Path $t.Root 'script.txt')
+        $lines[0] | Should -Not -Be (Get-Lines (Join-Path $t.Root 'pid.txt'))[0]
+        $lines[1] | Should -Be $t.User
     }
 
     It 'без интернета пробует 5 раз, потом сдаётся и убирает за собой' {
@@ -412,8 +448,11 @@ Describe 'Скрипт первого входа' {
     }
 
     It 'скрипт, который перезагружает компьютер, запускается не больше двух раз' {
-        # [Environment]::Exit завершает процесс, как перезагрузка: отметка «выполнен» не ставится.
-        $t = New-FirstLogonTest -Scripts @{ '10-reboot.ps1' = '[Environment]::Exit(0)' }
+        # Скрипт завершает процесс скрипта первого входа, как перезагрузка: отметка «выполнен»
+        # не ставится. В Windows PowerShell 5.1 у Get-Process нет Parent, там родитель берётся из CIM.
+        $reboot = 'if ($PSVersionTable.PSVersion.Major -ge 6) { $parent = (Get-Process -Id $PID).Parent.Id } ' +
+            'else { $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId }; Stop-Process -Id $parent -Force'
+        $t = New-FirstLogonTest -Scripts @{ '10-reboot.ps1' = $reboot }
         for ($i = 1; $i -le 2; $i++) {
             $out = Invoke-FirstLogon -Test $t
             $out | Should -Not -Match '==> Готово'

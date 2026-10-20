@@ -40,6 +40,7 @@ $texts = @{
         WaitWinget      = 'Жду, пока Windows зарегистрирует winget (до 10 минут)...'
         NoInternet      = 'Нет подключения к интернету.'
         NoWinget        = 'winget не найден.'
+        AppUserScope    = '{0}: установщика для всех пользователей нет, ставлю для текущего.'
         AppFailed       = 'Не удалось установить {0} (код {1})'
         ScriptsHeader   = '==> Ваши скрипты ({0})'
         ScriptExitCode  = '{0} завершился с кодом {1}'
@@ -85,6 +86,7 @@ $texts = @{
         WaitWinget      = 'Waiting for Windows to register winget (up to 10 minutes)...'
         NoInternet      = 'No internet connection.'
         NoWinget        = 'winget was not found.'
+        AppUserScope    = '{0}: no installer for all users, installing for the current user.'
         AppFailed       = 'Could not install {0} (code {1})'
         ScriptsHeader   = '==> Your scripts ({0})'
         ScriptExitCode  = '{0} exited with code {1}'
@@ -130,10 +132,15 @@ if (-not $texts.ContainsKey($language)) {
 # Текст по ключу; аргументы подставляются через -f.
 function Get-Text([string]$Key) { return ($texts[$language][$Key] -f $args) }
 
+# Полный путь: по имени powershell.exe нашёлся бы первый подходящий файл из PATH.
+$windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+# Скрипты удаления и ваши скрипты идут в том же PowerShell, в котором работает этот скрипт.
+$powershell = (Get-Process -Id $PID).Path
+
 # winget и установщики программ требуют прав администратора.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    try { Start-Process powershell.exe -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"") }
+    try { Start-Process $windowsPowerShell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"") }
     catch { Write-Host (Get-Text 'NoAdmin') -ForegroundColor Yellow; Start-Sleep -Seconds 10 }
     return
 }
@@ -272,6 +279,18 @@ function Invoke-Winget([string]$Winget, [string[]]$Arguments) {
     return $code
 }
 
+function Invoke-Script([string]$Path, [string[]]$Arguments = @()) {
+    # Запускает скрипт в отдельном PowerShell: его exit, переменные и $ErrorActionPreference не
+    # задевают этот скрипт. Код выхода остаётся в $LASTEXITCODE. Вывод и ошибки идут через
+    # Out-Host и попадают и в окно, и в лог. На время запуска кодовая страница консоли UTF-8:
+    # иначе дочерний PowerShell отдал бы вывод в OEM-кодировке, и русский текст в en-US Windows
+    # превратился бы в вопросы. Окно у процессов общее, поэтому страница меняется для обоих.
+    $oldEncoding = $null
+    try { $oldEncoding = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }   # консоли нет: кодировка как есть
+    try { & $powershell -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments 2>&1 | ForEach-Object { "$_" } | Out-Host }
+    finally { if ($oldEncoding) { try { [Console]::OutputEncoding = $oldEncoding } catch { } } }   # не вернуть: окно скоро закроется
+}
+
 function Read-Lines([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
     return @(Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -322,7 +341,7 @@ $retryScheduled = [bool]$task
 if (-not $task -and -not $lastAttempt) {
     try {
         $user = "$env:USERDOMAIN\$env:USERNAME"
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        $action = New-ScheduledTaskAction -Execute $windowsPowerShell -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
         $taskPrincipal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
         # По умолчанию задание не запускается от батареи и останавливается, когда зарядку отключают:
@@ -397,7 +416,16 @@ if ($todo.Count -gt 0) {
             $parts = @($line -split '\s+')
             Write-Line ("[{0}/{1}] {2}" -f $i, $todo.Count, $parts[0])
             $arguments = @('install', '--id', $parts[0], '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity') + @($parts | Select-Object -Skip 1)
+            # Программа ставится для всех пользователей: иначе winget выбрал бы установщик для
+            # текущего, и у других учётных записей её не было бы. Своё --scope в Apps.txt главнее.
+            $machineScope = $parts -notcontains '--scope'
+            if ($machineScope) { $arguments += @('--scope', 'machine') }
             $code = Invoke-Winget $winget $arguments
+            # 0x8A150010: установщика для всех пользователей у программы нет, ставится как обычно.
+            if ($machineScope -and $code -eq -1978335216) {
+                Write-Line (Get-Text 'AppUserScope' $parts[0])
+                $code = Invoke-Winget $winget @($arguments | Select-Object -SkipLast 2)
+            }
             if ($null -eq $code) {
                 Write-Line (Get-Text 'AppTimeout' $parts[0] ([int]($appTimeoutSeconds / 60))) 'Yellow'
                 $failed += $parts[0]
@@ -434,7 +462,6 @@ if ($uninstallTodo.Count -gt 0 -and $appsPending -and -not $finalRun) {
 elseif ($uninstallTodo.Count -gt 0) {
     Write-Host ''
     Write-Host (Get-Text 'UninstallHeader' $uninstallTodo.Count) -ForegroundColor Cyan
-    $powershell = (Get-Process -Id $PID).Path
     foreach ($program in $uninstallTodo) {
         Write-Line $program.Title
         if (Test-Interrupted $uninstallStartedFile $program.Name) {
@@ -446,9 +473,7 @@ elseif ($uninstallTodo.Count -gt 0) {
         Add-Content -LiteralPath $uninstallStartedFile -Value $program.Name -Encoding UTF8
         $global:LASTEXITCODE = 0
         try {
-            $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $uninstallDir $program.Script)) + @($program.Arguments)
-            # Out-Host: вывод скрипта попадает и в окно, и в лог.
-            & $powershell @arguments | Out-Host
+            Invoke-Script (Join-Path $uninstallDir $program.Script) @($program.Arguments)
             if ($global:LASTEXITCODE -ne 0) {
                 Write-Line (Get-Text 'UninstallFailed' $program.Title $global:LASTEXITCODE) 'Yellow'
                 $failed += $program.Title
@@ -461,7 +486,7 @@ elseif ($uninstallTodo.Count -gt 0) {
 
 # Каждый скрипт отмечается выполненным сразу после завершения: скрипт с ошибкой повторно
 # не запускается, а не дошедшие до конца (окно закрыли) выполнятся при следующем входе, но
-# не больше двух раз.
+# не больше двух раз. Каждый идёт в отдельном PowerShell, как скрипты удаления, в папке User.
 $doneScripts = @(Read-Lines $scriptsDoneFile)
 $scripts = @(Get-ChildItem -LiteralPath $userDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -eq '.ps1' -and $doneScripts -notcontains $_.Name } | Sort-Object Name)
@@ -484,10 +509,11 @@ elseif ($scripts.Count -gt 0) {
             continue
         }
         Add-Content -LiteralPath $scriptsStartedFile -Value $userScript.Name -Encoding UTF8
-        # Неудачей считается и исключение, и ненулевой код выхода (exit 1 в скрипте).
+        # Неудачей считается и исключение, и ненулевой код выхода (exit 1 в скрипте): с -File
+        # необработанное исключение тоже даёт код 1.
         $global:LASTEXITCODE = 0
         try {
-            & $userScript.FullName
+            Invoke-Script $userScript.FullName
             if ($global:LASTEXITCODE -ne 0) {
                 Write-Line (Get-Text 'ScriptExitCode' $userScript.Name $global:LASTEXITCODE) 'Yellow'
                 $failed += $userScript.Name

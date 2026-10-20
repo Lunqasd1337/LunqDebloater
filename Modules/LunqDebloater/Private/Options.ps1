@@ -125,7 +125,7 @@ function Find-LunqBuildInputs {
 function New-LunqContentOptions {
     # Пункты сводки «Что войдёт в образ» по тому, что нашлось. Use: что включено сейчас (ключи
     # updates, cleanup, updatesToSetup, download, drivers, driversToSetup, apps, hostApps, scripts, wifi,
-    # unattend, oobe, region, bypass, localAccount, bootCA2023, splitWim).
+    # unattend, oobe, region, bypass, localAccount, bootCA2023, splitWim, defender).
     param(
         [Parameter(Mandatory)]$Found,
         [Parameter(Mandatory)]$FirstLogon,
@@ -214,7 +214,8 @@ function New-LunqContentOptions {
         # Новые пункты добавляются в конец, чтобы номера прежних не менялись.
         (New-LunqOption -Key 'bootCA2023' -Enabled ([bool]$Use.bootCA2023) -Name (Get-LunqText 'Main.OptBootCA2023') `
             -Details @((Get-LunqText 'Main.OptBootCA2023Hint'), (Get-LunqText 'Main.BootCA2023Warning'))),
-        (New-LunqOption -Key 'splitWim' -Enabled ([bool]$Use.splitWim) -Name (Get-LunqText 'Main.OptSplitWim') -Details (Get-LunqText 'Main.OptSplitWimHint'))
+        (New-LunqOption -Key 'splitWim' -Enabled ([bool]$Use.splitWim) -Name (Get-LunqText 'Main.OptSplitWim') -Details (Get-LunqText 'Main.OptSplitWimHint')),
+        (New-LunqOption -Key 'defender' -Enabled ([bool]$Use.defender) -Name (Get-LunqText 'Main.OptDefender') -Details (Get-LunqText 'Main.OptDefenderHint'))
     )
 }
 

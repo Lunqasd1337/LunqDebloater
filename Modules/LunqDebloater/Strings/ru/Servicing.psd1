@@ -5,6 +5,7 @@
     'Servicing.UpdatesIn'           = 'Обновления в {0}'
     'Servicing.DriversIn'           = 'Драйверы в {0}'
     'Servicing.WhereSetup'          = 'установщике'
+    'Servicing.WherePE'             = 'Windows PE (boot.wim, образ 1)'
     'Servicing.Installing'          = '[{0}/{1}] Устанавливаю {2} ({3})...'
     'Servicing.UpdateFailed'        = 'Не удалось установить {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} не подходит к этому образу, пропускаю.'

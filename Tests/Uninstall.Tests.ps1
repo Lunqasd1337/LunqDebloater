@@ -25,7 +25,7 @@ Describe 'Remove-LunqPrograms' {
             @($r.Done) | Should -Be @('Microsoft Edge')
             $r.Summary | Should -Be 'удалено 1, ошибок 0'
             Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter {
-                $FilePath -eq 'powershell.exe' -and $Arguments[3] -eq '-File' -and $Arguments[4] -like '*ThirdParty*EdgeRemover*RemoveEdge.ps1' -and
+                $FilePath -like '*powershell.exe' -and $Arguments[3] -eq '-File' -and $Arguments[4] -like '*ThirdParty*EdgeRemover*RemoveEdge.ps1' -and
                 (($Arguments | Select-Object -Skip 5) -join ' ') -eq '-UninstallEdge -NonInteractive'
             }
             Test-Path -LiteralPath (Join-Path (Get-LunqThirdPartyRoot) 'EdgeRemover\RemoveEdge.ps1') | Should -BeTrue

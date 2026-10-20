@@ -5,6 +5,7 @@
     'Servicing.UpdatesIn'           = 'Updates in {0}'
     'Servicing.DriversIn'           = 'Drivers in {0}'
     'Servicing.WhereSetup'          = 'Windows Setup'
+    'Servicing.WherePE'             = 'Windows PE (boot.wim, image 1)'
     'Servicing.Installing'          = '[{0}/{1}] Installing {2} ({3})...'
     'Servicing.UpdateFailed'        = 'Could not install {0}: {1}'
     'Servicing.UpdateNotApplicable' = '{0} does not apply to this image, skipping.'

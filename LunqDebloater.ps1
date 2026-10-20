@@ -64,7 +64,8 @@ param(
     [switch]$HostApps,
     [switch]$HostWifi,
     [switch]$BootCA2023,
-    [switch]$SplitWim
+    [switch]$SplitWim,
+    [switch]$DefenderExclusion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -154,6 +155,9 @@ $cabCheckDir = Join-Path $lunqTempDir 'CabCheck'
 $hostWifiDir = Join-Path $lunqTempDir 'HostWifi'
 $hostAppsDir = Join-Path $lunqTempDir 'HostApps'
 $recipeTempDir = Join-Path $lunqTempDir 'Recipe'
+# Какую папку -DefenderExclusion исключил из проверки: по этой записи исключение убирается в конце
+# или, если запуск убили, при следующем запуске.
+$defenderRecord = Join-Path $lunqTempDir 'DefenderExclusion.txt'
 
 # Заголовок окна не меняется в некоторых консолях (например, при перенаправленном выводе), это не ошибка.
 try { $Host.UI.RawUI.WindowTitle = "LunqDebloater $(Get-LunqVersion)" } catch { }
@@ -168,6 +172,7 @@ if (-not $runLock) {
 # Если прошлый запуск убили до уборки в finally, пароли Wi-Fi остались бы во временной папке.
 # Другого запуска сейчас нет (блокировка взята), поэтому остатки можно удалить.
 if (Test-Path -LiteralPath $hostWifiDir) { Remove-Item -LiteralPath $hostWifiDir -Recurse -Force -ErrorAction SilentlyContinue }
+Remove-LunqDefenderExclusion -RecordPath $defenderRecord
 
 try {
     # Лог ведётся с самого начала: так в него попадают и ошибки при выборе ISO и проверке системы.
@@ -446,6 +451,7 @@ try {
             localAccount   = [bool]$LocalAccount
             bootCA2023     = [bool]$BootCA2023
             splitWim       = [bool]$SplitWim
+            defender       = [bool]$DefenderExclusion
         }
         $action = $null
         if ($interactive -and -not $listMode) {
@@ -472,6 +478,7 @@ try {
             $CleanupComponents = [switch]$use.cleanup
             $BootCA2023 = [switch]$use.bootCA2023
             $SplitWim = [switch]$use.splitWim
+            $DefenderExclusion = [switch]$use.defender
         }
         $useUpdates = $use.updates
         $useDrivers = $use.drivers
@@ -794,6 +801,7 @@ try {
     if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
     if ($CleanupComponents) { Write-Info (Get-LunqText 'Main.PlanCleanup') }
     if ($SplitWim) { Write-Info (Get-LunqText 'Main.PlanSplitWim') }
+    if ($DefenderExclusion) { Write-Info (Get-LunqText 'Main.PlanDefender') }
     if ($BootCA2023) {
         Write-Info (Get-LunqText 'Main.PlanBootCA2023')
         Write-Warning (Get-LunqText 'Main.BootCA2023Warning')
@@ -855,6 +863,7 @@ try {
         # Что удалено и как было в реестре: в образ, чтобы на установленной Windows работал -Restore.
         Restore           = New-LunqRestoreData -LunqProfile $lunqProfile -Source Image
     }
+    if ($DefenderExclusion) { $null = Add-LunqDefenderExclusion -Path $WorkDir -RecordPath $defenderRecord }
     $started = Get-Date
     $results = Invoke-LunqBuild -Context $build
     $elapsed = (Get-Date) - $started
@@ -953,6 +962,7 @@ finally {
         catch { $removed = $false }
         if (-not $removed) { Write-Warning (Get-LunqText 'Main.WorkDirNotRemoved' $WorkDir) }
     }
+    Remove-LunqDefenderExclusion -RecordPath $defenderRecord
     # Сборка уже встроила драйверы в образ, а следующий запуск выгрузит их заново.
     foreach ($tempDir in @($hostDriversDir, $cabCheckDir, $hostWifiDir, $hostAppsDir, $recipeTempDir)) {
         if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }

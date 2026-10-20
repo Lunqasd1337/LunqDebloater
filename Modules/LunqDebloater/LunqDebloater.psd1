@@ -11,6 +11,7 @@
     # Только функции, которые вызывает LunqDebloater.ps1: шаги сборки вызывает Build.ps1 внутри
     # модуля. Остальные внутренние, тесты берут их через & (Get-Module LunqDebloater) { ... }.
     FunctionsToExport = @(
+        'Add-LunqDefenderExclusion',
         'Compare-LunqRecipeFiles',
         'Compress-LunqDismLog',
         'ConvertTo-LunqArgumentList',
@@ -69,6 +70,7 @@
         'Read-LunqRestoreData',
         'Read-YesNo',
         'Register-LunqSchedule',
+        'Remove-LunqDefenderExclusion',
         'Remove-LunqWorkDir',
         'Save-LunqCatalogUpdates',
         'Save-LunqRecipe',

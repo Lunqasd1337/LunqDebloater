@@ -580,6 +580,8 @@ function Update-LunqSetup {
     # копируются туда же из обновлённого boot.wim, чтобы версии совпадали. Этот порядок взят
     # из инструкции Microsoft. Если для boot.wim нет ни обновлений, ни драйверов, он не трогается,
     # чтобы не пересжимать его впустую. Если обновления в boot.wim не встали, setup.exe не копируется.
+    # Образ 1 (Windows PE) получает те же обновления, но без драйверов: с флешки он не загружается,
+    # а нужен, когда boot.wim берут для загрузки по сети. Пересжимается boot.wim один раз в конце.
     param(
         [Parameter(Mandatory)][string]$IsoRoot,
         [Parameter(Mandatory)][string]$WorkDir,
@@ -596,6 +598,10 @@ function Update-LunqSetup {
     if (@($SetupUpdates).Count -gt 0) { $results += Add-LunqSetupDynamicUpdate -IsoRoot $IsoRoot -Files $SetupUpdates }
     if (@($Updates).Count + @($Drivers).Count -eq 0) { return $results }
     $before = (Get-Item -LiteralPath $bootWim).Length
+    if (@($Updates).Count -gt 0) {
+        $results += Update-LunqPEImage -ImagePath $bootWim -Index 1 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
+            -Where (Get-LunqText 'Servicing.WherePE') -KindSuffix 'PE' -Updates $Updates
+    }
     $results += Update-LunqPEImage -ImagePath $bootWim -Index 2 -MountPath $PEMountPath -ScratchDir (Join-Path $WorkDir 'scratch') `
         -Where (Get-LunqText 'Servicing.WhereSetup') -KindSuffix 'Setup' -Updates $Updates -Drivers $Drivers -DriversRoot $DriversRoot `
         -ExportSetupTo (Join-Path $IsoRoot 'sources') -BootFilesTo $IsoRoot

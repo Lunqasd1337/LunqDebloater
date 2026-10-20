@@ -37,7 +37,7 @@ function Invoke-LunqUninstaller {
     $entry = $script:LunqUninstallers[$Name]
     $path = Join-Path (Get-LunqThirdPartyRoot) $entry.Script
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $path) + $entry[$Action]
-    return (Invoke-Native -FilePath 'powershell.exe' -Arguments $arguments -ShowOutput)
+    return (Invoke-Native -FilePath (Get-LunqWindowsPowerShell) -Arguments $arguments -ShowOutput)
 }
 
 function Remove-LunqPrograms {

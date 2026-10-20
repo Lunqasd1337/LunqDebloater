@@ -300,6 +300,65 @@ function ConvertTo-LunqArgumentList {
     return , $arguments
 }
 
+function Get-LunqWindowsPowerShell {
+    # Полный путь к Windows PowerShell 5.1: по имени powershell.exe нашёлся бы первый подходящий
+    # файл из PATH или из текущей папки. Без SystemRoot (тесты не в Windows) остаётся имя.
+    if (-not $env:SystemRoot) { return 'powershell.exe' }
+    return (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
+}
+
+function Get-LunqDefenderExclusions {
+    # Папки, исключённые из проверки Microsoft Defender, или $null, если Defender файлы не
+    # проверяет (защита в реальном времени выключена или стоит другой антивирус).
+    $status = Get-MpComputerStatus -ErrorAction Stop
+    if (-not $status.RealTimeProtectionEnabled) { return $null }
+    return , @((Get-MpPreference -ErrorAction Stop).ExclusionPath | Where-Object { $_ })
+}
+
+function Set-LunqDefenderExclusion {
+    param([Parameter(Mandatory)][string]$Path, [switch]$Remove)
+    if ($Remove) { Remove-MpPreference -ExclusionPath $Path -ErrorAction Stop }
+    else { Add-MpPreference -ExclusionPath $Path -ErrorAction Stop }
+}
+
+function Add-LunqDefenderExclusion {
+    # -DefenderExclusion: рабочая папка не проверяется Defender до конца сборки. DISM пишет в неё
+    # десятки тысяч файлов, и проверка каждого замедляет сборку. Папка записывается в RecordPath
+    # до того, как исключена: если запуск убьют, следующий уберёт исключение сам. Папку, которую
+    # исключили до LunqDebloater, он не трогает и в конце не возвращает. Возвращает $true, если
+    # исключение добавил этот запуск. Неудача не останавливает сборку.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$RecordPath)
+    try {
+        $exclusions = Get-LunqDefenderExclusions
+        if ($null -eq $exclusions) { Write-Info (Get-LunqText 'System.DefenderOff'); return $false }
+        if (@($exclusions | Where-Object { $_.TrimEnd('\') -eq $Path.TrimEnd('\') }).Count -gt 0) { return $false }
+        New-Item -ItemType Directory -Path (Split-Path $RecordPath -Parent) -Force | Out-Null
+        Set-Content -LiteralPath $RecordPath -Value $Path -Encoding UTF8
+        Set-LunqDefenderExclusion -Path $Path
+        Write-Info (Get-LunqText 'System.DefenderAdded' $Path)
+        return $true
+    }
+    catch {
+        Remove-Item -LiteralPath $RecordPath -Force -ErrorAction SilentlyContinue
+        Write-Warning (Get-LunqText 'System.DefenderFailed' $_.Exception.Message)
+        return $false
+    }
+}
+
+function Remove-LunqDefenderExclusion {
+    # Убирает исключение, которое добавил Add-LunqDefenderExclusion в этом запуске или в прошлом,
+    # прерванном. Если убрать не вышло, запись остаётся, и следующий запуск попробует снова.
+    param([Parameter(Mandatory)][string]$RecordPath)
+    if (-not (Test-Path -LiteralPath $RecordPath)) { return }
+    $path = ([string](Get-Content -LiteralPath $RecordPath -TotalCount 1 -Encoding UTF8)).Trim()
+    try {
+        if ($path) { Set-LunqDefenderExclusion -Path $path -Remove }
+        Remove-Item -LiteralPath $RecordPath -Force
+        if ($path) { Write-Info (Get-LunqText 'System.DefenderRemoved' $path) }
+    }
+    catch { Write-Warning (Get-LunqText 'System.DefenderNotRemoved' $path $_.Exception.Message) }
+}
+
 function Invoke-Native {
     # Запускает внешнюю программу и возвращает код выхода. Вывод stderr не превращается
     # в исключение (в Windows PowerShell 5.1 это происходит при ErrorActionPreference = Stop).
