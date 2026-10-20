@@ -102,10 +102,9 @@ function Get-IsoImageInfo {
 
 function Get-WindowsReleaseName {
     # Привычное название выпуска по номеру сборки. Неизвестная сборка даёт пустую строку.
-    # Названия берутся из Data\Releases.psd1. Windows 10 там есть только ради пакета включения,
-    # здесь он не называется: для неё хватает «Windows 10» в предупреждении о версии компьютера.
+    # Названия берутся из Data\Releases.psd1, там только выпуски начиная с 24H2.
     param([int]$Build)
-    $release = @($script:LunqReleases | Where-Object { $_.Build -eq $Build -and $_.Product -eq 'Windows 11' }) | Select-Object -First 1
+    $release = @($script:LunqReleases | Where-Object { $_.Build -eq $Build }) | Select-Object -First 1
     if ($release) { return "Windows 11 $($release.Name)" }
     return ''
 }

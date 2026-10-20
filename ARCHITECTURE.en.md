@@ -176,7 +176,7 @@ The stubs are configured with `LUNQ_TEST_*` variables, for example `LUNQ_TEST_DI
 
 **A profile entry.** Add the name to the right list of a category in `Config\Profile.json` (the lists are sorted), or add a new category with `Name` and `Description` in both languages. If the default profile behaves differently, update the category description and the "Profile" section in both READMEs.
 
-**A new Windows release.** Add a line to `Modules\LunqDebloater\Data\Releases.psd1`: the build, the product, the release name and the KB number of its enablement package, if there is one. The script uses this table to name the build, search the catalog for updates and install the enablement package separately from the cumulative updates. Build and KB numbers are not written anywhere else.
+**A new Windows release.** Add a line to `Modules\LunqDebloater\Data\Releases.psd1`: the build, the release name and the KB number of its enablement package, if there is one. The script uses this table to name the build, search the catalog for updates and install the enablement package separately from the cumulative updates. Build and KB numbers are not written anywhere else.
 
 **A new version of a script from `ThirdParty`.** Download the file from the author's tag, save it as UTF-8 with BOM and Windows line endings, and update the version, the commit and both SHA256 sums in `SOURCE.txt` next to it. A test in `Tests\Uninstall.Tests.ps1` checks the file against `SOURCE.txt`, so an edit without a new record turns CI red.
 

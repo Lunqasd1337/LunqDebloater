@@ -179,7 +179,9 @@ function Get-LunqHostWarning {
     param([int]$ImageBuild, [int]$HostBuild = (Get-LunqHostBuild))
     if ($HostBuild -le 0 -or $ImageBuild -le 0 -or $HostBuild -ge $ImageBuild) { return $null }
     $hostName = Get-WindowsReleaseName -Build $HostBuild
+    # Выпуски старше 24H2 в таблице не названы: для предупреждения хватает «Windows 10» или «Windows 11».
     if (-not $hostName -and $HostBuild -lt 22000) { $hostName = 'Windows 10' }
+    elseif (-not $hostName) { $hostName = 'Windows 11' }
     if ($hostName) { $hostName = " ($hostName)" }
     return (Get-LunqText 'Checks.HostOlder' $HostBuild $hostName $ImageBuild)
 }
