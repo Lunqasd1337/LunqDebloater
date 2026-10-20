@@ -70,7 +70,7 @@ Or by hand:
 
 1. Download the repository (Code > Download ZIP) and extract it.
 2. Double-click `Start.cmd`. The script asks for administrator rights.
-3. Then it asks for everything itself: choose whether to build an ISO or look at what is in the image, then pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary and choose the edition (each edition has a short explanation).
+3. Then it asks for everything itself: choose whether to build an ISO or look at what is in the image, then pick the ISO in the window, then the tweak categories, check the "What goes into the image" summary, name the finished ISO (Enter keeps the suggested name) and choose the edition (each edition has a short explanation).
 4. Check the build plan and confirm. A build usually takes 15-40 minutes. The window shows "Step N of M" with an explanation of what is happening.
 5. At the end the script shows the result: what was removed, what was not found in the image, and where the finished ISO is.
 
@@ -177,7 +177,7 @@ Every step header shows the time the step started, and the result lists the thre
 
 When a build stops with an error, an archive `LunqDebloater_<date>_report.zip` appears next to the log with the run log, the DISM log and the profile. The user folder path, the user name and the computer name in it are replaced, so this archive alone is enough for a bug report. A DISM log bigger than 20 MB is shortened in it: all errors, warnings and step markers and the last 20,000 lines. If there is no archive, send both files of the last run: `LunqDebloater_<date>.log` and `LunqDebloater_<date>_dism.zip`.
 
-The LunqDebloater version is shown in the window title, at the start of the log and in the build result. It is also written to the built image together with the build settings. On the installed system you can see them like this:
+The LunqDebloater version is shown in the window title, at the start of the log, in the build result and in the name of the finished ISO (unless its path is set with `-OutputIso`). It is also written to the built image together with the build settings. On the installed system you can see them like this:
 
 ```powershell
 reg query HKLM\SOFTWARE\LunqDebloater
@@ -433,10 +433,11 @@ The code is laid out like this:
 
 | Path | What is there |
 |---|---|
-| `LunqDebloater.ps1` | The script itself: parameters, step-by-step mode, checks and the build plan |
+| `LunqDebloater.ps1` | The script itself: parameters, restart, administrator rights, the log and the cleanup after the build. The modes, the summary and the plan live in the module (`Modes`) |
 | `Install.ps1` | Loader for the one-command start (`irm ... \| iex`) |
 | `Modules\LunqDebloater\` | The module with the functions. The version is set in the `LunqDebloater.psd1` manifest |
-| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Build` (build steps), `Report`, `System` |
+| `Modules\LunqDebloater\Private\` | Functions by topic: `Console`, `Language`, `Profile`, `Iso`, `Checks`, `Image`, `Servicing`, `Removal`, `Registry`, `PostInstall`, `Unattend`, `Inventory`, `Options` (the "What goes into the image" summary), `Modes` (the script's modes), `Build` (build steps), `Report`, `System`, `Catalog`, `Schedule`, `Recipe`, `Restore`, `Uninstall`, `Host` |
+| `Modules\LunqDebloater\Data\Releases.psd1` | Windows releases from 24H2 on: builds, names and enablement packages |
 | `Modules\LunqDebloater\Strings\` | Interface texts: `ru\*.psd1` and `en\*.psd1` |
 | `Modules\FirstLogon\FirstLogon.ps1` | The first sign-in script that is put into the image |
 | `Schemas\Profile.schema.json` | JSON schema of the profile |
