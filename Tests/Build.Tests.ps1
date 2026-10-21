@@ -462,11 +462,31 @@ Describe 'Ошибки и предупреждения' {
         }
         $run.Error | Should -BeNullOrEmpty
         $run.Output | Should -Match 'В образе нет файлов загрузчика Windows UEFI CA 2023'
-        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: файлов _EX в образе нет, на ISO остался обычный загрузчик'
+        $run.Output | Should -Match 'Загрузчик Windows UEFI CA 2023: загрузчика 2023 года в образе нет, на ISO остался обычный загрузчик'
         $iso = Join-Path $script:Test.WorkDir 'iso'
         Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi from boot.wim'
         Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin from boot.wim'
         Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|нет'
+    }
+
+    It '-BootCA2023 без файлов _EX, но с основным загрузчиком CA 2023: на ISO основной загрузчик из install.wim' {
+        $run = Start-TestBuild -Parameters @{ SkipApps = $true; BootCA2023 = $true } -Prepare {
+            param($t)
+            $env:LUNQ_TEST_NO_BOOTEX = '1'
+            $env:LUNQ_TEST_BOOT_MAIN_CA2023 = '1'
+            $updates = Join-Path $t.App 'Config\Updates'
+            New-Item -ItemType Directory -Path $updates -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $updates 'windows11.0-kb5080000-x64.msu') -Value 'msu'
+        }
+        $run.Error | Should -BeNullOrEmpty
+        $run.Output | Should -Match 'основной загрузчик уже подписан Windows UEFI CA 2023'
+        $run.Output | Should -Not -Match 'В образе нет файлов загрузчика Windows UEFI CA 2023'
+        $iso = Join-Path $script:Test.WorkDir 'iso'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'bootmgfw.efi CA 2023 from install.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'bootmgr.efi') | Should -Be 'bootmgr.efi CA 2023 from install.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\efisys.bin') | Should -Be 'efisys.bin CA 2023 from install.wim'
+        Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\fonts\wgl4_boot.ttf') | Should -Be 'wgl4_boot.ttf CA 2023 from install.wim'
+        Get-Content -LiteralPath $script:Test.RegLog -Encoding UTF8 | Should -Contain 'set|HKLM\LUNQ_SOFTWARE\LunqDebloater|BootCA2023|String|да'
     }
 
     It '-BootCA2023 без накопительного обновления выключается с предупреждением' {

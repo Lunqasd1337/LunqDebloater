@@ -32,8 +32,9 @@
     'Servicing.BootFilesDone'       = '{0} updated from boot.wim'
     'Servicing.BootFileFailed'      = 'Could not update {0} from boot.wim: {1}'
     'Servicing.BootCA2023Title'     = 'Windows UEFI CA 2023 boot manager'
-    'Servicing.BootCA2023Done'      = '{0} and fonts ({1}) replaced with the _EX files from the image'
-    'Servicing.BootCA2023Fallback'  = 'the image has no _EX files, the ISO keeps the regular boot manager'
-    'Servicing.BootCA2023Missing'   = 'The image has no Windows UEFI CA 2023 boot files ({0}), so the ISO keeps the regular boot manager. A recent cumulative update usually brings them.'
+    'Servicing.BootCA2023Done'      = '{0} and fonts ({1}) replaced with the 2023 boot manager from the image'
+    'Servicing.BootCA2023Fallback'  = 'the image has no 2023 boot manager, the ISO keeps the regular one'
+    'Servicing.BootCA2023Missing'   = 'The image has no Windows UEFI CA 2023 boot files ({0}) and its main boot manager is not signed with it, so the ISO keeps the regular boot manager. A recent cumulative update usually brings them.'
+    'Servicing.BootCA2023Main'      = 'The image has no _EX files, but its main boot manager is already signed with Windows UEFI CA 2023: the ISO gets that one'
     'Servicing.BootCA2023Failed'    = 'Could not replace {0} with the Windows UEFI CA 2023 boot manager: {1}'
 }

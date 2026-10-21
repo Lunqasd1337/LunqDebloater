@@ -104,7 +104,7 @@ Tests\                       Тесты Pester и заглушки
 | Features | Отключает функции и удаляет CBS-пакеты | без `-SkipComponents` |
 | Registry | Применяет записи реестра профиля | без `-SkipRegistry` |
 | Cleanup | Очищает хранилище компонентов (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | С `-BootCA2023` копирует файлы загрузчика `_EX` в `WorkDir\bootex`, пишет отметку о сборке в реестр образа и данные для отката в `Windows\LunqDebloater\Restore.json`, сохраняет `install.wim` | всегда |
+| Save | С `-BootCA2023` копирует загрузчик Windows UEFI CA 2023 (файлы `_EX` или основные, если они уже подписаны CA 2023) в `WorkDir\bootex`, пишет отметку о сборке в реестр образа и данные для отката в `Windows\LunqDebloater\Restore.json`, сохраняет `install.wim` | всегда |
 | Setup | Распаковывает Setup DU в `sources`; если для `boot.wim` есть обновления или драйверы, ставит обновления в образ 1 (Windows PE), обновления и драйверы в образ 2 и копирует из образа 2 `setup.exe`, `setuphost.exe`, загрузчик UEFI и `efisys.bin` | есть что ставить в установщик |
 | Recompress | Пересжимает `install.wim` и предупреждает, если он больше 4 ГБ | всегда |
 | Iso | С `-BootCA2023` кладёт на ISO загрузчик Windows UEFI CA 2023 из `WorkDir\bootex`, затем собирает загрузочный ISO через `oscdimg` | всегда |

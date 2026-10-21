@@ -274,6 +274,82 @@ Describe 'Загрузчик Windows UEFI CA 2023' {
             Test-Path -LiteralPath $stage | Should -BeFalse
         }
     }
+
+    It 'без файлов _EX берётся основной загрузчик, если он подписан CA 2023' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $mount = Join-Path $Root 'main\mount'
+            foreach ($name in 'EFI\bootmgfw.efi', 'EFI\bootmgr.efi', 'DVD\EFI\en-US\efisys.bin', 'Fonts\segoe_slboot.ttf') {
+                $file = Join-Path $mount "Windows\Boot\$name"
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value "$name new"
+            }
+            $iso = Join-Path $Root 'main\iso'
+            foreach ($name in 'efi\boot\bootx64.efi', 'bootmgr.efi', 'efi\microsoft\boot\efisys.bin') {
+                $file = Join-Path $iso $name
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value 'old'
+            }
+            Mock Test-LunqBootCA2023Signature { $true }
+            Mock Write-Warning { }
+            $stage = Join-Path $Root 'main\bootex'
+            Export-LunqBootCA2023 -MountPath $mount -Destination $stage | Should -BeTrue
+            Should -Invoke Write-Warning -Times 0
+            $result = Install-LunqBootCA2023 -IsoRoot $iso -From $stage
+            $result.Failed.Count | Should -Be 0
+            @($result.Done) | Should -Be @('efi\boot\bootx64.efi', 'bootmgr.efi', 'efi\microsoft\boot\efisys.bin')
+            Get-Content -LiteralPath (Join-Path $iso 'efi\boot\bootx64.efi') | Should -Be 'EFI\bootmgfw.efi new'
+            Get-Content -LiteralPath (Join-Path $iso 'efi\microsoft\boot\fonts\segoe_slboot.ttf') | Should -Be 'Fonts\segoe_slboot.ttf new'
+        }
+    }
+
+    It 'без файлов _EX и с основным загрузчиком PCA 2011: предупреждение и обычный загрузчик' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $mount = Join-Path $Root 'old\mount'
+            foreach ($name in 'EFI\bootmgfw.efi', 'EFI\bootmgr.efi', 'DVD\EFI\en-US\efisys.bin') {
+                $file = Join-Path $mount "Windows\Boot\$name"
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value 'old'
+            }
+            Mock Test-LunqBootCA2023Signature { $false }
+            Mock Write-Warning { }
+            $stage = Join-Path $Root 'old\bootex'
+            Export-LunqBootCA2023 -MountPath $mount -Destination $stage | Should -BeFalse
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*основной загрузчик подписан не им*' }
+            Test-Path -LiteralPath $stage | Should -BeFalse
+        }
+    }
+}
+
+Describe 'Test-LunqBootCA2023Signature' {
+    BeforeAll {
+        # В Linux и macOS командлета нет, а Mock подменяет только существующую команду.
+        $script:StubSignature = -not (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)
+        if ($script:StubSignature) { function global:Get-AuthenticodeSignature { [CmdletBinding()] param([string]$LiteralPath) } }
+    }
+    AfterAll {
+        if ($script:StubSignature) { Remove-Item -LiteralPath Function:\Get-AuthenticodeSignature }
+    }
+
+    It 'смотрит издателя сертификата подписи, а не статус' {
+        InModuleScope LunqDebloater -Parameters @{ Root = "$TestDrive" } {
+            param($Root)
+            $file = Join-Path $Root 'bootmgfw.efi'
+            Set-Content -LiteralPath $file -Value 'efi'
+            Mock Get-AuthenticodeSignature {
+                [pscustomobject]@{ Status = 'UnknownError'; SignerCertificate = [pscustomobject]@{ Issuer = 'CN=Windows UEFI CA 2023, O=Microsoft Corporation, C=US' } }
+            }
+            Test-LunqBootCA2023Signature -Path $file | Should -BeTrue
+            Mock Get-AuthenticodeSignature {
+                [pscustomobject]@{ Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Issuer = 'CN=Microsoft Windows Production PCA 2011, O=Microsoft Corporation, C=US' } }
+            }
+            Test-LunqBootCA2023Signature -Path $file | Should -BeFalse
+            Mock Get-AuthenticodeSignature { [pscustomobject]@{ Status = 'NotSigned'; SignerCertificate = $null } }
+            Test-LunqBootCA2023Signature -Path $file | Should -BeFalse
+            Test-LunqBootCA2023Signature -Path (Join-Path $Root 'missing.efi') | Should -BeFalse
+        }
+    }
 }
 
 Describe 'Get-FolderSize' {

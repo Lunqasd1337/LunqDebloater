@@ -149,7 +149,7 @@
     'Main.PackagesWarning'       = 'Профиль удаляет системные пакеты: это может помешать установке обновлений.'
     'Main.PlanRegistry'          = 'Реестр:           {0}'
     'Main.PlanCleanup'           = 'Очистка WinSxS:   да (/ResetBase)'
-    'Main.PlanBootCA2023'        = 'Загрузчик:        Windows UEFI CA 2023 (файлы _EX из обновлённого образа)'
+    'Main.PlanBootCA2023'        = 'Загрузчик:        Windows UEFI CA 2023 (из обновлённого образа)'
     'Main.PlanDefender'          = 'Defender:         рабочая папка не проверяется до конца сборки'
     'Main.PlanOutputIso'         = 'Итоговый ISO:     {0}'
     'Main.PlanWorkDir'           = 'Рабочая папка:    {0} (удаляется после сборки)'

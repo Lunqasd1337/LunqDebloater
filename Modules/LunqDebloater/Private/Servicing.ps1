@@ -428,55 +428,78 @@ function Copy-LunqBootManager {
     return $result
 }
 
+function Test-LunqBootCA2023Signature {
+    # Подписан ли загрузчик Windows UEFI CA 2023. Смотрится издатель сертификата подписи, а не
+    # статус: цепочка UEFI не обязана строиться в хранилище сертификатов Windows.
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    try { $signature = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop }
+    catch { return $false }
+    if (-not $signature -or -not $signature.SignerCertificate) { return $false }
+    return ([string]$signature.SignerCertificate.Issuer -match '(?i)(^|,\s*)CN=Windows UEFI CA 2023(,|$)')
+}
+
 function Export-LunqBootCA2023 {
-    # Загрузчик, подписанный Windows UEFI CA 2023 (файлы _EX), берётся из install.wim, пока он
-    # смонтирован после обновлений: в полном образе эти папки есть, и в нём самое свежее
-    # накопительное обновление. На ISO файлы кладёт шаг Iso, потому что шаг Setup ещё заменит
-    # загрузчик версией из boot.wim. Возвращает $true, если всё нужное нашлось.
+    # Загрузчик, подписанный Windows UEFI CA 2023, берётся из install.wim, пока он смонтирован
+    # после обновлений: в полном образе есть все папки, и в нём самое свежее накопительное
+    # обновление. Сейчас это файлы _EX, но после истечения PCA 2011 Microsoft может сделать
+    # загрузчик 2023 года основным, поэтому без _EX берутся основные файлы, если bootmgfw.efi
+    # подписан CA 2023. В рабочую папку файлы кладутся без суффикса _EX. На ISO их кладёт шаг Iso,
+    # потому что шаг Setup ещё заменит загрузчик версией из boot.wim. Возвращает $true, если всё
+    # нужное нашлось.
     param([Parameter(Mandatory)][string]$MountPath, [Parameter(Mandatory)][string]$Destination)
 
     $boot = Join-Path $MountPath 'Windows\Boot'
     $required = 'EFI_EX\bootmgfw_EX.efi', 'EFI_EX\bootmgr_EX.efi', 'DVD_EX\EFI\en-US\efisys_EX.bin'
     $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $boot $_)) })
+    $suffix = '_EX'
     if ($missing.Count -gt 0) {
-        Write-Warning (Get-LunqText 'Servicing.BootCA2023Missing' ($missing -join ', '))
-        return $false
+        $main = @('EFI\bootmgr.efi', 'DVD\EFI\en-US\efisys.bin' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $boot $_)) })
+        if ($main.Count -gt 0 -or -not (Test-LunqBootCA2023Signature -Path (Join-Path $boot 'EFI\bootmgfw.efi'))) {
+            Write-Warning (Get-LunqText 'Servicing.BootCA2023Missing' ($missing -join ', '))
+            return $false
+        }
+        Write-Info (Get-LunqText 'Servicing.BootCA2023Main')
+        $suffix = ''
     }
     if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-    foreach ($folder in 'EFI_EX', 'DVD_EX', 'Fonts_EX') {
-        $source = Join-Path $boot $folder
+    foreach ($folder in 'EFI', 'DVD', 'Fonts') {
+        $source = Join-Path $boot ($folder + $suffix)
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $folder) -Recurse -Force }
+    }
+    # Имена без _EX, как их пишет bcdboot /bootex.
+    foreach ($file in @(Get-ChildItem -LiteralPath $Destination -File -Recurse | Where-Object { $_.Name -match '(?i)_EX\.[^.]+$' })) {
+        Rename-Item -LiteralPath $file.FullName -NewName ($file.Name -replace '(?i)_EX(?=\.[^.]+$)', '')
     }
     return $true
 }
 
 function Install-LunqBootCA2023 {
     # Кладёт на ISO загрузчик Windows UEFI CA 2023 из файлов, которые взял Export-LunqBootCA2023:
-    # bootmgfw_EX.efi вместо efi\boot\bootx64.efi, bootmgr_EX.efi вместо bootmgr.efi, efisys_EX.bin
-    # вместо efisys.bin и шрифты. Имена берутся без _EX, как их пишет bcdboot /bootex. Без файлов
-    # на ISO остаётся обычный загрузчик, и итог об этом говорит.
+    # bootmgfw.efi вместо efi\boot\bootx64.efi, bootmgr.efi, efisys.bin и шрифты. Без файлов на ISO
+    # остаётся обычный загрузчик, и итог об этом говорит.
     param([Parameter(Mandatory)][string]$IsoRoot, [Parameter(Mandatory)][string]$From)
 
     $result = New-LunqResult (Get-LunqText 'Servicing.BootCA2023Title') 'BootCA2023'
-    if (-not (Test-Path -LiteralPath (Join-Path $From 'EFI_EX\bootmgfw_EX.efi'))) {
-        $result.Failed.Add('bootmgfw_EX.efi')
+    if (-not (Test-Path -LiteralPath (Join-Path $From 'EFI\bootmgfw.efi'))) {
+        $result.Failed.Add('bootmgfw.efi')
         $result.Summary = Get-LunqText 'Servicing.BootCA2023Fallback'
         return $result
     }
     # Третье значение: заменять, только если файл на ISO уже есть (bootaa64.efi есть только на ARM64).
     $pairs = @(
-        @('EFI_EX\bootmgfw_EX.efi', 'efi\boot\bootx64.efi', $true),
-        @('EFI_EX\bootmgfw_EX.efi', 'efi\boot\bootaa64.efi', $true),
-        @('EFI_EX\bootmgr_EX.efi', 'bootmgr.efi', $true),
-        @('DVD_EX\EFI\en-US\efisys_EX.bin', 'efi\microsoft\boot\efisys.bin', $true),
-        @('DVD_EX\EFI\en-US\efisys_noprompt_EX.bin', 'efi\microsoft\boot\efisys_noprompt.bin', $true)
+        @('EFI\bootmgfw.efi', 'efi\boot\bootx64.efi', $true),
+        @('EFI\bootmgfw.efi', 'efi\boot\bootaa64.efi', $true),
+        @('EFI\bootmgr.efi', 'bootmgr.efi', $true),
+        @('DVD\EFI\en-US\efisys.bin', 'efi\microsoft\boot\efisys.bin', $true),
+        @('DVD\EFI\en-US\efisys_noprompt.bin', 'efi\microsoft\boot\efisys_noprompt.bin', $true)
     )
-    $fontsDir = Join-Path $From 'Fonts_EX'
+    $fontsDir = Join-Path $From 'Fonts'
     $fonts = @()
     if (Test-Path -LiteralPath $fontsDir) { $fonts = @(Get-ChildItem -LiteralPath $fontsDir -File) }
     foreach ($font in $fonts) {
-        $pairs += , @("Fonts_EX\$($font.Name)", ('efi\microsoft\boot\fonts\' + ($font.Name -replace '(?i)_EX(?=\.[^.]+$)', '')), $false)
+        $pairs += , @("Fonts\$($font.Name)", "efi\microsoft\boot\fonts\$($font.Name)", $false)
     }
     $fontsDone = 0
     foreach ($pair in $pairs) {
@@ -487,7 +510,7 @@ function Install-LunqBootCA2023 {
         try {
             New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
             Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
-            if ($pair[0] -like 'Fonts_EX\*') { $fontsDone++ }
+            if ($pair[0] -like 'Fonts\*') { $fontsDone++ }
             else { $result.Done.Add($pair[1]) }
         }
         catch {

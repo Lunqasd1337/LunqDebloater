@@ -104,7 +104,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Features | Turns off features and removes CBS packages | without `-SkipComponents` |
 | Registry | Applies the profile's registry entries | without `-SkipRegistry` |
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
-| Save | With `-BootCA2023` copies the `_EX` boot files to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
+| Save | With `-BootCA2023` copies the Windows UEFI CA 2023 boot manager (the `_EX` files, or the main ones if they are already signed with CA 2023) to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
 | Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim`, installs the updates into image 1 (Windows PE), the updates and drivers into image 2, and copies `setup.exe`, `setuphost.exe`, the UEFI boot manager and `efisys.bin` out of image 2 | there is something for Windows Setup |
 | Recompress | Recompresses `install.wim` and warns if it is over 4 GB | always |
 | Iso | With `-BootCA2023` puts the Windows UEFI CA 2023 boot manager from `WorkDir\bootex` on the ISO, then builds the bootable ISO with `oscdimg` | always |
