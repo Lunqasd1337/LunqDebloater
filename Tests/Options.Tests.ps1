@@ -127,7 +127,7 @@ Describe 'Select-LunqBuildOptions' {
                 (New-LunqOption -Key 'updates' -Name 'Обновления: 2 шт.' -Short 'из папки' -Section 'updates'),
                 (New-LunqOption -Key 'pick' -Name 'p' -Action -Section 'updates'),
                 (New-LunqOption -Key 'drivers' -Name 'd' -Available $false -Section 'drivers'),
-                (New-LunqOption -Key 'splitWim' -Name 'Разделить' -Short 'части для FAT32' -Enabled $false -Section 'extra'))
+                (New-LunqOption -Key 'defender' -Name 'Без Defender' -Short 'без проверки Defender' -Enabled $false -Section 'extra'))
             # Раздел 3 «Дополнительно»: включить пункт 1 и вернуться, затем Enter на главном экране.
             foreach ($answer in '3', '1', '', '') { $global:LunqOptionAnswers.Enqueue($answer) }
             Select-LunqBuildOptions -Options $options | Should -BeNullOrEmpty
@@ -135,7 +135,7 @@ Describe 'Select-LunqBuildOptions' {
             $global:LunqOptionScreen | Should -Contain 'из папки'
             $global:LunqOptionScreen | Should -Contain 'ничего не найдено'
             $global:LunqOptionScreen | Should -Contain 'ничего не включено'
-            $global:LunqOptionScreen | Should -Contain 'части для FAT32'
+            $global:LunqOptionScreen | Should -Contain 'без проверки Defender'
         }
     }
 

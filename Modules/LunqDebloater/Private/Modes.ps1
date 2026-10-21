@@ -127,7 +127,7 @@ function Select-LunqBuildContents {
     # начнёт сборку: пункт-действие меняет папку обновлений или драйверов, и сводка строится заново.
     # Switches: значения параметров скрипта (SkipUpdates, CleanupComponents, UpdatesToSetup,
     # DownloadUpdates, SkipDrivers, DriversToSetup, SkipApps, HostApps, SkipScripts, HostWifi,
-    # Unattend, BypassRequirements, LocalAccount, BootCA2023, SplitWim, DefenderExclusion,
+    # Unattend, BypassRequirements, LocalAccount, BootCA2023, DefenderExclusion,
     # HostDrivers). Возвращает найденное (Found, FoundDU), выбор (Use), параметры после сводки
     # (Switches) и пути -UpdatesPath и -DriversPath. PEDriverCache и SizeCache заполняются для шагов после сводки.
     param(
@@ -198,7 +198,6 @@ function Select-LunqBuildContents {
             bypass         = [bool]$s.BypassRequirements
             localAccount   = [bool]$s.LocalAccount
             bootCA2023     = [bool]$s.BootCA2023
-            splitWim       = [bool]$s.SplitWim
             defender       = [bool]$s.DefenderExclusion
         }
         $action = $null
@@ -225,7 +224,6 @@ function Select-LunqBuildContents {
             if ($s.DownloadUpdates) { $s.UpdatesToSetup = $true }
             $s.CleanupComponents = $use.cleanup
             $s.BootCA2023 = $use.bootCA2023
-            $s.SplitWim = $use.splitWim
             $s.DefenderExclusion = $use.defender
         }
         if (-not $action) { break }
@@ -424,7 +422,6 @@ function Write-LunqBuildPlan {
         [switch]$SkipComponents,
         [switch]$SkipRegistry,
         [switch]$CleanupComponents,
-        [switch]$SplitWim,
         [switch]$DefenderExclusion,
         [switch]$BootCA2023,
         [Parameter(Mandatory)][string]$OutputIso,
@@ -475,7 +472,6 @@ function Write-LunqBuildPlan {
     elseif ($Config.Packages.Remove.Count -gt 0) { Write-Warning (Get-LunqText 'Main.PackagesWarning') }
     if ($SkipRegistry) { Write-Info (Get-LunqText 'Main.PlanRegistry' $skipped) }
     if ($CleanupComponents) { Write-Info (Get-LunqText 'Main.PlanCleanup') }
-    if ($SplitWim) { Write-Info (Get-LunqText 'Main.PlanSplitWim') }
     if ($DefenderExclusion) { Write-Info (Get-LunqText 'Main.PlanDefender') }
     if ($BootCA2023) {
         Write-Info (Get-LunqText 'Main.PlanBootCA2023')

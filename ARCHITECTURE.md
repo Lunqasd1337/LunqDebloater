@@ -49,7 +49,7 @@ Tests\                       Тесты Pester и заглушки
 | `Options.ps1` | Сводка «Что войдёт в образ» в пошаговом режиме: поиск обновлений и драйверов (`Find-LunqBuildInputs`), пункты по найденному (`New-LunqContentOptions`), их зависимости, переключение по номеру, пункты-действия (`Invoke-LunqContentAction`) и окно выбора папки (`Select-LunqFolder`) |
 | `Iso.ps1` | Подключение ISO, список редакций, версия образа и проверка требований профиля, копирование содержимого ISO |
 | `Checks.ps1` | Проверки до сборки: рабочая папка, итоговый ISO и его имя с версией LunqDebloater (`Get-LunqOutputIsoPath`, `Test-LunqOutputName`, `Read-LunqOutputName`), место на дисках, остатки прошлого запуска, версия Windows на компьютере |
-| `Image.ps1` | Экспорт редакции, пересжатие WIM (`Optimize-LunqWim`), разделение `install.wim` для FAT32 (`Split-LunqWim`), очистка хранилища компонентов, поиск `oscdimg` и сборка ISO |
+| `Image.ps1` | Экспорт редакции, пересжатие WIM (`Optimize-LunqWim`), проверка размера `install.wim` для FAT32 (`Test-LunqWimSize`), очистка хранилища компонентов, поиск `oscdimg` и сборка ISO |
 | `Servicing.ps1` | Обновления и драйверы: в систему, в WinRE (`Update-LunqRecovery`) и в установщик (`Update-LunqSetup`), Safe OS и Setup Dynamic Update и их распознавание по содержимому `.cab` (`Split-LunqDynamicUpdates`), выгрузка драйверов этого компьютера (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Удаление Appx, компонентов (capabilities), отключение функций и удаление CBS-пакетов |
 | `Uninstall.ps1` | Программы из поля `Uninstall` профиля, которые DISM не удалит из образа: таблица скриптов из `ThirdParty` (`$script:LunqUninstallers`), их запуск на этой Windows (`Remove-LunqPrograms`, откат через `Invoke-LunqUninstaller -Action Restore`) и раскладка в образ с `Uninstall.json` для первого входа (`Copy-LunqUninstallers`) |
@@ -106,8 +106,7 @@ Tests\                       Тесты Pester и заглушки
 | Cleanup | Очищает хранилище компонентов (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
 | Save | С `-BootCA2023` копирует файлы загрузчика `_EX` в `WorkDir\bootex`, пишет отметку о сборке в реестр образа и данные для отката в `Windows\LunqDebloater\Restore.json`, сохраняет `install.wim` | всегда |
 | Setup | Распаковывает Setup DU в `sources`; если для `boot.wim` есть обновления или драйверы, ставит обновления в образ 1 (Windows PE), обновления и драйверы в образ 2 и копирует из образа 2 `setup.exe`, `setuphost.exe`, загрузчик UEFI и `efisys.bin` | есть что ставить в установщик |
-| Recompress | Пересжимает `install.wim`; без `-SplitWim` предупреждает, если он больше 4 ГБ | всегда |
-| Split | Делит `install.wim` на части `install.swm` по 3800 МБ и удаляет его | `-SplitWim` |
+| Recompress | Пересжимает `install.wim` и предупреждает, если он больше 4 ГБ | всегда |
 | Iso | С `-BootCA2023` кладёт на ISO загрузчик Windows UEFI CA 2023 из `WorkDir\bootex`, затем собирает загрузочный ISO через `oscdimg` | всегда |
 
 Порядок важен: обновления ставятся до удаления компонентов, файл ответов и отметка о сборке пишутся до сохранения образа, а установщик обслуживается после, потому что он лежит в `WorkDir\iso`, а не внутри `install.wim`. Загрузчик Windows UEFI CA 2023 берётся из `install.wim` до его отключения, а на ISO попадает только на шаге Iso: иначе шаг Setup заменил бы его загрузчиком из `boot.wim`.

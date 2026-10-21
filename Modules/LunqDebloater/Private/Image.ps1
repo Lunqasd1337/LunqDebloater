@@ -50,30 +50,6 @@ function Optimize-LunqWim {
 
 # Самый большой файл на FAT32: 4 ГБ без одного байта. Флешка для UEFI обычно FAT32.
 $script:Fat32MaxFileSize = [long]4GB - 1
-# Части .swm по 3800 МБ: с запасом меньше предела FAT32.
-$script:SplitWimPartMB = 3800
-
-function Split-LunqWim {
-    # Делит install.wim на части install.swm, install2.swm и так далее, чтобы ISO можно было
-    # записать на флешку FAT32. Установщик Windows сам находит части в sources. install.wim
-    # удаляется только после того, как части готовы.
-    param([Parameter(Mandatory)][string]$WimPath)
-
-    $folder = Split-Path $WimPath -Parent
-    $first = Join-Path $folder 'install.swm'
-    # Части прошлого запуска с другим числом частей смешались бы с новыми.
-    Get-ChildItem -LiteralPath $folder -Filter 'install*.swm' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    $size = (Get-Item -LiteralPath $WimPath).Length
-    Split-WindowsImage -ImagePath $WimPath -SplitImagePath $first -FileSize $script:SplitWimPartMB -CheckIntegrity | Out-Null
-    $parts = @(Get-ChildItem -LiteralPath $folder -Filter 'install*.swm' -File)
-    if ($parts.Count -eq 0) { throw (Get-LunqText 'Image.SplitNoParts' $first) }
-    Remove-Item -LiteralPath $WimPath -Force
-    $result = New-LunqResult (Get-LunqText 'Image.SplitTitle') 'SplitWim'
-    foreach ($part in $parts) { $result.Done.Add($part.Name) }
-    $result.Summary = Get-LunqText 'Image.SplitDone' (Format-Size $size) $parts.Count $script:SplitWimPartMB
-    return $result
-}
-
 function Test-LunqWimSize {
     # Предупреждение для итога, если install.wim не поместится на флешку FAT32, иначе ничего.
     param([Parameter(Mandatory)][string]$WimPath)

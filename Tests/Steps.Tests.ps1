@@ -19,7 +19,7 @@ BeforeAll {
             IsoPath = 'C:\iso\Win11.iso'; IsoDir = 'iso'; WimPath = 'install.wim'; Index = 1; OutputIso = 'out.iso'; Oscdimg = 'oscdimg.exe'; Label = 'LUNQ_WIN11'
             Updates = @(); SafeOSUpdates = @(); SetupUpdates = @(); PEUpdates = @(); Drivers = @(); PEDrivers = @(); DriversPath = $null
             ServiceRecovery = $false; ServicePE = $false; FirstLogon = $null; SetupAnswers = $null; Architecture = 'amd64'; Config = $null
-            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; BootCA2023 = $false; SplitWim = $false; Restore = $null
+            SkipAppx = $false; SkipComponents = $false; SkipRegistry = $false; CleanupComponents = $false; BootCA2023 = $false; Restore = $null
             Profile = $null; ProfilePath = 'C:\Config\Profile.json'; EditionName = 'Windows 11 Pro'; BuildText = '26300.9457'
         }
         foreach ($key in $Values.Keys) { $context[$key] = $Values[$key] }
@@ -283,15 +283,15 @@ Describe 'Invoke-LunqBuild' {
 Describe 'Assert-LunqContext' {
     It 'нет ключа или лишний ключ: понятная ошибка до первого шага' {
         $missing = New-TestContext
-        $missing.Remove('SplitWim')
-        $parameters = @{ Missing = $missing; Typo = (New-TestContext -Values @{ SplitWimm = $true }); Full = (New-TestContext) }
+        $missing.Remove('BootCA2023')
+        $parameters = @{ Missing = $missing; Typo = (New-TestContext -Values @{ BootCA2032 = $true }); Full = (New-TestContext) }
         InModuleScope LunqDebloater -Parameters $parameters {
             param($Missing, $Typo, $Full)
             Mock Write-Host { }
             Mock Get-LunqBuildSteps { throw 'шаги не должны строиться' }
             Mock Get-LunqOnlineSteps { throw 'шаги не должны строиться' }
-            { Invoke-LunqBuild -Context $Missing } | Should -Throw '*в контексте режима Build нет ключей SplitWim.'
-            { Invoke-LunqBuild -Context $Typo } | Should -Throw '*в контексте режима Build лишние ключи SplitWimm.'
+            { Invoke-LunqBuild -Context $Missing } | Should -Throw '*в контексте режима Build нет ключей BootCA2023.'
+            { Invoke-LunqBuild -Context $Typo } | Should -Throw '*в контексте режима Build лишние ключи BootCA2032.'
             # У контекста сборки нет ключа, который нужен -Online.
             { Invoke-LunqBuild -Context $Full -Online } | Should -Throw '*в контексте режима Online нет ключей RestorePath.'
         }

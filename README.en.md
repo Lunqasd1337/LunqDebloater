@@ -154,7 +154,6 @@ Without `-Edition` or `-Index` the script shows the list of editions and asks fo
 | `-HostApps` | Add the apps of this computer (`winget export`) to `Apps.txt` |
 | `-HostWifi` | Carry over the Wi-Fi networks of this computer with their passwords (see "A copy of this computer") |
 | `-BootCA2023` | Put the boot manager signed with Windows UEFI CA 2023 on the ISO. Needs a cumulative update, turns on `-UpdatesToSetup` (see "Boot manager and Secure Boot") |
-| `-SplitWim` | Split `install.wim` into 3800 MB `install.swm` parts so the ISO can be written to a FAT32 USB drive by copying files (see "FAT32 USB drive") |
 | `-DefenderExclusion` | Do not scan the work folder with Microsoft Defender during the build: the build runs faster. The exclusion is removed at the end, after an error too, and if the run was interrupted, the next run removes it |
 
 ## How the process works
@@ -227,10 +226,7 @@ Such media, in turn, will not boot with Secure Boot on a computer whose DB lacks
 
 ## FAT32 USB drive
 
-A USB drive for UEFI boot is usually formatted as FAT32, and FAT32 cannot hold files over 4 GB. With recent updates and drivers `install.wim` can be bigger, and then the build summary warns about it. There are two ways out:
-
-- write the ISO with [Rufus](https://rufus.ie): it handles a big `install.wim` itself;
-- build the ISO with `-SplitWim` (an item in the More section of the summary): `install.wim` is split into 3800 MB parts `install.swm`, `install2.swm` and so on, and the ISO can simply be copied to a FAT32 drive. Windows Setup joins the parts itself.
+A USB drive for UEFI boot is usually formatted as FAT32, and FAT32 cannot hold files over 4 GB. With recent updates and drivers `install.wim` can be bigger, and then the build summary warns about it. Write such an ISO with [Rufus](https://rufus.ie): it handles a big `install.wim` itself. The `-SplitWim` parameter, which split `install.wim` into `install.swm` parts, is gone since version 1.14.0.
 
 ## After installation
 

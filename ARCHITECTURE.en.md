@@ -49,7 +49,7 @@ Tests\                       Pester tests and stubs
 | `Options.ps1` | The "What goes into the image" summary in step-by-step mode: finding updates and drivers (`Find-LunqBuildInputs`), items for what was found (`New-LunqContentOptions`), their dependencies, toggling by number, action items (`Invoke-LunqContentAction`) and the folder picker (`Select-LunqFolder`) |
 | `Iso.ps1` | Mounting the ISO, the list of editions, the image version and the profile requirements check, copying the ISO contents |
 | `Checks.ps1` | Checks before the build: working folder, output ISO and its name with the LunqDebloater version (`Get-LunqOutputIsoPath`, `Test-LunqOutputName`, `Read-LunqOutputName`), disk space, leftovers of a previous run, Windows version on this computer |
-| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), splitting `install.wim` for FAT32 (`Split-LunqWim`), component store cleanup, finding `oscdimg` and building the ISO |
+| `Image.ps1` | Exporting the edition, recompressing a WIM (`Optimize-LunqWim`), checking the `install.wim` size for FAT32 (`Test-LunqWimSize`), component store cleanup, finding `oscdimg` and building the ISO |
 | `Servicing.ps1` | Updates and drivers: into the system, into WinRE (`Update-LunqRecovery`) and into Windows Setup (`Update-LunqSetup`), Safe OS and Setup Dynamic Update and recognizing them by the contents of a `.cab` (`Split-LunqDynamicUpdates`), exporting this computer's drivers (`Export-LunqHostDrivers`) |
 | `Removal.ps1` | Removing Appx and capabilities, turning off features and removing CBS packages |
 | `Uninstall.ps1` | Programs from the profile's `Uninstall` field that DISM cannot remove from the image: the table of scripts from `ThirdParty` (`$script:LunqUninstallers`), running them on this Windows (`Remove-LunqPrograms`, restore through `Invoke-LunqUninstaller -Action Restore`) and putting them into the image with `Uninstall.json` for the first sign-in (`Copy-LunqUninstallers`) |
@@ -106,8 +106,7 @@ The steps are the list that `Get-LunqBuildSteps` returns in `Private\Build.ps1`.
 | Cleanup | Cleans the component store (`dism /StartComponentCleanup /ResetBase`) | `-CleanupComponents` |
 | Save | With `-BootCA2023` copies the `_EX` boot files to `WorkDir\bootex`, writes the build stamp into the image registry and the restore data into `Windows\LunqDebloater\Restore.json`, saves `install.wim` | always |
 | Setup | Expands Setup DU into `sources`; if there are updates or drivers for `boot.wim`, installs the updates into image 1 (Windows PE), the updates and drivers into image 2, and copies `setup.exe`, `setuphost.exe`, the UEFI boot manager and `efisys.bin` out of image 2 | there is something for Windows Setup |
-| Recompress | Recompresses `install.wim`; without `-SplitWim` warns if it is over 4 GB | always |
-| Split | Splits `install.wim` into 3800 MB `install.swm` parts and deletes it | `-SplitWim` |
+| Recompress | Recompresses `install.wim` and warns if it is over 4 GB | always |
 | Iso | With `-BootCA2023` puts the Windows UEFI CA 2023 boot manager from `WorkDir\bootex` on the ISO, then builds the bootable ISO with `oscdimg` | always |
 
 The order matters: updates go in before components are removed, the answer file and the build stamp are written before the image is saved, and Windows Setup is serviced afterwards, because it lives in `WorkDir\iso` and not inside `install.wim`. The Windows UEFI CA 2023 boot manager is taken from `install.wim` before it is dismounted, but goes onto the ISO only in the Iso step: otherwise the Setup step would replace it with the boot manager from `boot.wim`.

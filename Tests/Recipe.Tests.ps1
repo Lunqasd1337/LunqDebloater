@@ -116,6 +116,18 @@ Describe 'Запись и чтение рецепта' {
         }
     }
 
+    It 'рецепт 1.13.x с Media.SplitWim: поле пропускается, загрузчик берётся, в новый рецепт оно не пишется' {
+        @($script:Json.Media.PSObject.Properties.Name) | Should -Be @('BootCA2023')
+        InModuleScope LunqDebloater -Parameters @{ Path = $script:RecipePath } {
+            param($Path)
+            $recipe = Read-LunqRecipe -Path $Path
+            $recipe | Add-Member -NotePropertyName Media -NotePropertyValue ([pscustomobject]@{ BootCA2023 = $true; SplitWim = $true }) -Force
+            $values = Get-LunqRecipeParameters -Recipe $recipe
+            $values.BootCA2023 | Should -BeTrue
+            $values.Contains('SplitWim') | Should -BeFalse
+        }
+    }
+
     It 'папки обновлений нет на этом компьютере: путь не берётся, со скачиванием тоже' {
         InModuleScope LunqDebloater -Parameters @{ Path = $script:RecipePath } {
             param($Path)

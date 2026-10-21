@@ -79,15 +79,6 @@ function Export-WindowsImage {
     Add-Content -LiteralPath $DestinationImagePath -Value 'wim'
 }
 
-function Split-WindowsImage {
-    # Две части, как у образа чуть больше 3800 МБ.
-    [CmdletBinding()]
-    param([Parameter(Mandatory)]$ImagePath, [Parameter(Mandatory)]$SplitImagePath, [Parameter(Mandatory)]$FileSize, [switch]$CheckIntegrity, $LogPath)
-    Write-Host "    [mock] split $ImagePath -> $SplitImagePath size $FileSize"
-    Set-Content -LiteralPath $SplitImagePath -Value 'swm 1'
-    Set-Content -LiteralPath (Join-Path (Split-Path $SplitImagePath) 'install2.swm') -Value 'swm 2'
-}
-
 function Get-AppxProvisionedPackage {
     [CmdletBinding()]
     param($Path, [switch]$Online, $LogPath)

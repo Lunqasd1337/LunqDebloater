@@ -64,7 +64,6 @@ param(
     [switch]$HostApps,
     [switch]$HostWifi,
     [switch]$BootCA2023,
-    [switch]$SplitWim,
     [switch]$DefenderExclusion
 )
 
@@ -317,7 +316,7 @@ try {
         DownloadUpdates = [bool]$DownloadUpdates; SkipDrivers = [bool]$SkipDrivers; DriversToSetup = [bool]$DriversToSetup
         SkipApps = [bool]$SkipApps; HostApps = [bool]$HostApps; SkipScripts = [bool]$SkipScripts; HostWifi = [bool]$HostWifi
         Unattend = [bool]$Unattend; BypassRequirements = [bool]$BypassRequirements; LocalAccount = [bool]$LocalAccount
-        BootCA2023 = [bool]$BootCA2023; SplitWim = [bool]$SplitWim; DefenderExclusion = [bool]$DefenderExclusion; HostDrivers = [bool]$HostDrivers
+        BootCA2023 = [bool]$BootCA2023; DefenderExclusion = [bool]$DefenderExclusion; HostDrivers = [bool]$HostDrivers
     }
     $contents = Select-LunqBuildContents -Switches $switches -FirstLogon $foundLogon -HostRegion $hostRegion -ConfigPath $ConfigPath `
         -UpdatesPath $UpdatesPath -DriversPath $DriversPath -CabCheckDir $cabCheckDir -HostDriversDir $hostDriversDir `
@@ -333,7 +332,6 @@ try {
     $HostWifi = [switch]$contents.Switches.HostWifi
     $CleanupComponents = [switch]$contents.Switches.CleanupComponents
     $BootCA2023 = [switch]$contents.Switches.BootCA2023
-    $SplitWim = [switch]$contents.Switches.SplitWim
     $DefenderExclusion = [switch]$contents.Switches.DefenderExclusion
     $HostDrivers = [switch]$contents.Switches.HostDrivers
     # Учётная запись, которую создаст файл ответов. Без имени её, как раньше, создаёт сама установка.
@@ -528,7 +526,7 @@ try {
         -UpdatesToSetup:$UpdatesToSetup -DynamicUpdatesSkipped:($use.updates -and -not $UpdatesToSetup -and $contents.FoundDU.Count -gt 0) `
         -FirstLogon $firstLogon -SetupAnswers $setupAnswers -AccountName $accountName `
         -SkipAppx:$SkipAppx -SkipComponents:$SkipComponents -SkipRegistry:$SkipRegistry -CleanupComponents:$CleanupComponents `
-        -SplitWim:$SplitWim -DefenderExclusion:$DefenderExclusion -BootCA2023:$BootCA2023 `
+        -DefenderExclusion:$DefenderExclusion -BootCA2023:$BootCA2023 `
         -OutputIso $OutputIso -WorkDir $WorkDir -LogPath $lunqLog.Path
 
     if ($interactive) {
@@ -576,7 +574,6 @@ try {
         SkipRegistry      = [bool]$SkipRegistry
         CleanupComponents = [bool]$CleanupComponents
         BootCA2023        = [bool]$BootCA2023
-        SplitWim          = [bool]$SplitWim
         Profile           = $lunqProfile
         ProfilePath       = $ProfilePath
         EditionName       = $editionName
@@ -604,7 +601,7 @@ try {
         DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
         HostApps = $HostApps; HostWifi = ($wifiNames.Count -gt 0)
         SetupAnswers = [bool]$setupAnswers; BypassRequirements = $use.bypass -and [bool]$setupAnswers; LocalAccount = $use.localAccount -and [bool]$setupAnswers
-        BootCA2023 = $BootCA2023; SplitWim = $SplitWim; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
+        BootCA2023 = $BootCA2023; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
     }
     Save-LunqBuildOutputs -RecipeValues $recipeValues -HashCache $hashCache -FirstLogon $firstLogon -Results $results -LunqProfile $lunqProfile `
         -StepTimes $state['StepTimes'] -Elapsed $elapsed
