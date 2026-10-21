@@ -57,7 +57,6 @@ param(
     [ValidateSet('ru', 'en')][string]$Language,
     [string]$Recipe,
     [switch]$DownloadUpdates,
-    [ValidateSet('Monthly', 'Off')][string]$Schedule,
     [switch]$Online,
     [switch]$Restore,
     [string[]]$Category,
@@ -65,13 +64,12 @@ param(
     [switch]$HostApps,
     [switch]$HostWifi,
     [switch]$BootCA2023,
-    [switch]$SplitWim,
     [switch]$DefenderExclusion
 )
 
 $ErrorActionPreference = 'Stop'
-# Любой из этих параметров значит запуск без вопросов: из командной строки или по расписанию.
-$interactive = -not ($IsoPath -or $Recipe -or $Online -or $Restore -or $Schedule)
+# Любой из этих параметров значит запуск без вопросов: из командной строки, своего скрипта или задания.
+$interactive = -not ($IsoPath -or $Recipe -or $Online -or $Restore)
 
 if ($env:OS -ne 'Windows_NT') {
     # Модуль с таблицами строк ещё не загружен, поэтому язык выбирается здесь же.
@@ -182,12 +180,6 @@ try {
 
     if ($Online -and $Restore) { throw (Get-LunqText 'Main.OnlineAndRestore') }
     if ($Recipe) { $Recipe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Recipe) }
-
-    # ---------- Расписание: только создать или удалить задание, без сборки ----------
-    if ($Schedule) {
-        Invoke-LunqScheduleMode -Schedule $Schedule -RecipePath $Recipe -SourceRoot $PSScriptRoot -ConfigPath $ConfigPath -ConfigFromCommandLine:($PSBoundParameters.ContainsKey('ConfigPath'))
-        return
-    }
 
     # ---------- Рецепт прошлой сборки ----------
     # Параметры, не заданные в командной строке, берутся из рецепта: так сборку можно повторить,
@@ -324,7 +316,7 @@ try {
         DownloadUpdates = [bool]$DownloadUpdates; SkipDrivers = [bool]$SkipDrivers; DriversToSetup = [bool]$DriversToSetup
         SkipApps = [bool]$SkipApps; HostApps = [bool]$HostApps; SkipScripts = [bool]$SkipScripts; HostWifi = [bool]$HostWifi
         Unattend = [bool]$Unattend; BypassRequirements = [bool]$BypassRequirements; LocalAccount = [bool]$LocalAccount
-        BootCA2023 = [bool]$BootCA2023; SplitWim = [bool]$SplitWim; DefenderExclusion = [bool]$DefenderExclusion; HostDrivers = [bool]$HostDrivers
+        BootCA2023 = [bool]$BootCA2023; DefenderExclusion = [bool]$DefenderExclusion; HostDrivers = [bool]$HostDrivers
     }
     $contents = Select-LunqBuildContents -Switches $switches -FirstLogon $foundLogon -HostRegion $hostRegion -ConfigPath $ConfigPath `
         -UpdatesPath $UpdatesPath -DriversPath $DriversPath -CabCheckDir $cabCheckDir -HostDriversDir $hostDriversDir `
@@ -340,7 +332,6 @@ try {
     $HostWifi = [switch]$contents.Switches.HostWifi
     $CleanupComponents = [switch]$contents.Switches.CleanupComponents
     $BootCA2023 = [switch]$contents.Switches.BootCA2023
-    $SplitWim = [switch]$contents.Switches.SplitWim
     $DefenderExclusion = [switch]$contents.Switches.DefenderExclusion
     $HostDrivers = [switch]$contents.Switches.HostDrivers
     # Учётная запись, которую создаст файл ответов. Без имени её, как раньше, создаёт сама установка.
@@ -408,7 +399,7 @@ try {
         -UpdatesSize $updatesSize -DriversSize $driversSize -ProtectedPaths $protected -DefaultWorkDir:(-not $PSBoundParameters.ContainsKey('WorkDir')) `
         -ExtraSize $extraSize -SkipOscdimg:$listMode -SkipOutputCheck:$listMode -OwnMountPaths $allMountDirs
     if ($check.Errors -gt 0) { throw (Get-LunqText 'Main.FixErrors') }
-    # Без вопросов (рецепт, расписание) никто не ответит на предупреждение, а многочасовая сборка на
+    # Без вопросов (рецепт, параметры) никто не ответит на предупреждение, а многочасовая сборка на
     # почти полном диске упадёт посередине. Поэтому нехватка места там останавливает запуск.
     if ($check.SpaceLow -and -not $interactive -and -not $listMode -and -not $IgnoreSpace) { throw (Get-LunqText 'Main.SpaceLowStop') }
     if ($check.Warnings -gt 0 -and $interactive -and -not (Read-YesNo (Get-LunqText 'Main.AskContinueWarnings'))) { return }
@@ -535,7 +526,7 @@ try {
         -UpdatesToSetup:$UpdatesToSetup -DynamicUpdatesSkipped:($use.updates -and -not $UpdatesToSetup -and $contents.FoundDU.Count -gt 0) `
         -FirstLogon $firstLogon -SetupAnswers $setupAnswers -AccountName $accountName `
         -SkipAppx:$SkipAppx -SkipComponents:$SkipComponents -SkipRegistry:$SkipRegistry -CleanupComponents:$CleanupComponents `
-        -SplitWim:$SplitWim -DefenderExclusion:$DefenderExclusion -BootCA2023:$BootCA2023 `
+        -DefenderExclusion:$DefenderExclusion -BootCA2023:$BootCA2023 `
         -OutputIso $OutputIso -WorkDir $WorkDir -LogPath $lunqLog.Path
 
     if ($interactive) {
@@ -583,7 +574,6 @@ try {
         SkipRegistry      = [bool]$SkipRegistry
         CleanupComponents = [bool]$CleanupComponents
         BootCA2023        = [bool]$BootCA2023
-        SplitWim          = [bool]$SplitWim
         Profile           = $lunqProfile
         ProfilePath       = $ProfilePath
         EditionName       = $editionName
@@ -611,10 +601,10 @@ try {
         DriversPath = $DriversPath; HostDrivers = $HostDrivers; DriversToSetup = $DriversToSetup; Drivers = $drivers
         HostApps = $HostApps; HostWifi = ($wifiNames.Count -gt 0)
         SetupAnswers = [bool]$setupAnswers; BypassRequirements = $use.bypass -and [bool]$setupAnswers; LocalAccount = $use.localAccount -and [bool]$setupAnswers
-        BootCA2023 = $BootCA2023; SplitWim = $SplitWim; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
+        BootCA2023 = $BootCA2023; LocalAccountName = $(if ($setupAnswers) { $accountName } else { '' })
     }
     Save-LunqBuildOutputs -RecipeValues $recipeValues -HashCache $hashCache -FirstLogon $firstLogon -Results $results -LunqProfile $lunqProfile `
-        -StepTimes $state['StepTimes'] -Elapsed $elapsed -SourceRoot $PSScriptRoot -Interactive:$interactive -OfferSchedule:$DownloadUpdates
+        -StepTimes $state['StepTimes'] -Elapsed $elapsed
 }
 catch {
     $failed = $true

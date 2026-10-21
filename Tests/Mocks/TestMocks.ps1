@@ -38,9 +38,6 @@ function Set-LunqDefenderExclusion {
     if ($env:LUNQ_TEST_NATIVE_LOG) { Add-Content -LiteralPath $env:LUNQ_TEST_NATIVE_LOG -Value "defender|$action|$Path" -Encoding UTF8 }
 }
 
-# Копии для заданий по расписанию: вместо Program Files папка теста.
-function Get-LunqScheduleRoot { return (Join-Path $env:LUNQ_TEST_ROOT 'ProgramFiles\LunqDebloater-Schedule') }
-
 # Окно выбора папки: папку задаёт тест, пустое значение означает «Отмена».
 function Select-LunqFolder {
     [CmdletBinding()]
@@ -113,7 +110,6 @@ function Invoke-Native {
             Set-Content -LiteralPath (Join-Path $folder 'Wi-Fi-Home.xml') -Value '<?xml version="1.0"?><WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1"><name>Home</name></WLANProfile>'
             return 0
         }
-        'schtasks.exe' { if ($Arguments[0] -eq '/Delete' -and $env:LUNQ_TEST_NO_TASK) { return 1 }; return 0 }
         'dism.exe' {
             # Накопительные обновления одним вызовом: какие .msu лежат в папке рядом с целевым.
             $package = @($Arguments | Where-Object { $_ -like '/PackagePath:*' }) -replace '^/PackagePath:', ''

@@ -167,14 +167,9 @@ function Get-LunqBuildSteps {
             Run = {
                 param($c)
                 Export-SingleEdition -SourceImage $c.WimPath -SourceIndex 1 -DestinationImage $c.WimPath
-                # Без -SplitWim итог предупреждает, если образ не поместится на флешку FAT32.
-                if (-not $c.SplitWim) { Test-LunqWimSize -WimPath $c.WimPath }
+                # Итог предупреждает, если образ не поместится на флешку FAT32.
+                Test-LunqWimSize -WimPath $c.WimPath
             }
-        },
-        @{
-            Name = 'Split'; When = [bool]$c.SplitWim
-            Title = Get-LunqText 'Main.StepSplit'; Hint = Get-LunqText 'Main.StepSplitHint'
-            Run = { param($c) Split-LunqWim -WimPath $c.WimPath }
         },
         @{
             Name = 'Iso'; When = $true
@@ -350,7 +345,7 @@ $script:LunqContextKeys = @{
     Build     = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'BootMountDir', 'ReMountDir', 'IsoPath', 'IsoDir', 'WimPath', 'Index',
         'OutputIso', 'Oscdimg', 'Label', 'Updates', 'SafeOSUpdates', 'SetupUpdates', 'PEUpdates', 'Drivers', 'PEDrivers', 'DriversPath',
         'ServiceRecovery', 'ServicePE', 'FirstLogon', 'SetupAnswers', 'Architecture', 'Config', 'SkipAppx', 'SkipComponents',
-        'SkipRegistry', 'CleanupComponents', 'BootCA2023', 'SplitWim', 'Profile', 'ProfilePath', 'EditionName', 'BuildText', 'Restore')
+        'SkipRegistry', 'CleanupComponents', 'BootCA2023', 'Profile', 'ProfilePath', 'EditionName', 'BuildText', 'Restore')
     Inventory = @('State', 'WorkDir', 'MountPaths', 'MountDir', 'WimPath', 'IsoPath', 'Index', 'DirectMount', 'Profile', 'ContentsPath', 'Header')
     Online    = @('State', 'Config', 'SkipAppx', 'SkipComponents', 'SkipRegistry', 'Restore', 'RestorePath')
 }
