@@ -186,6 +186,13 @@ function Get-LunqSignatureError {
     return $null
 }
 
+# Подпись загрузчика: у пустышек её нет, поэтому подписанным Windows UEFI CA 2023 считается файл со словами CA 2023.
+function Test-LunqBootCA2023Signature {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    return ((Get-Content -LiteralPath $Path -Raw) -match 'CA 2023')
+}
+
 # Каталог Центра обновления: страницы поиска и окна скачивания строятся здесь же по запросу,
 # а скачанный файл содержит текст, контрольная сумма которого стоит в окне скачивания.
 # Повторы скачивания в тестах без ожидания.

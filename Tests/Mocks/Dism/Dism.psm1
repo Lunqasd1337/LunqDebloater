@@ -51,6 +51,20 @@ function Mount-WindowsImage {
                 Set-Content -LiteralPath $file -Value $files[$name]
             }
         }
+        # LUNQ_TEST_BOOT_MAIN_CA2023: основной загрузчик уже подписан Windows UEFI CA 2023.
+        if ($env:LUNQ_TEST_BOOT_MAIN_CA2023) {
+            $files = @{
+                'Windows\Boot\EFI\bootmgfw.efi'           = 'bootmgfw.efi CA 2023 from install.wim'
+                'Windows\Boot\EFI\bootmgr.efi'            = 'bootmgr.efi CA 2023 from install.wim'
+                'Windows\Boot\DVD\EFI\en-US\efisys.bin' = 'efisys.bin CA 2023 from install.wim'
+                'Windows\Boot\Fonts\wgl4_boot.ttf'        = 'wgl4_boot.ttf CA 2023 from install.wim'
+            }
+            foreach ($name in $files.Keys) {
+                $file = Join-Path $Path $name
+                New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+                Set-Content -LiteralPath $file -Value $files[$name]
+            }
+        }
     }
     if ($ImagePath -like '*boot.wim') {
         # Установщик внутри boot.wim: его setup.exe и setuphost.exe копируются в sources ISO.

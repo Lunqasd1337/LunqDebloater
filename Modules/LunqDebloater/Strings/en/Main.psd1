@@ -149,7 +149,7 @@
     'Main.PackagesWarning'       = 'The profile removes system packages: this may prevent updates from installing.'
     'Main.PlanRegistry'          = 'Registry:         {0}'
     'Main.PlanCleanup'           = 'WinSxS cleanup:   yes (/ResetBase)'
-    'Main.PlanBootCA2023'        = 'Boot manager:     Windows UEFI CA 2023 (_EX files from the updated image)'
+    'Main.PlanBootCA2023'        = 'Boot manager:     Windows UEFI CA 2023 (from the updated image)'
     'Main.PlanDefender'          = 'Defender:         the work folder is not scanned until the build ends'
     'Main.PlanOutputIso'         = 'Output ISO:       {0}'
     'Main.PlanWorkDir'           = 'Working folder:   {0} (deleted after the build)'
