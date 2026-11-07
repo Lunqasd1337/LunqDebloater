@@ -6,7 +6,7 @@
 
 - По сообщению владельца, встроенная AMD-графика отключена. Отдельный физический стенд AMD пока не подтверждён.
 - Для GeForce RTX 5060 8 GB владелец прислал один Hardware ID и один Compatible ID.
-  - Hardware ID — `PCI\VEN_10DE&DEV_2D05&SUBSYS_F3301569&REV_A`. Строка требует сверки, поскольку поле `REV` в PCI ID состоит из двух символов. [Форматы PCI ID](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/identifiers-for-pci-devices)
+  - Hardware ID — `PCI\VEN_10DE&DEV_2D05&SUBSYS_F3301569&REV_A1`.
   - Compatible ID — `PCI\VEN_10DE&DEV_2D05&REV_A1`.
 - Ревизия платы и идентификаторы встроенных контроллеров ожидаются.
 
