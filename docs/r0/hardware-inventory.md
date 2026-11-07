@@ -1,0 +1,49 @@
+# R0 — Инвентаризация оборудования
+
+Проверку выполняет владелец оборудования на физическом ПК с Windows 11. Известная конфигурация со слов владельца — ASRock B650 PG Lightning WiFi, Ryzen 7 7800X3D и GeForce RTX 5060 8 GB. Ревизия платы, идентификаторы устройств и доступность AMD-графики в текущей конфигурации ожидают подтверждения.
+
+## 1. Модель и ревизия платы
+
+В обычном окне Windows PowerShell выполните запрос к SMBIOS через CIM.
+
+```powershell
+Get-CimInstance -ClassName Win32_BaseBoard -Property Manufacturer, Product, Version -ErrorAction Stop |
+    Format-List Manufacturer, Product, Version
+```
+
+Запишите `Manufacturer`, `Product` и `Version` как их вернула Windows. Сверьте `Product` с точным названием на плате или её коробке. Для ревизии ищите явно обозначенную маркировку PCB. Если маркировка недоступна, а `Version` пустая, шаблонная или не позволяет однозначно установить ревизию, укажите «ревизия не подтверждена» и приложите значение `Version`. `REV_…` из PCI Hardware ID относится к конкретному PCI-устройству. [Документация Win32_BaseBoard](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-baseboard) · [Страница модели ASRock](https://pg.asrock.com/mb/AMD/B650%20PG%20Lightning%20WiFi/)
+
+## 2. GPU и устройства платы
+
+В том же окне выполните запрос присутствующих PnP-устройств. Он выводит адаптеры класса `Display` и PCI-контроллеры с кодом класса `03`, в том числе те, которым Windows ещё не присвоила класс `Display`.
+
+```powershell
+Get-CimInstance -ClassName Win32_PnPEntity -Filter 'Present = TRUE' `
+    -Property Name, PNPClass, HardwareID, CompatibleID, ConfigManagerErrorCode -ErrorAction Stop |
+    Where-Object {
+        $deviceIds = @($_.HardwareID) + @($_.CompatibleID)
+        $_.PNPClass -eq 'Display' -or ($deviceIds -match '^PCI\\(?:.*&)?CC_03[0-9A-F]{2}(?:[0-9A-F]{2})?(?:&|$)')
+    } |
+    Format-List Name, PNPClass, ConfigManagerErrorCode, `
+        @{ Label = 'Hardware IDs'; Expression = { $_.HardwareID -join ', ' } }, `
+        @{ Label = 'Compatible IDs'; Expression = { $_.CompatibleID -join ', ' } }
+```
+
+Запишите все найденные физические GPU, включая адаптер с общим названием, если его PCI-идентификаторы указывают на GPU. Сохраните списки Hardware IDs и Compatible IDs отдельно. Если вывод пустой, есть ошибка или какие-то данные отсутствуют, отметьте это и сверяйте список с разделами «Видеоадаптеры» и «Другие устройства» в диспетчере устройств. Виртуальные адаптеры можно пометить отдельно. [Документация Win32_PnPEntity](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity) · [Форматы PCI ID](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/identifiers-for-pci-devices)
+
+Для первого профиля платы также соберите IDs присутствующих встроенных контроллеров Ethernet, Wi‑Fi, Bluetooth и аудио. В диспетчере устройств откройте свойства каждого контроллера → «Сведения» → «ИД оборудования» и «Совместимые ИД». Для аудио выбирайте аппаратное устройство, а не endpoint динамиков. Если неясно, какой контроллер встроенный, пометьте его как неподтверждённый. [Как получить списки идентификаторов в диспетчере устройств](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hardware-ids)
+
+## 3. Доступность физического AMD GPU
+
+Для Ryzen 7 7800X3D AMD указывает встроенную Radeon Graphics. Если встроенный адаптер виден в Windows и его принадлежность к этой конфигурации подтверждается, зафиксируйте его IDs и `ConfigManagerErrorCode`. Если он отсутствует в выводе, запишите «не обнаружен в текущей конфигурации» или «не удалось проверить», если инвентаризация завершилась ошибкой. Для этой проверки достаточно наблюдений из текущей конфигурации UEFI и Windows. [Спецификация Ryzen 7 7800X3D](https://www.amd.com/en/products/processors/desktops/ryzen/7000-series/amd-ryzen-7-7800x3d.html)
+
+Для будущего AMD-пилота укажите, доступен ли обнаруженный iGPU на изолированной тестовой установке, и есть ли доступ к отдельному тестовому ПК с физическим AMD GPU. Если есть, укажите модель и, по возможности, IDs. При отсутствии доступного стенда укажите, что он пока не определён. Работа AMD-драйвера и ускорения проверяется позже на физическом GPU по критериям R6.
+
+## Что прислать для записи результата
+
+- Плата — `Manufacturer`, `Product`, `Version`, ревизия и источник подтверждения или причина, по которой ревизия осталась неизвестной.
+- GPU и выбранные контроллеры — название, Hardware IDs, Compatible IDs и код состояния GPU, если доступен.
+- Встроенная AMD-графика — обнаружена, не обнаружена в текущей конфигурации или проверка не удалась.
+- Физический AMD-пилот — доступный вариант, его модель или текущий блокер.
+
+Перед отправкой оставьте только эти поля. Серийные номера, пути экземпляров устройств, MAC-адреса и имя ПК в отчёт не включайте. Пункт R0 закрывается после подтверждения ревизии, получения нужных IDs, проверки видимости iGPU и выбора доступного физического варианта AMD-пилота.
