@@ -1,0 +1,47 @@
+[
+  {
+    "file": "examples/Disable Windows Telemetry.reg",
+    "sha256": "E3096D3E465C862129CCF93A09B41429C52EAD40BD8744F90CF5258B4F528F5A",
+    "bytes": 3188,
+    "encoding": "UTF-16 LE BOM",
+    "setDwordCount": 14,
+    "deleteValueCount": 0,
+    "status": "Documented; not applied; not VM-tested"
+  },
+  {
+    "file": "examples/Disable Silent Install Promoted Apps.reg",
+    "sha256": "5645504BB37D773425B0AA5036CA173C742B56970BD578BD41A9BEF16220D478",
+    "bytes": 774,
+    "encoding": "UTF-16 LE BOM",
+    "setDwordCount": 6,
+    "deleteValueCount": 0,
+    "status": "Documented; not applied; not VM-tested"
+  },
+  {
+    "file": "examples/Enable Silent Install Promoted Apps.reg",
+    "sha256": "00909FB500FDCAED2F77BBF8BF7D37764A7F088FAEC4B1333C806F1D82189CA9",
+    "bytes": 774,
+    "encoding": "UTF-16 LE BOM",
+    "setDwordCount": 6,
+    "deleteValueCount": 0,
+    "status": "Documented; not applied; not VM-tested"
+  },
+  {
+    "file": "examples/Disable Drivers from Windows Update.reg",
+    "sha256": "849EE3A6AF27DB43A402F391247F058CA791F667B29030A9615715DCE9393B6A",
+    "bytes": 1082,
+    "encoding": "UTF-16 LE BOM",
+    "setDwordCount": 6,
+    "deleteValueCount": 0,
+    "status": "Documented; not applied; not VM-tested"
+  },
+  {
+    "file": "examples/Enable Drivers from Windows Update.reg",
+    "sha256": "DC0F957678E1B45AC3CEAB6C1A5A22C48FA42A7955C5C0BE072BE09C261046A9",
+    "bytes": 926,
+    "encoding": "UTF-16 LE BOM",
+    "setDwordCount": 0,
+    "deleteValueCount": 6,
+    "status": "Documented; not applied; not VM-tested"
+  }
+]
